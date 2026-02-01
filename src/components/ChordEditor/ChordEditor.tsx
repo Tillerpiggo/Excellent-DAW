@@ -5,9 +5,8 @@ import { Block, Track } from '@/core/types';
 import { ChordData, ChordQuality, extractChordsFromBlock, generateChordPitches } from '@/core/harmony';
 import { useProjectStore } from '@/stores/projectStore';
 import { ChordBlock } from './ChordBlock';
-import { ChordStrip } from './ChordStrip';
+import { CircleOfFifths } from './CircleOfFifths';
 import { generateId } from '@/utils/id';
-import { getPlaybackEngine } from '@/core/playback';
 
 interface ChordEditorProps {
   block: Block;
@@ -18,7 +17,6 @@ interface ChordEditorProps {
 export function ChordEditor({ block, track, beatsPerBar }: ChordEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { updateBlockChords } = useProjectStore();
-  const [showChordStrip, setShowChordStrip] = useState(false);
 
   // Extract chords from block or use local state
   const [chords, setChords] = useState<ChordData[]>(() =>
@@ -57,22 +55,16 @@ export function ChordEditor({ block, track, beatsPerBar }: ChordEditorProps) {
     return () => clearTimeout(timeout);
   }, [chords, handleSaveChords]);
 
-  // Handle chord strip selection
-  const handleChordStripSelect = useCallback((root: number, quality: ChordQuality) => {
+  // Handle circle of fifths selection
+  const handleCircleSelect = useCallback((root: number, quality: ChordQuality) => {
     if (selectedChordIndex !== null) {
       handleUpdateChord(selectedChordIndex, { root, quality });
     }
   }, [selectedChordIndex, handleUpdateChord]);
 
-  // Open chord strip when selecting a chord
+  // Select a chord
   const handleSelectChord = useCallback((index: number) => {
     setSelectedChordIndex(index);
-    setShowChordStrip(true);
-  }, []);
-
-  // Close chord strip
-  const handleCloseStrip = useCallback(() => {
-    setShowChordStrip(false);
   }, []);
 
   // Add a new chord
@@ -109,7 +101,6 @@ export function ChordEditor({ block, track, beatsPerBar }: ChordEditorProps) {
   // Handle click on empty area to deselect
   const handleContainerClick = useCallback(() => {
     setSelectedChordIndex(null);
-    setShowChordStrip(false);
   }, []);
 
   // Draw beat lines
@@ -131,86 +122,88 @@ export function ChordEditor({ block, track, beatsPerBar }: ChordEditorProps) {
   const selectedChord = selectedChordIndex !== null ? chords[selectedChordIndex] : null;
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Toolbar */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-border">
-        <button
-          onClick={handleAddChord}
-          className="px-3 py-1.5 bg-coral text-white rounded-lg text-sm font-medium hover:bg-coral/90 transition-colors"
-        >
-          + Add Chord
-        </button>
-        {selectedChordIndex !== null && (
+    <div className="flex h-full">
+      {/* Main content - Timeline */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Toolbar */}
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-border">
           <button
-            onClick={handleDeleteChord}
-            className="px-3 py-1.5 bg-background border border-border text-red-500 rounded-lg text-sm font-medium hover:bg-red-500/10 transition-colors"
+            onClick={handleAddChord}
+            className="px-3 py-1.5 bg-coral text-white rounded-lg text-sm font-medium hover:bg-coral/90 transition-colors"
           >
-            Delete
+            + Add Chord
           </button>
-        )}
-        <div className="flex-1" />
-        <span className="text-xs text-muted">
-          {chords.length} {chords.length === 1 ? 'chord' : 'chords'} | {totalBeats} beats
-        </span>
-      </div>
+          {selectedChordIndex !== null && (
+            <button
+              onClick={handleDeleteChord}
+              className="px-3 py-1.5 bg-background border border-border text-red-500 rounded-lg text-sm font-medium hover:bg-red-500/10 transition-colors"
+            >
+              Delete
+            </button>
+          )}
+          <div className="flex-1" />
+          <span className="text-xs text-muted">
+            {chords.length} {chords.length === 1 ? 'chord' : 'chords'} | {totalBeats} beats
+          </span>
+        </div>
 
-      {/* Timeline area */}
-      <div
-        ref={containerRef}
-        className="flex-1 relative overflow-x-auto overflow-y-hidden bg-background"
-        onClick={handleContainerClick}
-      >
+        {/* Timeline area */}
         <div
-          className="relative h-full min-h-[100px]"
-          style={{ width: totalBeats * pixelsPerBeat + 20 }}
+          ref={containerRef}
+          className="flex-1 relative overflow-x-auto overflow-y-hidden bg-background"
+          onClick={handleContainerClick}
         >
-          {/* Beat lines */}
-          {beatLines}
+          <div
+            className="relative h-full min-h-[100px]"
+            style={{ width: totalBeats * pixelsPerBeat + 20 }}
+          >
+            {/* Beat lines */}
+            {beatLines}
 
-          {/* Bar numbers */}
-          <div className="absolute top-0 left-0 right-0 h-6 flex">
-            {Array.from({ length: block.durationBars }).map((_, barIndex) => (
-              <div
-                key={barIndex}
-                className="text-xs text-muted flex items-center justify-start pl-1"
-                style={{ width: beatsPerBar * pixelsPerBeat }}
-              >
-                {barIndex + 1}
-              </div>
-            ))}
-          </div>
+            {/* Bar numbers */}
+            <div className="absolute top-0 left-0 right-0 h-6 flex">
+              {Array.from({ length: block.durationBars }).map((_, barIndex) => (
+                <div
+                  key={barIndex}
+                  className="text-xs text-muted flex items-center justify-start pl-1"
+                  style={{ width: beatsPerBar * pixelsPerBeat }}
+                >
+                  {barIndex + 1}
+                </div>
+              ))}
+            </div>
 
-          {/* Chord blocks */}
-          <div className="absolute top-6 bottom-0 left-0 right-0">
-            {chords.map((chord, index) => (
-              <ChordBlock
-                key={chord.id}
-                chord={chord}
-                pixelsPerBeat={pixelsPerBeat}
-                isSelected={selectedChordIndex === index}
-                onSelect={() => handleSelectChord(index)}
-                onUpdate={(updates) => handleUpdateChord(index, updates)}
-                onDoubleClick={() => handleSelectChord(index)}
-                containerRef={containerRef}
-                minBeat={0}
-                maxBeat={totalBeats}
-                instrumentId={track.instrumentId ?? 'pad'}
-              />
-            ))}
+            {/* Chord blocks */}
+            <div className="absolute top-6 bottom-0 left-0 right-0">
+              {chords.map((chord, index) => (
+                <ChordBlock
+                  key={chord.id}
+                  chord={chord}
+                  pixelsPerBeat={pixelsPerBeat}
+                  isSelected={selectedChordIndex === index}
+                  onSelect={() => handleSelectChord(index)}
+                  onUpdate={(updates) => handleUpdateChord(index, updates)}
+                  onDoubleClick={() => handleSelectChord(index)}
+                  containerRef={containerRef}
+                  minBeat={0}
+                  maxBeat={totalBeats}
+                  instrumentId={track.instrumentId ?? 'pad'}
+                />
+              ))}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Inline chord strip */}
-      {showChordStrip && selectedChord && (
-        <div className="px-4 py-2 border-t border-border">
-          <ChordStrip
+      {/* Side panel - Circle of Fifths */}
+      {selectedChord && (
+        <div className="w-64 flex-shrink-0">
+          <CircleOfFifths
             currentRoot={selectedChord.root}
             currentQuality={selectedChord.quality}
             octave={selectedChord.octave}
             instrumentId={track.instrumentId ?? 'pad'}
-            onSelect={handleChordStripSelect}
-            onClose={handleCloseStrip}
+            onSelect={handleCircleSelect}
           />
         </div>
       )}

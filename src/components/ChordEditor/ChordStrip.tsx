@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { ChordQuality, getNoteNames, getQualityDisplayName, CIRCLE_OF_FIFTHS } from '@/core/harmony';
 import { getPlaybackEngine } from '@/core/playback';
 import { InstrumentId } from '@/core/types';
@@ -64,8 +64,6 @@ export function ChordStrip({
 }: ChordStripProps) {
   const noteNames = getNoteNames();
   const stripRef = useRef<HTMLDivElement>(null);
-  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastPreviewedRef = useRef<string | null>(null);
 
   // Get visible roots (current + 2 neighbors each direction)
   const visibleRoots = getCircleNeighbors(currentRoot, 2);
@@ -97,46 +95,10 @@ export function ChordStrip({
     };
   }, [onClose]);
 
-  // Cleanup hover timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (hoverTimeoutRef.current) {
-        clearTimeout(hoverTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Preview chord on hover (debounced)
-  const handleHover = useCallback((root: number, quality: ChordQuality) => {
-    const key = `${root}-${quality}`;
-
-    // Clear any pending preview
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-    }
-
-    // Don't re-preview the same chord
-    if (lastPreviewedRef.current === key) return;
-
-    hoverTimeoutRef.current = setTimeout(() => {
-      lastPreviewedRef.current = key;
-      getPlaybackEngine().previewChord(root, quality, octave, instrumentId);
-    }, 100);
-  }, [octave, instrumentId]);
-
-  // Clear last previewed when mouse leaves
-  const handleMouseLeave = useCallback(() => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-    }
-    lastPreviewedRef.current = null;
-  }, []);
-
-  // Select chord on click (also plays preview as confirmation)
+  // Select chord on click (plays preview as confirmation)
   const handleClick = useCallback((root: number, quality: ChordQuality) => {
     onSelect(root, quality);
     getPlaybackEngine().previewChord(root, quality, octave, instrumentId);
-    lastPreviewedRef.current = `${root}-${quality}`;
   }, [onSelect, octave, instrumentId]);
 
   // Navigate circle of fifths
@@ -151,7 +113,6 @@ export function ChordStrip({
     <div
       ref={stripRef}
       className="bg-surface border border-border rounded-lg shadow-lg p-3 flex flex-col gap-2"
-      onMouseLeave={handleMouseLeave}
     >
       {/* Root selection - circle of fifths */}
       <div className="flex items-center gap-1">
@@ -170,7 +131,6 @@ export function ChordStrip({
             <button
               key={root}
               onClick={() => handleClick(root, currentQuality)}
-              onMouseEnter={() => handleHover(root, currentQuality)}
               className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all min-w-[40px] ${
                 root === currentRoot
                   ? 'bg-coral text-white shadow-sm'
@@ -200,7 +160,6 @@ export function ChordStrip({
             <button
               key={quality}
               onClick={() => handleClick(currentRoot, quality)}
-              onMouseEnter={() => handleHover(currentRoot, quality)}
               className={`px-2 py-1 rounded text-xs font-medium transition-all ${
                 quality === currentQuality
                   ? 'bg-coral text-white'

@@ -72,6 +72,7 @@ export interface Track {
   blocks: Block[];
   childIds: string[];
   parentId?: string;
+  patternCategory?: PatternCategory;
 }
 
 export interface Project {

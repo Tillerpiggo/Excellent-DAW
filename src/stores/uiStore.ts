@@ -44,9 +44,13 @@ interface UIState {
   showLibrary: boolean;
   showChordEditor: boolean;
   showDrumEditor: boolean;
+  showArpEditor: boolean;
 
   // Drum editor state
   drumEditorQuantize: '16th' | '8th' | 'quarter';
+
+  // Arp editor state
+  arpEditorQuantize: '16th' | '8th' | 'quarter';
 
   // Chord picker state
   chordPickerOpen: boolean;
@@ -81,7 +85,9 @@ interface UIState {
   toggleLibrary: () => void;
   setShowChordEditor: (show: boolean) => void;
   setShowDrumEditor: (show: boolean) => void;
+  setShowArpEditor: (show: boolean) => void;
   setDrumEditorQuantize: (quantize: '16th' | '8th' | 'quarter') => void;
+  setArpEditorQuantize: (quantize: '16th' | '8th' | 'quarter') => void;
   openChordPicker: (index: number) => void;
   closeChordPicker: () => void;
 
@@ -128,9 +134,13 @@ export const useUIStore = create<UIState>((set, get) => ({
   showLibrary: true,
   showChordEditor: false,
   showDrumEditor: false,
+  showArpEditor: false,
 
   // Drum editor state
   drumEditorQuantize: '16th',
+
+  // Arp editor state
+  arpEditorQuantize: '16th',
 
   // Chord picker state
   chordPickerOpen: false,
@@ -237,8 +247,16 @@ export const useUIStore = create<UIState>((set, get) => ({
     set({ showDrumEditor: show });
   },
 
+  setShowArpEditor: (show) => {
+    set({ showArpEditor: show });
+  },
+
   setDrumEditorQuantize: (quantize) => {
     set({ drumEditorQuantize: quantize });
+  },
+
+  setArpEditorQuantize: (quantize) => {
+    set({ arpEditorQuantize: quantize });
   },
 
   openChordPicker: (index) => {

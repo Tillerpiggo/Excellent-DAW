@@ -5,31 +5,23 @@ import { Block, Track, Event } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { MidiEditor, MidiNote } from '@/components/shared/MidiEditor';
+import {
+  eventsToArpNotes,
+  arpNotesToEvents,
+  ArpNote,
+  ARP_ROWS,
+  ArpRow,
+  DEGREE_LABELS,
+  DEGREE_COLORS,
+} from '@/core/arp';
 
-interface DrumEditorProps {
+interface ArpEditorProps {
   block: Block;
   track: Track;
   beatsPerBar: number;
 }
 
-type DrumType = 'kick' | 'snare' | 'hihat' | 'clap';
 type QuantizeValue = '16th' | '8th' | 'quarter';
-
-const DRUM_ORDER: DrumType[] = ['hihat', 'clap', 'snare', 'kick'];
-
-const DRUM_LABELS: Record<DrumType, string> = {
-  hihat: 'HiHat',
-  clap: 'Clap',
-  snare: 'Snare',
-  kick: 'Kick',
-};
-
-const DRUM_COLORS: Record<DrumType, string> = {
-  hihat: '#FFD93D',
-  clap: '#6BCB77',
-  snare: '#4D96FF',
-  kick: '#FF6B6B',
-};
 
 const QUANTIZE_VALUES: Record<QuantizeValue, number> = {
   '16th': 0.25,
@@ -37,42 +29,50 @@ const QUANTIZE_VALUES: Record<QuantizeValue, number> = {
   'quarter': 1,
 };
 
-function extractDrumsFromBlock(block: Block): MidiNote[] {
+// Convert ArpNotes to MidiNotes for the editor
+function arpNotesToMidiNotes(arpNotes: ArpNote[]): MidiNote[] {
+  return arpNotes.map(note => ({
+    id: note.id,
+    row: String(note.degree),
+    time: note.time,
+    duration: note.duration,
+    velocity: note.velocity,
+  }));
+}
+
+// Convert MidiNotes back to ArpNotes (all in base octave for simplicity)
+function midiNotesToArpNotes(midiNotes: MidiNote[]): ArpNote[] {
+  return midiNotes.map(note => ({
+    id: note.id,
+    degree: parseInt(note.row, 10),
+    time: note.time,
+    duration: note.duration,
+    velocity: note.velocity,
+    octaveOffset: 0, // New notes are in base octave
+  }));
+}
+
+function extractArpFromBlock(block: Block): MidiNote[] {
   const allEvents = block.streams?.flatMap(s => s.events) || [];
-  const drumEvents = allEvents.filter(e => e.drum !== undefined);
-
-  return drumEvents.map((event, index) => ({
-    id: `${event.drum}-${event.time}-${index}`,
-    row: event.drum as string,
-    time: event.time,
-    duration: event.duration ?? 0.25,
-    velocity: event.velocity ?? 100,
-  }));
+  const pitchedEvents = allEvents.filter(e => e.pitch !== undefined);
+  const arpNotes = eventsToArpNotes(pitchedEvents);
+  return arpNotesToMidiNotes(arpNotes);
 }
 
-function notesToEvents(notes: MidiNote[]): Event[] {
-  return notes.map(n => ({
-    time: n.time,
-    drum: n.row as DrumType,
-    velocity: n.velocity,
-    duration: n.duration,
-  }));
-}
+export function ArpEditor({ block, track, beatsPerBar }: ArpEditorProps) {
+  const { updateBlock } = useProjectStore();
+  const { arpEditorQuantize, setArpEditorQuantize } = useUIStore();
 
-export function DrumEditor({ block, track, beatsPerBar }: DrumEditorProps) {
-  const { updateBlockDrums } = useProjectStore();
-  const { drumEditorQuantize, setDrumEditorQuantize } = useUIStore();
-
-  const [notes, setNotes] = useState<MidiNote[]>(() => extractDrumsFromBlock(block));
+  const [notes, setNotes] = useState<MidiNote[]>(() => extractArpFromBlock(block));
 
   // Update notes when block ID changes (not on every block update)
   const blockId = block.id;
   useEffect(() => {
-    setNotes(extractDrumsFromBlock(block));
+    setNotes(extractArpFromBlock(block));
   }, [blockId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalBeats = block.durationBars * beatsPerBar;
-  const quantize = QUANTIZE_VALUES[drumEditorQuantize];
+  const quantize = QUANTIZE_VALUES[arpEditorQuantize];
 
   // Handle notes change from MidiEditor
   const handleNotesChange = useCallback((newNotes: MidiNote[]) => {
@@ -82,11 +82,14 @@ export function DrumEditor({ block, track, beatsPerBar }: DrumEditorProps) {
   // Auto-save when notes change
   useEffect(() => {
     const timeout = setTimeout(() => {
-      const events = notesToEvents(notes);
-      updateBlockDrums(track.id, block.id, events);
+      const arpNotes = midiNotesToArpNotes(notes);
+      const events = arpNotesToEvents(arpNotes);
+      updateBlock(track.id, block.id, {
+        streams: [{ events }],
+      });
     }, 500);
     return () => clearTimeout(timeout);
-  }, [notes, track.id, block.id, updateBlockDrums]);
+  }, [notes, track.id, block.id, updateBlock]);
 
   // Clear all
   const handleClear = useCallback(() => {
@@ -101,8 +104,8 @@ export function DrumEditor({ block, track, beatsPerBar }: DrumEditorProps) {
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted">Grid:</span>
           <select
-            value={drumEditorQuantize}
-            onChange={(e) => setDrumEditorQuantize(e.target.value as QuantizeValue)}
+            value={arpEditorQuantize}
+            onChange={(e) => setArpEditorQuantize(e.target.value as QuantizeValue)}
             className="px-2 py-1 bg-background border border-border rounded text-sm text-foreground"
           >
             <option value="16th">1/16</option>
@@ -121,15 +124,15 @@ export function DrumEditor({ block, track, beatsPerBar }: DrumEditorProps) {
         <div className="flex-1" />
 
         <span className="text-xs text-muted">
-          {notes.length} {notes.length === 1 ? 'hit' : 'hits'} | Click + drag to draw
+          {notes.length} {notes.length === 1 ? 'note' : 'notes'} | Click + drag to draw
         </span>
       </div>
 
       {/* Piano roll area using MidiEditor */}
       <MidiEditor
-        rows={DRUM_ORDER}
-        rowLabels={DRUM_LABELS}
-        rowColors={DRUM_COLORS}
+        rows={ARP_ROWS as unknown as ArpRow[]}
+        rowLabels={DEGREE_LABELS as Record<ArpRow, string>}
+        rowColors={DEGREE_COLORS as Record<ArpRow, string>}
         notes={notes}
         onNotesChange={handleNotesChange}
         totalBeats={totalBeats}

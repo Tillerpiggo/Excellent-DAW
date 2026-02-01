@@ -66,6 +66,7 @@ function createDefaultTrack(
     blocks: [],
     childIds: [],
     parentId,
+    patternCategory: preset?.category,
   };
 
   // Add a block from preset if provided

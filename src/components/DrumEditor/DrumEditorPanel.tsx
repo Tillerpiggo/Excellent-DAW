@@ -75,7 +75,7 @@ export function DrumEditorPanel() {
   }
 
   return (
-    <div className="h-48 border-t border-border bg-surface flex flex-col">
+    <div className="h-full border-t border-border bg-surface flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-surface">
         <div className="flex items-center gap-2">
