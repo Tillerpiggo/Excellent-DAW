@@ -8,7 +8,7 @@ import { useUIStore } from '@/stores/uiStore';
 export function usePlayback() {
   const engineRef = useRef(getPlaybackEngine());
   const project = useProjectStore((state) => state.project);
-  const { isPlaying, setPlaying, setCurrentBeat } = useUIStore();
+  const { isPlaying, setPlaying, setCurrentBeat, setLoopRegion: setUILoopRegion } = useUIStore();
 
   // Setup callbacks on mount
   useEffect(() => {
@@ -63,6 +63,17 @@ export function usePlayback() {
     useProjectStore.getState().setBpm(bpm);
   }, []);
 
+  const seekTo = useCallback((beat: number) => {
+    const engine = engineRef.current;
+    engine.seekTo(beat, project.beatsPerBar);
+  }, [project.beatsPerBar]);
+
+  const setLoopRegion = useCallback((start: number | null, end: number | null) => {
+    const engine = engineRef.current;
+    engine.setLoopRegion(start, end, project.beatsPerBar);
+    setUILoopRegion(start, end);
+  }, [project.beatsPerBar, setUILoopRegion]);
+
   return {
     isPlaying,
     play,
@@ -71,5 +82,7 @@ export function usePlayback() {
     resume,
     toggle,
     setBpm,
+    seekTo,
+    setLoopRegion,
   };
 }

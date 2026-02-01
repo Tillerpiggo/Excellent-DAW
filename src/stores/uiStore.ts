@@ -28,6 +28,12 @@ interface UIState {
   isPlaying: boolean;
   currentBeat: number;
 
+  // Loop region
+  loopStart: number | null;
+  loopEnd: number | null;
+  loopEnabled: boolean;
+  isScrubbing: boolean;
+
   // View
   collapsedTrackIds: Set<string>;
   pixelsPerBeat: number;
@@ -56,6 +62,12 @@ interface UIState {
 
   setPlaying: (playing: boolean) => void;
   setCurrentBeat: (beat: number) => void;
+
+  // Loop region actions
+  setLoopRegion: (start: number | null, end: number | null) => void;
+  setLoopEnabled: (enabled: boolean) => void;
+  clearLoop: () => void;
+  setIsScrubbing: (scrubbing: boolean) => void;
 
   toggleTrackCollapsed: (trackId: string) => void;
   setPixelsPerBeat: (pixels: number) => void;
@@ -93,6 +105,12 @@ export const useUIStore = create<UIState>((set, get) => ({
   // Playback
   isPlaying: false,
   currentBeat: 0,
+
+  // Loop region
+  loopStart: null,
+  loopEnd: null,
+  loopEnabled: false,
+  isScrubbing: false,
 
   // View
   collapsedTrackIds: new Set(),
@@ -155,6 +173,22 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   setCurrentBeat: (beat) => {
     set({ currentBeat: beat });
+  },
+
+  setLoopRegion: (start, end) => {
+    set({ loopStart: start, loopEnd: end });
+  },
+
+  setLoopEnabled: (enabled) => {
+    set({ loopEnabled: enabled });
+  },
+
+  clearLoop: () => {
+    set({ loopStart: null, loopEnd: null, loopEnabled: false });
+  },
+
+  setIsScrubbing: (scrubbing) => {
+    set({ isScrubbing: scrubbing });
   },
 
   toggleTrackCollapsed: (trackId) => {

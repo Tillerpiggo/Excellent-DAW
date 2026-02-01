@@ -50,14 +50,15 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
       if (self.events.length === 0) return parent;
       if (parent.events.length === 0) return self;
 
-      // Find the time range covered by self's events
+      // Find the time range covered by self's events (by start time only, not duration)
       const minTime = Math.min(...self.events.map(e => e.time));
-      const maxTime = Math.max(...self.events.map(e => e.time + (e.duration || 0)));
+      const maxTime = Math.max(...self.events.map(e => e.time));
 
       // Round to bar boundaries
       const beatsPerBar = ctx?.beatsPerBar || 4;
       const rangeStart = Math.floor(minTime / beatsPerBar) * beatsPerBar;
-      const rangeEnd = Math.ceil(maxTime / beatsPerBar) * beatsPerBar;
+      // Use the bar containing the last event's START time, not its end
+      const rangeEnd = (Math.floor(maxTime / beatsPerBar) + 1) * beatsPerBar;
 
       // Keep parent events outside the override range
       const keptParentEvents = parent.events.filter(

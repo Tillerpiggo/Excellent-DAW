@@ -22,12 +22,11 @@ const TRACK_TYPE_OPTIONS: { id: TrackTypeId; label: string; category: string }[]
   { id: 'harmonyMap', label: 'Harmony Map', category: 'Mapper' },
 ];
 
-const INSTRUMENT_OPTIONS: { id: InstrumentId; label: string }[] = [
-  { id: 'synth', label: 'Synth' },
-  { id: 'pad', label: 'Pad' },
-  { id: 'bass', label: 'Bass' },
-  { id: 'drums', label: 'Drums' },
-];
+// Derived from INSTRUMENTS registry - no need to maintain separately
+const INSTRUMENT_OPTIONS = Object.entries(INSTRUMENTS).map(([id, def]) => ({
+  id: id as InstrumentId,
+  label: def.name,
+}));
 
 export function TrackInspector({ track }: TrackInspectorProps) {
   const { updateTrack, deleteTrack } = useProjectStore();

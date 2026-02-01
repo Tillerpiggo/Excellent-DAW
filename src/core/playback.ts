@@ -188,6 +188,35 @@ export class PlaybackEngine {
     }
   }
 
+  seekTo(beat: number, beatsPerBar: number): void {
+    const bars = Math.floor(beat / beatsPerBar);
+    const beats = beat % beatsPerBar;
+    Tone.getTransport().position = `${bars}:${beats}:0`;
+    this.callbacks.onBeatChange?.(beat);
+  }
+
+  setLoopRegion(startBeat: number | null, endBeat: number | null, beatsPerBar: number): void {
+    const transport = Tone.getTransport();
+
+    if (startBeat === null || endBeat === null) {
+      // Clear loop region - restore full project loop
+      if (this.project) {
+        transport.loopStart = 0;
+        transport.loopEnd = `${this.project.totalBars}:0`;
+      }
+      return;
+    }
+
+    // Set custom loop region
+    const startBars = Math.floor(startBeat / beatsPerBar);
+    const startBeats = startBeat % beatsPerBar;
+    const endBars = Math.floor(endBeat / beatsPerBar);
+    const endBeats = endBeat % beatsPerBar;
+
+    transport.loopStart = `${startBars}:${startBeats}:0`;
+    transport.loopEnd = `${endBars}:${endBeats}:0`;
+  }
+
   dispose(): void {
     this.stop();
 

@@ -52,7 +52,7 @@ export function Timeline() {
         onScroll={handleScroll}
       >
         <div
-          className="relative"
+          className="timeline-content relative"
           style={{ width: timelineWidth, minHeight: '100%' }}
         >
           {/* Grid lines */}

@@ -7,6 +7,8 @@ import { useProjectStore } from '@/stores/projectStore';
 import { useDragDrop } from '@/hooks/useDragDrop';
 import { INSTRUMENT_COLORS, TRACK_TYPE_COLORS, darken, tintWhite } from '@/utils/colors';
 
+type ResizeMode = 'left' | 'right-loop' | 'right-extend' | null;
+
 interface TimelineBlockProps {
   block: Block;
   track: Track;
@@ -24,9 +26,10 @@ export function TimelineBlock({
   const { updateBlock } = useProjectStore();
   const { handleBlockDragStart, handleDragEnd } = useDragDrop();
 
-  const [isResizing, setIsResizing] = useState(false);
+  const [resizeMode, setResizeMode] = useState<ResizeMode>(null);
   const resizeStartX = useRef(0);
   const originalDuration = useRef(block.durationBars);
+  const originalStartBar = useRef(block.startBar);
 
   const isSelected = selectedBlockId === block.id;
 
@@ -54,37 +57,81 @@ export function TimelineBlock({
   const blockTotalBeats = block.durationBars * beatsPerBar;
   const loopCount = block.loop ? Math.ceil(blockTotalBeats / patternBeats) : 1;
 
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+  // Left handle resize start
+  const handleLeftResizeStart = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    setIsResizing(true);
+    setResizeMode('left');
     resizeStartX.current = e.clientX;
     originalDuration.current = block.durationBars;
-  }, [block.durationBars]);
+    originalStartBar.current = block.startBar;
+  }, [block.durationBars, block.startBar]);
+
+  // Right handle resize start - detect zone based on Y position
+  const handleRightResizeStart = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    const target = e.currentTarget as HTMLElement;
+    const rect = target.getBoundingClientRect();
+    const relativeY = e.clientY - rect.top;
+    const isLoopZone = relativeY < rect.height / 2;
+
+    setResizeMode(isLoopZone ? 'right-loop' : 'right-extend');
+    resizeStartX.current = e.clientX;
+    originalDuration.current = block.durationBars;
+    originalStartBar.current = block.startBar;
+  }, [block.durationBars, block.startBar]);
 
   const handleResizeMove = useCallback((e: MouseEvent) => {
-    if (!isResizing) return;
+    if (!resizeMode) return;
 
     const deltaX = e.clientX - resizeStartX.current;
     const deltaBars = Math.round(deltaX / barWidth);
-    const newDuration = Math.max(1, originalDuration.current + deltaBars);
 
-    if (newDuration !== block.durationBars) {
-      // When extending, enable loop by default
-      const shouldLoop = newDuration > originalDuration.current ? true : block.loop;
-      updateBlock(track.id, block.id, {
-        durationBars: newDuration,
-        loop: shouldLoop,
-      });
+    if (resizeMode === 'left') {
+      // Left handle: moving left = earlier start + longer duration
+      // Moving right = later start + shorter duration
+      const newStartBar = Math.max(0, originalStartBar.current + deltaBars);
+      const startDelta = newStartBar - originalStartBar.current;
+      const newDuration = Math.max(1, originalDuration.current - startDelta);
+
+      // Ensure we don't extend past the original end position
+      const originalEndBar = originalStartBar.current + originalDuration.current;
+      const clampedDuration = Math.min(newDuration, originalEndBar - newStartBar);
+
+      if (clampedDuration >= 1 && (newStartBar !== block.startBar || clampedDuration !== block.durationBars)) {
+        updateBlock(track.id, block.id, {
+          startBar: newStartBar,
+          durationBars: clampedDuration,
+        });
+      }
+    } else if (resizeMode === 'right-loop') {
+      // Right handle loop zone: extend with loop enabled
+      const newDuration = Math.max(1, originalDuration.current + deltaBars);
+      if (newDuration !== block.durationBars) {
+        updateBlock(track.id, block.id, {
+          durationBars: newDuration,
+          loop: true,
+        });
+      }
+    } else if (resizeMode === 'right-extend') {
+      // Right handle extend zone: extend without touching loop
+      const newDuration = Math.max(1, originalDuration.current + deltaBars);
+      if (newDuration !== block.durationBars) {
+        updateBlock(track.id, block.id, {
+          durationBars: newDuration,
+        });
+      }
     }
-  }, [isResizing, barWidth, block.durationBars, block.id, block.loop, track.id, updateBlock]);
+  }, [resizeMode, barWidth, block.startBar, block.durationBars, block.id, track.id, updateBlock]);
 
   const handleResizeEnd = useCallback(() => {
-    setIsResizing(false);
+    setResizeMode(null);
   }, []);
 
   useEffect(() => {
-    if (isResizing) {
+    if (resizeMode) {
       document.addEventListener('mousemove', handleResizeMove);
       document.addEventListener('mouseup', handleResizeEnd);
       return () => {
@@ -92,7 +139,9 @@ export function TimelineBlock({
         document.removeEventListener('mouseup', handleResizeEnd);
       };
     }
-  }, [isResizing, handleResizeMove, handleResizeEnd]);
+  }, [resizeMode, handleResizeMove, handleResizeEnd]);
+
+  const isResizing = resizeMode !== null;
 
   // Reserved space for resize handle
   const handleWidthPx = 12;
@@ -202,16 +251,45 @@ export function TimelineBlock({
         pixelsPerBeat={pixelsPerBeat}
       />
 
-      {/* Resize handle - rectangular, renders over header */}
+      {/* Left resize handle */}
       <div
-        className={`absolute top-0 bottom-0 right-0 w-3 cursor-ew-resize transition-opacity z-20 ${
+        className={`absolute top-0 bottom-0 left-0 w-3 cursor-ew-resize transition-opacity z-20 ${
+          isSelected ? '' : 'hover:opacity-100 opacity-80'
+        }`}
+        style={{
+          backgroundColor: isSelected ? selectedHandleColor : handleColor,
+          borderTopLeftRadius: 6,
+          borderBottomLeftRadius: 6,
+        }}
+        onMouseDown={handleLeftResizeStart}
+      />
+
+      {/* Right resize handle - split into two zones */}
+      <div
+        className={`absolute top-0 bottom-0 right-0 w-3 cursor-ew-resize z-20 ${
           isSelected ? '' : 'hover:opacity-100 opacity-80'
         }`}
         style={{
           backgroundColor: isSelected ? selectedHandleColor : handleColor,
         }}
-        onMouseDown={handleResizeStart}
-      />
+        onMouseDown={handleRightResizeStart}
+      >
+        {/* Top half - Loop zone indicator */}
+        <div
+          className="absolute top-0 left-0 right-0 flex items-center justify-center text-[8px] text-white/60 select-none"
+          style={{ height: '50%' }}
+        >
+          ⟳
+        </div>
+        {/* Bottom half - Extend zone (solid, no indicator) */}
+        <div
+          className="absolute bottom-0 left-0 right-0"
+          style={{
+            height: '50%',
+            backgroundColor: isSelected ? darken(selectedHandleColor, 10) : darken(handleColor, 10),
+          }}
+        />
+      </div>
     </div>
   );
 }

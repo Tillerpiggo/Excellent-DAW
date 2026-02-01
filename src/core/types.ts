@@ -53,7 +53,7 @@ export type TrackTypeId =
   | 'harmonyMap'
   | 'rhythm';
 
-export type InstrumentId = 'synth' | 'pad' | 'bass' | 'drums';
+export type InstrumentId = 'synth' | 'keys' | 'pad' | 'bass' | 'drums';
 
 export interface Track {
   id: string;
@@ -102,6 +102,7 @@ export interface InstrumentDefinition {
   id: InstrumentId;
   name: string;
   description: string;
+  color: string;
 }
 
 export interface HarmonyInfo {
