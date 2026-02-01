@@ -173,31 +173,108 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
   harmonyMap: {
     id: 'harmonyMap',
     name: 'Harmony Map',
-    description: 'Maps parent pitches to current chord tones',
-    category: 'mapper',
-    combine: (parent, _self, ctx) => {
-      if (!ctx.harmony || ctx.harmony.chord.length === 0) return parent;
+    description: 'Maps this track\'s pitches to follow parent harmony over time',
+    category: 'modifier',
+    combine: (parent, self, ctx) => {
+      // If no self events, pass through parent unchanged
+      if (self.events.length === 0) return parent;
 
-      const chord = ctx.harmony.chord;
+      // Get harmony from the context's parent output (flows down the signal chain)
+      const harmonySource = ctx.parentOutput;
+      if (!harmonySource) {
+        // No upstream harmony - just return self events as-is
+        return self;
+      }
 
-      const mappedEvents = parent.events.map(parentEvent => {
-        if (parentEvent.pitch === undefined) return parentEvent;
+      const parentPitched = harmonySource.events.filter(e => e.pitch !== undefined);
+      if (parentPitched.length === 0) {
+        // No pitched events in harmony source - return self as-is
+        return self;
+      }
 
-        // Map pitch to chord tone based on scale degree
-        const octave = Math.floor(parentEvent.pitch / 12);
-        const degree = parentEvent.pitch % 12;
-        const chordIndex = Math.floor((degree / 12) * chord.length) % chord.length;
-        const chordTone = chord[chordIndex] % 12;
+      // Helper: extract chord tones from notes, keeping root (lowest) first
+      const extractChordTones = (notes: typeof parentPitched): number[] => {
+        if (notes.length === 0) return [];
+        // Sort by actual pitch to find the bass note (likely the root)
+        const sorted = [...notes].sort((a, b) => a.pitch! - b.pitch!);
+        const bassNote = sorted[0].pitch! % 12;
+        // Get unique pitch classes
+        const pitchClasses = [...new Set(notes.map(e => e.pitch! % 12))];
+        // Reorder so bass note is first, then others in ascending order
+        const others = pitchClasses.filter(p => p !== bassNote).sort((a, b) => a - b);
+        return [bassNote, ...others];
+      };
+
+      // Helper: find chord tones active at a given time
+      const getChordAtTime = (time: number): number[] => {
+        // Find parent notes that overlap with this time
+        // A note is active if: noteTime <= time < noteTime + noteDuration
+        const activeNotes = parentPitched.filter(e => {
+          const noteEnd = e.time + (e.duration || 0.5);
+          return e.time <= time && time < noteEnd;
+        });
+
+        if (activeNotes.length > 0) {
+          return extractChordTones(activeNotes);
+        }
+
+        // Fallback: find the most recent chord before this time
+        const beforeNotes = parentPitched.filter(e => e.time <= time);
+        if (beforeNotes.length === 0) {
+          // Use first chord if nothing before
+          const firstTime = Math.min(...parentPitched.map(e => e.time));
+          const firstChordNotes = parentPitched.filter(e => Math.abs(e.time - firstTime) < 0.1);
+          return extractChordTones(firstChordNotes);
+        }
+
+        // Get the most recent time with notes
+        const lastTime = Math.max(...beforeNotes.map(e => e.time));
+        const lastChordNotes = beforeNotes.filter(e => Math.abs(e.time - lastTime) < 0.1);
+        return extractChordTones(lastChordNotes);
+      };
+
+      // Determine the reference chord from the first arp note's pitch context
+      // This lets us figure out what chord degree each arp note represents
+      const firstPitch = self.events.find(e => e.pitch !== undefined)?.pitch ?? 60;
+      const referenceRoot = firstPitch % 12;
+
+      // Map self's pitches to chord tones at each note's time
+      const mappedEvents = self.events.map(selfEvent => {
+        if (selfEvent.pitch === undefined) return selfEvent;
+
+        const chordTones = getChordAtTime(selfEvent.time);
+        if (chordTones.length === 0) return selfEvent;
+
+        // Calculate which chord degree this note represents
+        // by its semitone distance from the reference root
+        const semitones = selfEvent.pitch - firstPitch;
+
+        // Map semitones to chord tone index:
+        // 0 semitones = root (index 0)
+        // ~4 semitones = 3rd (index 1)
+        // ~7 semitones = 5th (index 2)
+        // We use the semitone offset to pick a chord tone, wrapping around
+        const octaveOffset = Math.floor(semitones / 12);
+        const intervalInOctave = ((semitones % 12) + 12) % 12;
+
+        // Map the interval to the nearest chord tone index
+        // Divide the octave proportionally by number of chord tones
+        const chordIndex = Math.round((intervalInOctave / 12) * chordTones.length) % chordTones.length;
+        const chordTone = chordTones[chordIndex];
+
+        // Preserve the octave relationship from the original arp
+        const baseOctave = Math.floor(firstPitch / 12);
+        const targetOctave = baseOctave + octaveOffset;
 
         return {
-          ...parentEvent,
-          pitch: octave * 12 + chordTone,
+          ...selfEvent,
+          pitch: targetOctave * 12 + chordTone,
         };
       });
 
       return {
         events: mappedEvents,
-        harmony: ctx.harmony,
+        harmony: harmonySource.harmony,
       };
     },
   },

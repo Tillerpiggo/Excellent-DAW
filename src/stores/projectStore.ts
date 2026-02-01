@@ -77,6 +77,22 @@ export const useProjectStore = create<ProjectState>()(
       const track = createDefaultTrack(parentId, preset);
 
       set((state) => {
+        // Auto-set harmonyMap for arps added as children of tracks with pitched content
+        if (preset?.category === 'arp' && parentId) {
+          const parent = state.project.tracks[parentId];
+          if (parent) {
+            // Check if parent has any pitched events (not just drums)
+            const hasPitchedContent = parent.blocks.some(block =>
+              block.streams?.some(stream =>
+                stream.events.some(e => e.pitch !== undefined)
+              )
+            );
+            if (hasPitchedContent) {
+              track.typeId = 'harmonyMap';
+            }
+          }
+        }
+
         state.project.tracks[track.id] = track;
 
         if (parentId && state.project.tracks[parentId]) {

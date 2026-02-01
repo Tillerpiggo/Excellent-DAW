@@ -16,7 +16,7 @@ export class PlaybackEngine {
   private state: PlaybackState = 'stopped';
   private animationFrame: number | null = null;
   private callbacks: PlaybackCallbacks = {};
-  private scheduledEvents: number[] = [];
+  private parts: Tone.Part[] = [];
   private project: Project | null = null;
   private isInitialized = false;
 
@@ -69,29 +69,36 @@ export class PlaybackEngine {
     for (const resolved of resolvedTracks) {
       if (!resolved.instrumentId) continue;
 
-      for (const event of resolved.output.events) {
-        if (event.time >= totalBeats) continue;
+      // Filter events within bounds and convert to Tone.Part format
+      const partEvents = resolved.output.events
+        .filter(event => event.time < totalBeats)
+        .map(event => ({
+          time: `${Math.floor(event.time / project.beatsPerBar)}:${event.time % project.beatsPerBar}`,
+          event,
+        }));
 
-        // Schedule the event
-        const timeString = `${Math.floor(event.time / project.beatsPerBar)}:${event.time % project.beatsPerBar}`;
+      if (partEvents.length === 0) continue;
 
-        const eventId = Tone.getTransport().schedule((time) => {
-          scheduleEvent(
-            event,
-            resolved.instrumentId as InstrumentId,
-            this.instruments!,
-            time
-          );
-        }, timeString);
+      // Create a Tone.Part for this track - handles lookahead scheduling automatically
+      const part = new Tone.Part((time, { event }) => {
+        scheduleEvent(
+          event,
+          resolved.instrumentId as InstrumentId,
+          this.instruments!,
+          time
+        );
+      }, partEvents);
 
-        this.scheduledEvents.push(eventId);
-      }
+      part.start(0);
+      part.loop = true;
+      part.loopEnd = `${project.totalBars}:0`;
+
+      this.parts.push(part);
     }
 
-    // Schedule loop point
-    const totalDuration = `${project.totalBars}:0`;
+    // Configure transport loop
     Tone.getTransport().loop = true;
-    Tone.getTransport().loopEnd = totalDuration;
+    Tone.getTransport().loopEnd = `${project.totalBars}:0`;
     Tone.getTransport().loopStart = 0;
   }
 
@@ -125,11 +132,11 @@ export class PlaybackEngine {
     Tone.getTransport().stop();
     Tone.getTransport().position = 0;
 
-    // Clear scheduled events
-    for (const eventId of this.scheduledEvents) {
-      Tone.getTransport().clear(eventId);
+    // Dispose all parts
+    for (const part of this.parts) {
+      part.dispose();
     }
-    this.scheduledEvents = [];
+    this.parts = [];
 
     // Stop beat tracking
     if (this.animationFrame !== null) {

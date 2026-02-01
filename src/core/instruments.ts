@@ -26,6 +26,7 @@ export const INSTRUMENTS: Record<InstrumentId, InstrumentDefinition> = {
 
 export type InstrumentInstances = {
   synth: Tone.PolySynth;
+  synthFilter: Tone.Filter;
   pad: Tone.PolySynth;
   bass: Tone.MonoSynth;
   kick: Tone.MembraneSynth;
@@ -35,6 +36,13 @@ export type InstrumentInstances = {
 };
 
 export function createInstruments(): InstrumentInstances {
+  // Low pass filter to soften the sawtooth edge
+  const synthFilter = new Tone.Filter({
+    frequency: 2500,
+    type: 'lowpass',
+    rolloff: -12,
+  }).toDestination();
+
   const synth = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: 'sawtooth' },
     envelope: {
@@ -43,7 +51,7 @@ export function createInstruments(): InstrumentInstances {
       sustain: 0.5,
       release: 0.3,
     },
-  }).toDestination();
+  }).connect(synthFilter);
   synth.volume.value = -6;
 
   const pad = new Tone.PolySynth(Tone.Synth, {
@@ -52,7 +60,7 @@ export function createInstruments(): InstrumentInstances {
       attack: 0.3,
       decay: 0.5,
       sustain: 0.8,
-      release: 1.0,
+      release: 0.4,
     },
   }).toDestination();
   pad.volume.value = -10;
@@ -125,7 +133,7 @@ export function createInstruments(): InstrumentInstances {
   }).toDestination();
   clap.volume.value = -8;
 
-  return { synth, pad, bass, kick, snare, hihat, clap };
+  return { synth, synthFilter, pad, bass, kick, snare, hihat, clap };
 }
 
 export function midiToFreq(midi: number): number {
@@ -181,6 +189,7 @@ export function scheduleEvent(
 
 export function disposeInstruments(instruments: InstrumentInstances): void {
   instruments.synth.dispose();
+  instruments.synthFilter.dispose();
   instruments.pad.dispose();
   instruments.bass.dispose();
   instruments.kick.dispose();

@@ -44,16 +44,52 @@ export function resolveTrack(
   const trackType = getTrackType(track.typeId);
 
   // Build context with harmony info
-  const enrichedContext = buildContext(context, parentOutput, selfOutput);
+  let enrichedContext = buildContext(context, parentOutput, selfOutput);
 
   // Combine outputs
-  const combinedOutput = trackType.combine(
+  let combinedOutput = trackType.combine(
     parentOutput || { events: [] },
     selfOutput,
     enrichedContext
   );
 
-  // If this track has an instrument, it produces audio
+  // Separate children into modifiers (without instruments) and regular children
+  const modifierChildren: Track[] = [];
+  const regularChildren: Track[] = [];
+
+  for (const childId of track.childIds) {
+    const childTrack = project.tracks[childId];
+    if (!childTrack || childTrack.muted) continue;
+
+    const childType = getTrackType(childTrack.typeId);
+    // Modifiers without instruments should transform the parent's output
+    if (childType.category === 'modifier' && !childTrack.instrumentId) {
+      modifierChildren.push(childTrack);
+    } else {
+      regularChildren.push(childTrack);
+    }
+  }
+
+  // Apply modifier children to this track's output (in order)
+  for (const modifierTrack of modifierChildren) {
+    const modifierType = getTrackType(modifierTrack.typeId);
+    const modifierSelf = resolveBlocks(modifierTrack.blocks, project, enrichedContext);
+    const modifierContext = buildContext(enrichedContext, combinedOutput, modifierSelf);
+
+    combinedOutput = modifierType.combine(combinedOutput, modifierSelf, modifierContext);
+
+    // Recursively apply any nested modifiers from this modifier's children
+    const nestedResults = resolveTrack(modifierTrack, project, modifierContext, combinedOutput);
+    // Only take the output transformation, not push results (modifier has no instrument)
+    // But if modifier has children with instruments, those should still produce output
+    for (const nested of nestedResults) {
+      if (nested.instrumentId) {
+        results.push(nested);
+      }
+    }
+  }
+
+  // Now push this track's output (after all modifiers applied)
   if (track.instrumentId && combinedOutput.events.length > 0) {
     results.push({
       trackId: track.id,
@@ -62,11 +98,8 @@ export function resolveTrack(
     });
   }
 
-  // Process children with this track's output as parent
-  for (const childId of track.childIds) {
-    const childTrack = project.tracks[childId];
-    if (!childTrack || childTrack.muted) continue;
-
+  // Process regular children with this track's (now modified) output as parent
+  for (const childTrack of regularChildren) {
     const childResults = resolveTrack(childTrack, project, enrichedContext, combinedOutput);
     results.push(...childResults);
   }

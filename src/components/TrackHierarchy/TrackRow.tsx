@@ -46,6 +46,7 @@ export function TrackRow({ node }: TrackRowProps) {
       onDragLeave={handleDragLeave}
       onDrop={(e) => {
         if (dragState.type === 'preset') {
+          e.stopPropagation();
           handleHierarchyDrop(e, track.id);
         }
       }}
