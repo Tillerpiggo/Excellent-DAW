@@ -104,7 +104,7 @@ export function TimelineBlock({
 
   return (
     <div
-      className={`absolute top-1 bottom-1 rounded-md cursor-pointer transition-all overflow-hidden ${
+      className={`absolute top-1 bottom-1 rounded-md cursor-pointer overflow-hidden transition-all ${
         isResizing ? 'cursor-ew-resize' : ''
       }`}
       style={{
@@ -139,12 +139,15 @@ export function TimelineBlock({
         return (
           <div
             key={`iter-${i}`}
-            className="absolute top-0 bottom-0 pointer-events-none"
+            className={`absolute top-0 bottom-0 pointer-events-none ${isLast ? 'transition-all' : ''}`}
             style={{
               left: iterationLeftPx,
-              width: isLast
-                ? Math.min(iterationWidthPx, width - iterationLeftPx - handleWidthPx)
-                : iterationWidthPx,
+              width: Math.max(
+                4,
+                isLast
+                  ? Math.min(iterationWidthPx, width - iterationLeftPx - handleWidthPx)
+                  : iterationWidthPx
+              ),
               backgroundColor: isFirst ? baseColor : darken(baseColor, 20),
               // Last iteration blends into handle (no right border-radius)
               borderTopLeftRadius: 6,

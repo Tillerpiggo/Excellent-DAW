@@ -51,7 +51,7 @@ export function TrackInspector({ track }: TrackInspectorProps) {
           type="text"
           value={track.name}
           onChange={(e) => updateTrack(track.id, { name: e.target.value })}
-          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
         />
       </div>
 
@@ -61,7 +61,7 @@ export function TrackInspector({ track }: TrackInspectorProps) {
         <select
           value={track.typeId}
           onChange={(e) => updateTrack(track.id, { typeId: e.target.value as TrackTypeId })}
-          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
         >
           {TRACK_TYPE_OPTIONS.map((opt) => (
             <option key={opt.id} value={opt.id}>
@@ -82,7 +82,7 @@ export function TrackInspector({ track }: TrackInspectorProps) {
               instrumentId: e.target.value ? (e.target.value as InstrumentId) : undefined,
             })
           }
-          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
         >
           <option value="">None (modifier only)</option>
           {INSTRUMENT_OPTIONS.map((opt) => (
@@ -105,7 +105,7 @@ export function TrackInspector({ track }: TrackInspectorProps) {
             type="checkbox"
             checked={track.muted}
             onChange={(e) => updateTrack(track.id, { muted: e.target.checked })}
-            className="w-4 h-4 rounded border-border accent-accent"
+            className="w-4 h-4 rounded border-border accent-accent-from"
           />
           <span className="text-sm">Muted</span>
         </label>

@@ -422,6 +422,121 @@ export const PATTERN_PRESETS: PatternPreset[] = [
       { time: 0, pitch: 48, velocity: 100 }, // 60 - 12 = octave down
     ],
   },
+  {
+    id: 'mod-mute-bar',
+    name: 'Mute Bar',
+    category: 'modifier',
+    description: 'Silences one bar',
+    defaultTrackType: 'mute',
+    durationBars: 1,
+    events: [
+      { time: 0, velocity: 100 },
+    ],
+  },
+  {
+    id: 'mod-mute-even',
+    name: 'Mute Even Bars',
+    category: 'modifier',
+    description: 'Silences bars 2 and 4 (even bars)',
+    defaultTrackType: 'mute',
+    durationBars: 4,
+    events: [
+      { time: 4, velocity: 100 },   // Bar 2 (beats 4-7)
+      { time: 12, velocity: 100 },  // Bar 4 (beats 12-15)
+    ],
+  },
+  {
+    id: 'mod-mute-odd',
+    name: 'Mute Odd Bars',
+    category: 'modifier',
+    description: 'Silences bars 1 and 3 (odd bars)',
+    defaultTrackType: 'mute',
+    durationBars: 4,
+    events: [
+      { time: 0, velocity: 100 },   // Bar 1 (beats 0-3)
+      { time: 8, velocity: 100 },   // Bar 3 (beats 8-11)
+    ],
+  },
+
+  // ========== RHYTHM ==========
+  {
+    id: 'rhythm-quarter',
+    name: 'Quarter Notes',
+    category: 'rhythm',
+    description: 'Triggers on every beat',
+    defaultTrackType: 'rhythm',
+    durationBars: 1,
+    events: [
+      note(0, 60, 0.25), note(1, 60, 0.25),
+      note(2, 60, 0.25), note(3, 60, 0.25),
+    ],
+  },
+  {
+    id: 'rhythm-eighth',
+    name: 'Eighth Notes',
+    category: 'rhythm',
+    description: 'Triggers on every eighth note',
+    defaultTrackType: 'rhythm',
+    durationBars: 1,
+    events: [
+      note(0, 60, 0.25), note(0.5, 60, 0.25),
+      note(1, 60, 0.25), note(1.5, 60, 0.25),
+      note(2, 60, 0.25), note(2.5, 60, 0.25),
+      note(3, 60, 0.25), note(3.5, 60, 0.25),
+    ],
+  },
+  {
+    id: 'rhythm-sixteenth',
+    name: 'Sixteenth Notes',
+    category: 'rhythm',
+    description: 'Triggers on every sixteenth note',
+    defaultTrackType: 'rhythm',
+    durationBars: 1,
+    events: Array.from({ length: 16 }, (_, i) =>
+      note(i * 0.25, 60, 0.125, i % 4 === 0 ? 100 : 80)
+    ),
+  },
+  {
+    id: 'rhythm-offbeat',
+    name: 'Off-beats',
+    category: 'rhythm',
+    description: 'Triggers on the off-beats (ands)',
+    defaultTrackType: 'rhythm',
+    durationBars: 1,
+    events: [
+      note(0.5, 60, 0.25), note(1.5, 60, 0.25),
+      note(2.5, 60, 0.25), note(3.5, 60, 0.25),
+    ],
+  },
+  {
+    id: 'rhythm-syncopated',
+    name: 'Syncopated',
+    category: 'rhythm',
+    description: 'Off-beat syncopated pattern',
+    defaultTrackType: 'rhythm',
+    durationBars: 1,
+    events: [
+      note(0, 60, 0.25),
+      note(0.75, 60, 0.25),
+      note(1.5, 60, 0.25),
+      note(2.25, 60, 0.25),
+      note(3, 60, 0.25),
+      note(3.5, 60, 0.25),
+    ],
+  },
+  {
+    id: 'rhythm-tresillo',
+    name: 'Tresillo (3+3+2)',
+    category: 'rhythm',
+    description: 'Classic Afro-Cuban 3+3+2 pattern',
+    defaultTrackType: 'rhythm',
+    durationBars: 1,
+    events: [
+      note(0, 60, 0.25),
+      note(1.5, 60, 0.25),
+      note(3, 60, 0.25),
+    ],
+  },
 ];
 
 export function getPreset(id: string): PatternPreset | undefined {
@@ -432,4 +547,4 @@ export function getPresetsByCategory(category: string): PatternPreset[] {
   return PATTERN_PRESETS.filter(p => p.category === category);
 }
 
-export const PRESET_CATEGORIES = ['drums', 'chords', 'bass', 'arp', 'modifier'] as const;
+export const PRESET_CATEGORIES = ['drums', 'chords', 'bass', 'arp', 'modifier', 'rhythm'] as const;

@@ -33,7 +33,7 @@ export function useDragDrop() {
   // Start dragging a block from the timeline
   const handleBlockDragStart = useCallback(
     (e: DragEvent, blockId: string, trackId: string) => {
-      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.effectAllowed = 'copyMove';
       e.dataTransfer.setData('application/json', JSON.stringify({ type: 'block', blockId, trackId }));
       startDragBlock(blockId, trackId);
     },
@@ -44,7 +44,12 @@ export function useDragDrop() {
   const handleDragOver = useCallback(
     (e: DragEvent, trackId: string, bar?: number) => {
       e.preventDefault();
-      e.dataTransfer.dropEffect = dragState.type === 'preset' ? 'copy' : 'move';
+      // For presets always copy, for blocks check Ctrl/Meta key
+      if (dragState.type === 'preset') {
+        e.dataTransfer.dropEffect = 'copy';
+      } else {
+        e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move';
+      }
       setDropTarget(trackId, bar);
     },
     [dragState.type, setDropTarget]
@@ -86,7 +91,22 @@ export function useDragDrop() {
           const sourceTrack = project.tracks[data.trackId];
           const block = sourceTrack?.blocks.find(b => b.id === data.blockId);
           if (block) {
-            if (data.trackId === trackId) {
+            const isCopy = e.altKey;
+
+            if (isCopy) {
+              // Copy block - deep clone streams data
+              const clonedStreams = block.streams?.map(stream => ({
+                ...stream,
+                events: stream.events.map(event => ({ ...event })),
+              }));
+
+              addBlock(trackId, {
+                startBar: bar,
+                durationBars: block.durationBars,
+                loop: block.loop,
+                streams: clonedStreams,
+              });
+            } else if (data.trackId === trackId) {
               // Same track - just update position
               useProjectStore.getState().updateBlock(trackId, data.blockId, { startBar: bar });
             } else {

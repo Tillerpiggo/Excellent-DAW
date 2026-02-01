@@ -70,7 +70,7 @@ export function TimelineTrack({
       {/* Drop indicator */}
       {isDropTarget && dropTargetBar !== null && (
         <div
-          className="absolute top-0 bottom-0 w-0.5 bg-accent z-10"
+          className="absolute top-0 bottom-0 w-0.5 bg-accent-from z-10"
           style={{ left: dropTargetBar * barWidth }}
         />
       )}

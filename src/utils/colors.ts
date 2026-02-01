@@ -7,6 +7,7 @@ export const CATEGORY_COLORS: Record<PatternCategory, string> = {
   bass: '#FFE66D',     // Yellow
   arp: '#4ECDC4',      // Teal
   modifier: '#95E1D3', // Mint
+  rhythm: '#F9A826',   // Orange
 };
 
 // Track type colors
@@ -14,11 +15,13 @@ export const TRACK_TYPE_COLORS: Record<TrackTypeId, string> = {
   base: '#6366f1',       // Indigo
   add: '#22c55e',        // Green
   override: '#ef4444',   // Red
+  mute: '#64748b',       // Slate (muted gray)
   gate: '#f59e0b',       // Amber
   shift: '#06b6d4',      // Cyan
   scale: '#8b5cf6',      // Violet
   scaleShift: '#ec4899', // Pink
   harmonyMap: '#14b8a6', // Teal
+  rhythm: '#F9A826',     // Orange
 };
 
 // Instrument colors

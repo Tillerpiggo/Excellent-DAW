@@ -34,7 +34,7 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
     id: 'add',
     name: 'Add',
     description: 'Adds events to parent output (layering)',
-    category: 'combiner',
+    category: 'modifier',
     combine: (parent, self) => ({
       events: mergeEvents(parent.events, self.events),
       harmony: self.harmony || parent.harmony,
@@ -44,9 +44,66 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
   override: {
     id: 'override',
     name: 'Override',
-    description: 'Replaces parent output entirely',
-    category: 'combiner',
-    combine: (_parent, self) => self,
+    description: 'Replaces parent events within the time range of this track',
+    category: 'modifier',
+    combine: (parent, self, ctx) => {
+      if (self.events.length === 0) return parent;
+      if (parent.events.length === 0) return self;
+
+      // Find the time range covered by self's events
+      const minTime = Math.min(...self.events.map(e => e.time));
+      const maxTime = Math.max(...self.events.map(e => e.time + (e.duration || 0)));
+
+      // Round to bar boundaries
+      const beatsPerBar = ctx?.beatsPerBar || 4;
+      const rangeStart = Math.floor(minTime / beatsPerBar) * beatsPerBar;
+      const rangeEnd = Math.ceil(maxTime / beatsPerBar) * beatsPerBar;
+
+      // Keep parent events outside the override range
+      const keptParentEvents = parent.events.filter(
+        e => e.time < rangeStart || e.time >= rangeEnd
+      );
+
+      // Combine: parent events outside range + self events
+      const combined = [...keptParentEvents, ...self.events];
+      combined.sort((a, b) => a.time - b.time);
+
+      return {
+        events: combined,
+        harmony: self.harmony || parent.harmony,
+      };
+    },
+  },
+
+  mute: {
+    id: 'mute',
+    name: 'Mute',
+    description: 'Silences parent events in bars where this track has events',
+    category: 'modifier',
+    combine: (parent, self, ctx) => {
+      if (self.events.length === 0) return parent;
+      if (parent.events.length === 0) return parent;
+
+      const beatsPerBar = ctx?.beatsPerBar || 4;
+
+      // Find which bars have mute events
+      const mutedBars = new Set<number>();
+      for (const event of self.events) {
+        const bar = Math.floor(event.time / beatsPerBar);
+        mutedBars.add(bar);
+      }
+
+      // Keep only parent events in non-muted bars
+      const keptEvents = parent.events.filter(e => {
+        const bar = Math.floor(e.time / beatsPerBar);
+        return !mutedBars.has(bar);
+      });
+
+      return {
+        events: keptEvents,
+        harmony: parent.harmony,
+      };
+    },
   },
 
   // Modifiers - transform parent output
@@ -166,6 +223,51 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
         events: shiftedEvents,
         harmony: parent.harmony,
       };
+    },
+  },
+
+  // Rhythm - triggers parent notes at child's event times
+  rhythm: {
+    id: 'rhythm',
+    name: 'Rhythm',
+    description: 'Triggers parent notes at child event times',
+    category: 'modifier',
+    combine: (parent, self) => {
+      if (self.events.length === 0) return { events: [], harmony: parent.harmony };
+
+      const parentPitched = parent.events.filter(e => e.pitch !== undefined);
+      if (parentPitched.length === 0) return { events: [], harmony: parent.harmony };
+
+      // Find chord/notes active at a given time
+      const getNotesAtTime = (time: number): Event[] => {
+        const active = parentPitched.filter(e => {
+          const end = e.time + (e.duration || 0.5);
+          return e.time <= time && time < end;
+        });
+        if (active.length > 0) return active;
+
+        // Fallback: most recent notes before this time
+        const before = parentPitched.filter(e => e.time <= time);
+        if (before.length === 0) {
+          const firstTime = Math.min(...parentPitched.map(e => e.time));
+          return parentPitched.filter(e => Math.abs(e.time - firstTime) < 0.1);
+        }
+        const lastTime = Math.max(...before.map(e => e.time));
+        return before.filter(e => Math.abs(e.time - lastTime) < 0.1);
+      };
+
+      const triggered: Event[] = [];
+      for (const rhythmEvent of self.events) {
+        for (const note of getNotesAtTime(rhythmEvent.time)) {
+          triggered.push({
+            time: rhythmEvent.time,
+            pitch: note.pitch,
+            velocity: rhythmEvent.velocity ?? note.velocity,
+            duration: rhythmEvent.duration ?? 0.25,
+          });
+        }
+      }
+      return { events: triggered.sort((a, b) => a.time - b.time), harmony: parent.harmony };
     },
   },
 

@@ -17,13 +17,13 @@ export function Header() {
     <header className="h-14 flex items-center justify-between px-4 bg-surface border-b border-border">
       {/* Left Section - Logo & Controls */}
       <div className="flex items-center gap-4">
-        <h1 className="text-xl font-bold text-accent">Pattern Composer</h1>
+        <h1 className="text-xl font-bold bg-gradient-to-r from-accent-from to-accent-to bg-clip-text text-transparent">Pattern Composer</h1>
 
         <button
           onClick={() => toggleLibrary()}
           className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
             showLibrary
-              ? 'bg-accent/20 text-accent'
+              ? 'bg-gradient-to-r from-accent-from/20 to-accent-to/20 text-accent-from'
               : 'bg-muted hover:bg-muted/80 text-muted-foreground'
           }`}
         >
@@ -39,7 +39,7 @@ export function Header() {
           className={`w-14 h-14 rounded-full flex items-center justify-center text-2xl transition-all transform hover:scale-105 active:scale-95 ${
             isPlaying
               ? 'bg-red-500 hover:bg-red-600 text-white'
-              : 'bg-accent hover:bg-accent/90 text-white'
+              : 'bg-gradient-to-r from-accent-from to-accent-to hover:opacity-90 text-white'
           }`}
           aria-label={isPlaying ? 'Stop' : 'Play'}
         >
@@ -57,18 +57,25 @@ export function Header() {
         <div className="flex items-center gap-2">
           <label className="text-sm text-muted-foreground">BPM</label>
           <input
-            type="number"
+            type="text"
+            inputMode="numeric"
             value={project.bpm}
-            onChange={(e) => setBpm(parseInt(e.target.value) || 120)}
-            className="w-16 px-2 py-1 rounded-lg bg-background border border-border text-center text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
-            min={20}
-            max={300}
+            onChange={(e) => {
+              const val = parseInt(e.target.value);
+              if (!isNaN(val)) setBpm(Math.min(300, Math.max(20, val)));
+            }}
+            onBlur={(e) => {
+              const val = parseInt(e.target.value);
+              if (isNaN(val) || val < 20) setBpm(20);
+              else if (val > 300) setBpm(300);
+            }}
+            className="w-16 px-2 py-1 rounded-lg bg-background border border-border text-center text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
           />
           <input
             type="range"
             value={project.bpm}
             onChange={(e) => setBpm(parseInt(e.target.value))}
-            className="w-24 accent-accent"
+            className="w-24"
             min={20}
             max={300}
           />
@@ -78,12 +85,19 @@ export function Header() {
         <div className="flex items-center gap-2">
           <label className="text-sm text-muted-foreground">Bars</label>
           <input
-            type="number"
+            type="text"
+            inputMode="numeric"
             value={project.totalBars}
-            onChange={(e) => setTotalBars(parseInt(e.target.value) || 8)}
-            className="w-14 px-2 py-1 rounded-lg bg-background border border-border text-center text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
-            min={1}
-            max={64}
+            onChange={(e) => {
+              const val = parseInt(e.target.value);
+              if (!isNaN(val)) setTotalBars(Math.min(64, Math.max(1, val)));
+            }}
+            onBlur={(e) => {
+              const val = parseInt(e.target.value);
+              if (isNaN(val) || val < 1) setTotalBars(1);
+              else if (val > 64) setTotalBars(64);
+            }}
+            className="w-14 px-2 py-1 rounded-lg bg-background border border-border text-center text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
           />
         </div>
       </div>
@@ -94,7 +108,7 @@ export function Header() {
           onClick={() => toggleInspector()}
           className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
             showInspector
-              ? 'bg-accent/20 text-accent'
+              ? 'bg-gradient-to-r from-accent-from/20 to-accent-to/20 text-accent-from'
               : 'bg-muted hover:bg-muted/80 text-muted-foreground'
           }`}
         >

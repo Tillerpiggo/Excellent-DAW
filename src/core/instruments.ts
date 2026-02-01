@@ -49,7 +49,7 @@ export function createInstruments(): InstrumentInstances {
       attack: 0.01,
       decay: 0.2,
       sustain: 0.5,
-      release: 0.3,
+      release: 0.03,
     },
   }).connect(synthFilter);
   synth.volume.value = -6;

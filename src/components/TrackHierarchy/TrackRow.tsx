@@ -75,7 +75,7 @@ export function TrackRow({ node }: TrackRowProps) {
       ref={setNodeRef}
       className={`group relative flex items-center h-16 px-2 cursor-pointer transition-colors ${
         isSelected ? '' : 'hover:bg-muted/50'
-      } ${isDropTarget && dragState.type === 'preset' ? 'bg-accent/30' : ''} ${
+      } ${isDropTarget && dragState.type === 'preset' ? 'bg-accent-from/30' : ''} ${
         isBeingDragged ? 'z-10' : ''
       }`}
       style={{

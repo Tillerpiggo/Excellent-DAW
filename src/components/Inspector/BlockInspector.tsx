@@ -26,7 +26,7 @@ export function BlockInspector({ block, track }: BlockInspectorProps) {
       {/* Back to Track */}
       <button
         onClick={() => selectBlock(null)}
-        className="text-xs text-accent hover:underline"
+        className="text-xs text-accent-from hover:underline"
       >
         ← Back to track
       </button>
@@ -50,7 +50,7 @@ export function BlockInspector({ block, track }: BlockInspectorProps) {
               startBar: Math.max(0, parseInt(e.target.value) - 1) || 0,
             })
           }
-          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
           min={1}
           max={project.totalBars}
         />
@@ -67,7 +67,7 @@ export function BlockInspector({ block, track }: BlockInspectorProps) {
               durationBars: Math.max(1, parseInt(e.target.value)) || 1,
             })
           }
-          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
           min={1}
           max={32}
         />
@@ -82,7 +82,7 @@ export function BlockInspector({ block, track }: BlockInspectorProps) {
             onChange={(e) =>
               updateBlock(track.id, block.id, { loop: e.target.checked })
             }
-            className="w-4 h-4 rounded border-border accent-accent"
+            className="w-4 h-4 rounded border-border accent-accent-from"
           />
           <span className="text-sm">Loop pattern</span>
         </label>
@@ -107,7 +107,7 @@ export function BlockInspector({ block, track }: BlockInspectorProps) {
                   sourceTrackId: e.target.value || undefined,
                 })
               }
-              className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+              className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
             >
               <option value="">None</option>
               {Object.values(project.tracks)
@@ -132,7 +132,7 @@ export function BlockInspector({ block, track }: BlockInspectorProps) {
                   extractMode: e.target.value as Block['extractMode'],
                 })
               }
-              className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+              className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
             >
               <option value="all">All (timing, pitch, velocity)</option>
               <option value="timing">Timing only</option>

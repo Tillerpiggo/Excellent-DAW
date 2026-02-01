@@ -8,6 +8,64 @@ export interface ResolvedTrack {
   output: Output;
 }
 
+interface ModifierResolution {
+  pattern: Output;
+  instrumentedResults: ResolvedTrack[];
+}
+
+function resolveModifierOutput(
+  modifierTrack: Track,
+  project: Project,
+  context: ProcessContext,
+  targetOutput: Output
+): ModifierResolution {
+  const instrumentedResults: ResolvedTrack[] = [];
+
+  // Get modifier's own pattern
+  let modifierPattern = resolveBlocks(modifierTrack.blocks, project, context);
+
+  // Separate nested children
+  const nestedModifiers: Track[] = [];
+  const nestedRegular: Track[] = [];
+
+  for (const childId of modifierTrack.childIds) {
+    const childTrack = project.tracks[childId];
+    if (!childTrack || childTrack.muted) continue;
+
+    const childType = getTrackType(childTrack.typeId);
+    if (childType.category === 'modifier' && !childTrack.instrumentId) {
+      nestedModifiers.push(childTrack);
+    } else {
+      nestedRegular.push(childTrack);
+    }
+  }
+
+  // Apply nested modifiers to this modifier's pattern (recursively)
+  let nestedContext = buildContext(context, targetOutput, modifierPattern);
+
+  for (const nestedModifier of nestedModifiers) {
+    const nestedResolution = resolveModifierOutput(
+      nestedModifier, project, nestedContext, modifierPattern
+    );
+
+    const nestedType = getTrackType(nestedModifier.typeId);
+    modifierPattern = nestedType.combine(modifierPattern, nestedResolution.pattern, nestedContext);
+    instrumentedResults.push(...nestedResolution.instrumentedResults);
+    nestedContext = buildContext(context, targetOutput, modifierPattern);
+  }
+
+  // Process regular children with the transformed output
+  const modifierType = getTrackType(modifierTrack.typeId);
+  const transformedTarget = modifierType.combine(targetOutput, modifierPattern, context);
+
+  for (const regularChild of nestedRegular) {
+    const childResults = resolveTrack(regularChild, project, nestedContext, transformedTarget);
+    instrumentedResults.push(...childResults);
+  }
+
+  return { pattern: modifierPattern, instrumentedResults };
+}
+
 export function resolveProject(project: Project): ResolvedTrack[] {
   const results: ResolvedTrack[] = [];
   const baseContext: ProcessContext = {
@@ -37,32 +95,17 @@ export function resolveTrack(
 ): ResolvedTrack[] {
   const results: ResolvedTrack[] = [];
 
-  // Resolve this track's blocks to an output
-  const selfOutput = resolveBlocks(track.blocks, project, context);
+  // Step 1: Resolve this track's blocks
+  let selfOutput = resolveBlocks(track.blocks, project, context);
 
-  // Get track type and combine with parent
-  const trackType = getTrackType(track.typeId);
-
-  // Build context with harmony info
-  let enrichedContext = buildContext(context, parentOutput, selfOutput);
-
-  // Combine outputs
-  let combinedOutput = trackType.combine(
-    parentOutput || { events: [] },
-    selfOutput,
-    enrichedContext
-  );
-
-  // Separate children into modifiers (without instruments) and regular children
+  // Step 2: Separate children
   const modifierChildren: Track[] = [];
   const regularChildren: Track[] = [];
 
   for (const childId of track.childIds) {
     const childTrack = project.tracks[childId];
     if (!childTrack || childTrack.muted) continue;
-
     const childType = getTrackType(childTrack.typeId);
-    // Modifiers without instruments should transform the parent's output
     if (childType.category === 'modifier' && !childTrack.instrumentId) {
       modifierChildren.push(childTrack);
     } else {
@@ -70,26 +113,29 @@ export function resolveTrack(
     }
   }
 
-  // Apply modifier children to this track's output (in order)
+  // Step 3: Apply modifier children to selfOutput BEFORE combining
+  let modifierContext = buildContext(context, parentOutput, selfOutput);
+
   for (const modifierTrack of modifierChildren) {
+    const modifierOutput = resolveModifierOutput(modifierTrack, project, modifierContext, selfOutput);
     const modifierType = getTrackType(modifierTrack.typeId);
-    const modifierSelf = resolveBlocks(modifierTrack.blocks, project, enrichedContext);
-    const modifierContext = buildContext(enrichedContext, combinedOutput, modifierSelf);
 
-    combinedOutput = modifierType.combine(combinedOutput, modifierSelf, modifierContext);
-
-    // Recursively apply any nested modifiers from this modifier's children
-    const nestedResults = resolveTrack(modifierTrack, project, modifierContext, combinedOutput);
-    // Only take the output transformation, not push results (modifier has no instrument)
-    // But if modifier has children with instruments, those should still produce output
-    for (const nested of nestedResults) {
-      if (nested.instrumentId) {
-        results.push(nested);
-      }
-    }
+    selfOutput = modifierType.combine(selfOutput, modifierOutput.pattern, modifierContext);
+    results.push(...modifierOutput.instrumentedResults);
+    modifierContext = buildContext(context, parentOutput, selfOutput);
   }
 
-  // Now push this track's output (after all modifiers applied)
+  // Step 4: Now combine modified self with parent
+  const trackType = getTrackType(track.typeId);
+  const enrichedContext = buildContext(context, parentOutput, selfOutput);
+
+  let combinedOutput = trackType.combine(
+    parentOutput || { events: [] },
+    selfOutput,
+    enrichedContext
+  );
+
+  // Step 5: Push this track's output
   if (track.instrumentId && combinedOutput.events.length > 0) {
     results.push({
       trackId: track.id,
@@ -98,7 +144,7 @@ export function resolveTrack(
     });
   }
 
-  // Process regular children with this track's (now modified) output as parent
+  // Step 6: Process regular children
   for (const childTrack of regularChildren) {
     const childResults = resolveTrack(childTrack, project, enrichedContext, combinedOutput);
     results.push(...childResults);

@@ -25,7 +25,7 @@ export function TrackHierarchy() {
         </h2>
         <button
           onClick={() => addTrack()}
-          className="px-2 py-1 text-xs rounded bg-accent/20 text-accent hover:bg-accent/30 transition-colors"
+          className="px-2 py-1 text-xs rounded bg-gradient-to-r from-accent-from/20 to-accent-to/20 text-accent-from hover:from-accent-from/30 hover:to-accent-to/30 transition-colors"
         >
           + Add
         </button>
@@ -49,7 +49,7 @@ export function TrackHierarchy() {
           <div
             className={`m-3 p-6 border-2 border-dashed rounded-lg text-center transition-colors ${
               dropTargetTrackId === '__root__'
-                ? 'border-accent bg-accent/10'
+                ? 'border-accent-from bg-accent-from/10'
                 : 'border-border'
             }`}
           >

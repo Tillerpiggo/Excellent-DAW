@@ -33,11 +33,13 @@ export type TrackTypeId =
   | 'base'
   | 'add'
   | 'override'
+  | 'mute'
   | 'gate'
   | 'shift'
   | 'scale'
   | 'scaleShift'
-  | 'harmonyMap';
+  | 'harmonyMap'
+  | 'rhythm';
 
 export type InstrumentId = 'synth' | 'pad' | 'bass' | 'drums';
 
@@ -63,7 +65,7 @@ export interface Project {
   tracks: Record<string, Track>;
 }
 
-export type PatternCategory = 'drums' | 'chords' | 'bass' | 'arp' | 'modifier';
+export type PatternCategory = 'drums' | 'chords' | 'bass' | 'arp' | 'modifier' | 'rhythm';
 
 export interface PatternPreset {
   id: string;

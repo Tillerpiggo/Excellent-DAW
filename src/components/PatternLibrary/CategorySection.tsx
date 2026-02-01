@@ -17,6 +17,7 @@ const CATEGORY_LABELS: Record<PatternCategory, string> = {
   bass: 'Bass',
   arp: 'Arps',
   modifier: 'Modifiers',
+  rhythm: 'Rhythms',
 };
 
 export function CategorySection({ category, isExpanded, onToggle }: CategorySectionProps) {
