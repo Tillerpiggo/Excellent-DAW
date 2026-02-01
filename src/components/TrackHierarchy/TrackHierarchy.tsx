@@ -1,0 +1,68 @@
+'use client';
+
+import { TrackRow } from './TrackRow';
+import { useProjectStore, addTrackFromPreset } from '@/stores/projectStore';
+import { useUIStore } from '@/stores/uiStore';
+import { useDragDrop } from '@/hooks/useDragDrop';
+import { flattenTracks } from '@/utils/tree';
+
+export function TrackHierarchy() {
+  const project = useProjectStore((state) => state.project);
+  const { addTrack } = useProjectStore();
+  const { collapsedTrackIds, dropTargetTrackId, dragState } = useUIStore();
+  const { handleDragOver, handleDragLeave, handleHierarchyDrop, handleDragEnd } = useDragDrop();
+
+  const flatTracks = flattenTracks(project, collapsedTrackIds);
+  const hasTracks = flatTracks.length > 0;
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="p-3 border-b border-border flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+          Tracks
+        </h2>
+        <button
+          onClick={() => addTrack()}
+          className="px-2 py-1 text-xs rounded bg-accent/20 text-accent hover:bg-accent/30 transition-colors"
+        >
+          + Add
+        </button>
+      </div>
+
+      <div
+        className="flex-1 overflow-y-auto"
+        onDragOver={(e) => {
+          if (dragState.type === 'preset') {
+            handleDragOver(e, '__root__');
+          }
+        }}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => {
+          if (dragState.type === 'preset') {
+            handleHierarchyDrop(e);
+          }
+        }}
+      >
+        {!hasTracks && (
+          <div
+            className={`m-3 p-6 border-2 border-dashed rounded-lg text-center transition-colors ${
+              dropTargetTrackId === '__root__'
+                ? 'border-accent bg-accent/10'
+                : 'border-border'
+            }`}
+          >
+            <p className="text-muted-foreground text-sm">
+              Drag a pattern here to create your first track
+            </p>
+          </div>
+        )}
+
+        <div className="py-1">
+          {flatTracks.map((node) => (
+            <TrackRow key={node.track.id} node={node} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}

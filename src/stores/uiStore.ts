@@ -1,0 +1,150 @@
+import { create } from 'zustand';
+import { PatternPreset } from '@/core/types';
+
+interface DragState {
+  type: 'preset' | 'block' | null;
+  preset?: PatternPreset;
+  blockId?: string;
+  sourceTrackId?: string;
+}
+
+interface UIState {
+  // Selection
+  selectedTrackId: string | null;
+  selectedBlockId: string | null;
+
+  // Drag state
+  dragState: DragState;
+  dropTargetTrackId: string | null;
+  dropTargetBar: number | null;
+
+  // Playback
+  isPlaying: boolean;
+  currentBeat: number;
+
+  // View
+  collapsedTrackIds: Set<string>;
+  pixelsPerBeat: number;
+  scrollLeft: number;
+
+  // Panel visibility
+  showInspector: boolean;
+  showLibrary: boolean;
+
+  // Actions
+  selectTrack: (trackId: string | null) => void;
+  selectBlock: (blockId: string | null, trackId?: string) => void;
+
+  startDragPreset: (preset: PatternPreset) => void;
+  startDragBlock: (blockId: string, sourceTrackId: string) => void;
+  setDropTarget: (trackId: string | null, bar?: number | null) => void;
+  endDrag: () => void;
+
+  setPlaying: (playing: boolean) => void;
+  setCurrentBeat: (beat: number) => void;
+
+  toggleTrackCollapsed: (trackId: string) => void;
+  setPixelsPerBeat: (pixels: number) => void;
+  setScrollLeft: (scroll: number) => void;
+
+  toggleInspector: () => void;
+  toggleLibrary: () => void;
+}
+
+export const useUIStore = create<UIState>((set, get) => ({
+  // Selection
+  selectedTrackId: null,
+  selectedBlockId: null,
+
+  // Drag state
+  dragState: { type: null },
+  dropTargetTrackId: null,
+  dropTargetBar: null,
+
+  // Playback
+  isPlaying: false,
+  currentBeat: 0,
+
+  // View
+  collapsedTrackIds: new Set(),
+  pixelsPerBeat: 30,
+  scrollLeft: 0,
+
+  // Panel visibility
+  showInspector: true,
+  showLibrary: true,
+
+  selectTrack: (trackId) => {
+    set({ selectedTrackId: trackId, selectedBlockId: null });
+  },
+
+  selectBlock: (blockId, trackId) => {
+    set({
+      selectedBlockId: blockId,
+      selectedTrackId: trackId || get().selectedTrackId,
+    });
+  },
+
+  startDragPreset: (preset) => {
+    set({
+      dragState: { type: 'preset', preset },
+    });
+  },
+
+  startDragBlock: (blockId, sourceTrackId) => {
+    set({
+      dragState: { type: 'block', blockId, sourceTrackId },
+    });
+  },
+
+  setDropTarget: (trackId, bar) => {
+    set({
+      dropTargetTrackId: trackId,
+      dropTargetBar: bar ?? null,
+    });
+  },
+
+  endDrag: () => {
+    set({
+      dragState: { type: null },
+      dropTargetTrackId: null,
+      dropTargetBar: null,
+    });
+  },
+
+  setPlaying: (playing) => {
+    set({ isPlaying: playing });
+  },
+
+  setCurrentBeat: (beat) => {
+    set({ currentBeat: beat });
+  },
+
+  toggleTrackCollapsed: (trackId) => {
+    set((state) => {
+      const newCollapsed = new Set(state.collapsedTrackIds);
+      if (newCollapsed.has(trackId)) {
+        newCollapsed.delete(trackId);
+      } else {
+        newCollapsed.add(trackId);
+      }
+      return { collapsedTrackIds: newCollapsed };
+    });
+  },
+
+  setPixelsPerBeat: (pixels) => {
+    set({ pixelsPerBeat: Math.max(10, Math.min(100, pixels)) });
+  },
+
+  setScrollLeft: (scroll) => {
+    set({ scrollLeft: Math.max(0, scroll) });
+  },
+
+  toggleInspector: () => {
+    set((state) => ({ showInspector: !state.showInspector }));
+  },
+
+  toggleLibrary: () => {
+    set((state) => ({ showLibrary: !state.showLibrary }));
+  },
+}));

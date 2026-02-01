@@ -1,0 +1,79 @@
+import { PatternCategory, TrackTypeId, InstrumentId } from '@/core/types';
+
+// Category colors (kid-friendly but not childish)
+export const CATEGORY_COLORS: Record<PatternCategory, string> = {
+  drums: '#AA96DA',    // Purple
+  chords: '#FF6B6B',   // Coral
+  bass: '#FFE66D',     // Yellow
+  arp: '#4ECDC4',      // Teal
+  modifier: '#95E1D3', // Mint
+};
+
+// Track type colors
+export const TRACK_TYPE_COLORS: Record<TrackTypeId, string> = {
+  base: '#6366f1',       // Indigo
+  add: '#22c55e',        // Green
+  override: '#ef4444',   // Red
+  gate: '#f59e0b',       // Amber
+  shift: '#06b6d4',      // Cyan
+  scale: '#8b5cf6',      // Violet
+  scaleShift: '#ec4899', // Pink
+  harmonyMap: '#14b8a6', // Teal
+};
+
+// Instrument colors
+export const INSTRUMENT_COLORS: Record<InstrumentId, string> = {
+  synth: '#6366f1',  // Indigo
+  pad: '#8b5cf6',    // Violet
+  bass: '#f59e0b',   // Amber
+  drums: '#ef4444',  // Red
+};
+
+// Background variants (darker for timeline blocks)
+export function getBlockColor(instrumentId?: InstrumentId, category?: PatternCategory): string {
+  if (instrumentId) {
+    return INSTRUMENT_COLORS[instrumentId];
+  }
+  if (category) {
+    return CATEGORY_COLORS[category];
+  }
+  return '#64748b'; // Slate gray default
+}
+
+// Get contrasting text color
+export function getTextColor(backgroundColor: string): string {
+  // Simple luminance check
+  const hex = backgroundColor.replace('#', '');
+  const r = parseInt(hex.substr(0, 2), 16);
+  const g = parseInt(hex.substr(2, 2), 16);
+  const b = parseInt(hex.substr(4, 2), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#1a1a2e' : '#ffffff';
+}
+
+// Get a semi-transparent version of a color
+export function withAlpha(color: string, alpha: number): string {
+  const hex = color.replace('#', '');
+  const r = parseInt(hex.substr(0, 2), 16);
+  const g = parseInt(hex.substr(2, 2), 16);
+  const b = parseInt(hex.substr(4, 2), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+// Lighten a color
+export function lighten(color: string, amount: number): string {
+  const hex = color.replace('#', '');
+  const r = Math.min(255, parseInt(hex.substr(0, 2), 16) + amount);
+  const g = Math.min(255, parseInt(hex.substr(2, 2), 16) + amount);
+  const b = Math.min(255, parseInt(hex.substr(4, 2), 16) + amount);
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+// Darken a color
+export function darken(color: string, amount: number): string {
+  const hex = color.replace('#', '');
+  const r = Math.max(0, parseInt(hex.substr(0, 2), 16) - amount);
+  const g = Math.max(0, parseInt(hex.substr(2, 2), 16) - amount);
+  const b = Math.max(0, parseInt(hex.substr(4, 2), 16) - amount);
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
