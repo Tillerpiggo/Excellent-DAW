@@ -77,3 +77,16 @@ export function darken(color: string, amount: number): string {
   const b = Math.max(0, parseInt(hex.substr(4, 2), 16) - amount);
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
+
+// Mix white with a color (tinted white)
+// ratio is how much white (0 = full color, 1 = pure white)
+export function tintWhite(color: string, ratio: number = 0.85): string {
+  const hex = color.replace('#', '');
+  const colorR = parseInt(hex.substr(0, 2), 16);
+  const colorG = parseInt(hex.substr(2, 2), 16);
+  const colorB = parseInt(hex.substr(4, 2), 16);
+  const r = Math.round(255 * ratio + colorR * (1 - ratio));
+  const g = Math.round(255 * ratio + colorG * (1 - ratio));
+  const b = Math.round(255 * ratio + colorB * (1 - ratio));
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}

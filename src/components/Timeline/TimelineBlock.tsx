@@ -5,7 +5,7 @@ import { Block, Track } from '@/core/types';
 import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useDragDrop } from '@/hooks/useDragDrop';
-import { INSTRUMENT_COLORS, TRACK_TYPE_COLORS, withAlpha, darken } from '@/utils/colors';
+import { INSTRUMENT_COLORS, TRACK_TYPE_COLORS, darken, tintWhite } from '@/utils/colors';
 
 interface TimelineBlockProps {
   block: Block;
@@ -42,6 +42,17 @@ export function TimelineBlock({
 
   // Darker color for the handle
   const handleColor = darken(baseColor, 40);
+
+  // Calculate pattern length for loop iterations
+  const allEvents = block.streams?.flatMap((s) => s.events) || [];
+  const patternLengthBeats = allEvents.length > 0
+    ? Math.max(...allEvents.map((e) => e.time + (e.duration || 0.25)), beatsPerBar)
+    : beatsPerBar;
+  const patternBars = Math.ceil(patternLengthBeats / beatsPerBar);
+  const patternBeats = patternBars * beatsPerBar;
+  const patternWidthPx = patternBeats * pixelsPerBeat;
+  const blockTotalBeats = block.durationBars * beatsPerBar;
+  const loopCount = block.loop ? Math.ceil(blockTotalBeats / patternBeats) : 1;
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -83,16 +94,23 @@ export function TimelineBlock({
     }
   }, [isResizing, handleResizeMove, handleResizeEnd]);
 
+  // Reserved space for resize handle
+  const handleWidthPx = 12;
+
+  // Tinted white for selection (white mixed with midi color)
+  const selectionColor = tintWhite(baseColor, 0.85);
+  // Handle uses a more midi-colored tint when selected
+  const selectedHandleColor = tintWhite(baseColor, 0.5);
+
   return (
     <div
-      className={`absolute top-1 bottom-1 rounded-md cursor-pointer transition-all ${
-        isSelected ? 'ring-2 ring-accent ring-offset-1 ring-offset-background' : ''
-      } ${isResizing ? 'cursor-ew-resize' : ''}`}
+      className={`absolute top-1 bottom-1 rounded-md cursor-pointer transition-all overflow-hidden ${
+        isResizing ? 'cursor-ew-resize' : ''
+      }`}
       style={{
         left,
         width: Math.max(width - 2, 20),
-        backgroundColor: withAlpha(baseColor, 0.6),
-        borderLeft: `3px solid ${baseColor}`,
+        // No backgroundColor - iteration containers provide it
       }}
       onClick={(e) => {
         e.stopPropagation();
@@ -108,16 +126,68 @@ export function TimelineBlock({
       }}
       onDragEnd={handleDragEnd}
     >
+      {/* Iteration background containers - each is its own rounded segment */}
+      {Array.from({ length: loopCount }).map((_, i) => {
+        const iterationLeftPx = i * patternWidthPx;
+        const visibleBeats = Math.min(patternBeats, blockTotalBeats - i * patternBeats);
+        const iterationWidthPx = visibleBeats * pixelsPerBeat;
+        if (iterationWidthPx <= 0) return null;
+
+        const isFirst = i === 0;
+        const isLast = i === loopCount - 1;
+
+        return (
+          <div
+            key={`iter-${i}`}
+            className="absolute top-0 bottom-0 pointer-events-none"
+            style={{
+              left: iterationLeftPx,
+              width: isLast
+                ? Math.min(iterationWidthPx, width - iterationLeftPx - handleWidthPx)
+                : iterationWidthPx,
+              backgroundColor: isFirst ? baseColor : darken(baseColor, 20),
+              // Last iteration blends into handle (no right border-radius)
+              borderTopLeftRadius: 6,
+              borderBottomLeftRadius: 6,
+              borderTopRightRadius: isLast ? 0 : 6,
+              borderBottomRightRadius: isLast ? 0 : 6,
+              boxSizing: 'border-box',
+              borderTop: isSelected ? `2px solid ${selectionColor}` : undefined,
+              borderBottom: isSelected ? `2px solid ${selectionColor}` : undefined,
+              borderLeft: isFirst
+                ? (isSelected ? `2px solid ${selectionColor}` : `3px solid ${baseColor}`)
+                : undefined,
+              // No right border on last - blends into handle
+            }}
+          />
+        );
+      })}
+
+      {/* Tinted header when selected - renders under handle */}
+      {isSelected && (
+        <div
+          className="absolute top-0 left-0 right-0 h-5 pointer-events-none z-0"
+          style={{
+            backgroundColor: selectionColor,
+            borderTopLeftRadius: 4,
+            borderTopRightRadius: 0,
+          }}
+        />
+      )}
+
       {/* Block content - track name */}
-      <div className="absolute top-0.5 left-1 z-10">
-        <span className="text-xs font-medium truncate text-white/90">
+      <div className="absolute top-0 left-1 h-5 flex items-center z-10">
+        <span
+          className="text-xs font-medium truncate"
+          style={{ color: isSelected ? baseColor : 'rgba(255, 255, 255, 0.9)' }}
+        >
           {track.name}
         </span>
       </div>
 
       {/* Loop indicator */}
       {block.loop && (
-        <div className="absolute top-0.5 right-4 text-[10px] text-white/70 z-10">
+        <div className="absolute top-0 right-4 py-0.5 text-[10px] text-white/70 z-10">
           ⟳
         </div>
       )}
@@ -129,24 +199,21 @@ export function TimelineBlock({
         pixelsPerBeat={pixelsPerBeat}
       />
 
-      {/* Resize handle */}
+      {/* Resize handle - rectangular, renders over header */}
       <div
-        className="absolute top-0 bottom-0 right-0 w-3 cursor-ew-resize rounded-r-md flex items-center justify-center hover:opacity-100 opacity-80 transition-opacity"
+        className={`absolute top-0 bottom-0 right-0 w-3 cursor-ew-resize transition-opacity z-20 ${
+          isSelected ? '' : 'hover:opacity-100 opacity-80'
+        }`}
         style={{
-          backgroundColor: handleColor,
+          backgroundColor: isSelected ? selectedHandleColor : handleColor,
         }}
         onMouseDown={handleResizeStart}
-      >
-        <div className="flex flex-col gap-0.5">
-          <div className="w-0.5 h-2 bg-white/50 rounded-full" />
-          <div className="w-0.5 h-2 bg-white/50 rounded-full" />
-        </div>
-      </div>
+      />
     </div>
   );
 }
 
-// Event visualization component - shows events at their actual positions
+// Event visualization component - shows events at their actual positions using pixels
 interface EventVisualizationProps {
   block: Block;
   beatsPerBar: number;
@@ -164,7 +231,6 @@ function EventVisualization({
 
   // Calculate the block's total duration in beats
   const blockTotalBeats = block.durationBars * beatsPerBar;
-  const blockWidthPx = blockTotalBeats * pixelsPerBeat;
 
   // Calculate the original pattern length (find the end of the last event)
   const patternLengthBeats = Math.max(
@@ -174,6 +240,7 @@ function EventVisualization({
   // Round up to nearest bar for clean looping
   const patternBars = Math.ceil(patternLengthBeats / beatsPerBar);
   const patternBeats = patternBars * beatsPerBar;
+  const patternWidthPx = patternBeats * pixelsPerBeat;
 
   // Find pitch range for vertical positioning
   const pitches = allEvents.filter((e) => e.pitch !== undefined).map((e) => e.pitch!);
@@ -181,7 +248,7 @@ function EventVisualization({
   const maxPitch = pitches.length > 0 ? Math.max(...pitches) : 72;
   const pitchRange = Math.max(maxPitch - minPitch + 1, 1);
 
-  // Reserved space
+  // Reserved space for resize handle
   const handleWidthPx = 12;
 
   // Calculate how many loop iterations we need
@@ -190,17 +257,17 @@ function EventVisualization({
   // Build all events to render (including loop repetitions)
   const eventsToRender: Array<{
     event: (typeof allEvents)[0];
-    offsetBeats: number;
+    offsetPx: number;
     loopIndex: number;
   }> = [];
 
   for (let loopIdx = 0; loopIdx < loopCount; loopIdx++) {
-    const offsetBeats = loopIdx * patternBeats;
+    const offsetPx = loopIdx * patternWidthPx;
     for (const event of allEvents) {
-      const eventStartBeat = event.time + offsetBeats;
+      const eventStartBeat = event.time + loopIdx * patternBeats;
       // Only include if the event starts within the block duration
       if (eventStartBeat < blockTotalBeats) {
-        eventsToRender.push({ event, offsetBeats, loopIndex: loopIdx });
+        eventsToRender.push({ event, offsetPx, loopIndex: loopIdx });
       }
     }
   }
@@ -209,38 +276,18 @@ function EventVisualization({
     <div
       className="absolute overflow-hidden pointer-events-none"
       style={{
-        top: 4,
+        top: 24, // Below the header with guaranteed padding
         bottom: 4,
         left: 3, // Account for left border
         right: handleWidthPx,
       }}
     >
-      {/* Loop boundary markers */}
-      {block.loop &&
-        Array.from({ length: loopCount - 1 }).map((_, i) => {
-          const boundaryBeat = (i + 1) * patternBeats;
-          const xPercent = (boundaryBeat / blockTotalBeats) * 100;
-          if (xPercent >= 100) return null;
-          return (
-            <div
-              key={`loop-${i}`}
-              className="absolute top-0 bottom-0 w-px bg-white/30"
-              style={{ left: `${xPercent}%` }}
-            />
-          );
-        })}
-
-      {/* Event blocks */}
-      {eventsToRender.map(({ event, offsetBeats, loopIndex }, i) => {
-        const eventStartBeat = event.time + offsetBeats;
+      {/* Event blocks - positioned using pixels */}
+      {eventsToRender.map(({ event, offsetPx, loopIndex }, i) => {
+        // Calculate pixel position
+        const eventStartPx = event.time * pixelsPerBeat + offsetPx;
         const duration = event.duration || 0.25;
-
-        // Calculate horizontal position and width as percentage
-        const xPercent = (eventStartBeat / blockTotalBeats) * 100;
-        const widthPercent = (duration / blockTotalBeats) * 100;
-
-        // Clip if event extends beyond block
-        const clippedWidthPercent = Math.min(widthPercent, 100 - xPercent);
+        const eventWidthPx = duration * pixelsPerBeat;
 
         // Calculate vertical position based on pitch or drum type
         let topPercent: number;
@@ -268,18 +315,21 @@ function EventVisualization({
           heightPercent = 20;
         }
 
+        // Slightly reduced opacity for loop iterations
+        const baseOpacity = Math.max((event.velocity || 100) / 127, 0.4);
+        const opacity = loopIndex === 0 ? baseOpacity : baseOpacity * 0.85;
+
         return (
           <div
             key={`${loopIndex}-${i}`}
             className="absolute rounded-sm"
             style={{
-              left: `${xPercent}%`,
-              width: `${Math.max(clippedWidthPercent, 0.5)}%`,
+              left: eventStartPx,
+              width: Math.max(eventWidthPx, 2),
               top: `${topPercent}%`,
               height: `${heightPercent}%`,
               backgroundColor: 'rgba(255, 255, 255, 0.8)',
-              opacity: Math.max((event.velocity || 100) / 127, 0.4),
-              minWidth: 2,
+              opacity,
             }}
           />
         );

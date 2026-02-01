@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { PatternPreset } from '@/core/types';
+import { DropPosition } from '@/utils/trackDragValidation';
 
 interface DragState {
   type: 'preset' | 'block' | null;
@@ -13,10 +14,15 @@ interface UIState {
   selectedTrackId: string | null;
   selectedBlockId: string | null;
 
-  // Drag state
+  // Drag state (for preset/block dragging)
   dragState: DragState;
   dropTargetTrackId: string | null;
   dropTargetBar: number | null;
+
+  // Track reorder drag state
+  trackDragActiveId: string | null;
+  trackDropTargetId: string | null;
+  trackDropPosition: DropPosition | null;
 
   // Playback
   isPlaying: boolean;
@@ -49,6 +55,10 @@ interface UIState {
 
   toggleInspector: () => void;
   toggleLibrary: () => void;
+
+  // Track reorder actions
+  setTrackDragState: (activeId: string, targetId: string | null, position: DropPosition | null) => void;
+  clearTrackDragState: () => void;
 }
 
 export const useUIStore = create<UIState>((set, get) => ({
@@ -60,6 +70,11 @@ export const useUIStore = create<UIState>((set, get) => ({
   dragState: { type: null },
   dropTargetTrackId: null,
   dropTargetBar: null,
+
+  // Track reorder drag state
+  trackDragActiveId: null,
+  trackDropTargetId: null,
+  trackDropPosition: null,
 
   // Playback
   isPlaying: false,
@@ -146,5 +161,21 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   toggleLibrary: () => {
     set((state) => ({ showLibrary: !state.showLibrary }));
+  },
+
+  setTrackDragState: (activeId, targetId, position) => {
+    set({
+      trackDragActiveId: activeId,
+      trackDropTargetId: targetId,
+      trackDropPosition: position,
+    });
+  },
+
+  clearTrackDragState: () => {
+    set({
+      trackDragActiveId: null,
+      trackDropTargetId: null,
+      trackDropPosition: null,
+    });
   },
 }));

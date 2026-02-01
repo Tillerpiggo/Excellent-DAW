@@ -45,9 +45,12 @@ export function TimelineTrack({
   return (
     <div
       className={`h-16 relative border-b border-border transition-colors ${
-        isSelected ? 'bg-accent/10' : 'hover:bg-muted/30'
+        isSelected ? '' : 'hover:bg-muted/30'
       } ${track.muted ? 'opacity-50' : ''}`}
-      style={{ width: trackWidth }}
+      style={{
+        width: trackWidth,
+        ...(isSelected ? { background: 'linear-gradient(90deg, rgba(100, 116, 139, 0.25) 0%, rgba(71, 85, 105, 0.1) 100%)' } : {}),
+      }}
       onClick={() => selectTrack(track.id)}
       onDragOver={handleDragOverWithBar}
       onDragLeave={handleDragLeave}
