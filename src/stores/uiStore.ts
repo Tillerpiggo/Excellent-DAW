@@ -36,6 +36,14 @@ interface UIState {
   // Panel visibility
   showInspector: boolean;
   showLibrary: boolean;
+  showChordEditor: boolean;
+
+  // Chord picker state
+  chordPickerOpen: boolean;
+  chordPickerTargetIndex: number | null;
+
+  // Project manager
+  showProjectManager: boolean;
 
   // Actions
   selectTrack: (trackId: string | null) => void;
@@ -55,10 +63,16 @@ interface UIState {
 
   toggleInspector: () => void;
   toggleLibrary: () => void;
+  setShowChordEditor: (show: boolean) => void;
+  openChordPicker: (index: number) => void;
+  closeChordPicker: () => void;
 
   // Track reorder actions
   setTrackDragState: (activeId: string, targetId: string | null, position: DropPosition | null) => void;
   clearTrackDragState: () => void;
+
+  // Project manager actions
+  toggleProjectManager: () => void;
 }
 
 export const useUIStore = create<UIState>((set, get) => ({
@@ -88,6 +102,14 @@ export const useUIStore = create<UIState>((set, get) => ({
   // Panel visibility
   showInspector: true,
   showLibrary: true,
+  showChordEditor: false,
+
+  // Chord picker state
+  chordPickerOpen: false,
+  chordPickerTargetIndex: null,
+
+  // Project manager
+  showProjectManager: false,
 
   selectTrack: (trackId) => {
     set({ selectedTrackId: trackId, selectedBlockId: null });
@@ -163,6 +185,18 @@ export const useUIStore = create<UIState>((set, get) => ({
     set((state) => ({ showLibrary: !state.showLibrary }));
   },
 
+  setShowChordEditor: (show) => {
+    set({ showChordEditor: show });
+  },
+
+  openChordPicker: (index) => {
+    set({ chordPickerOpen: true, chordPickerTargetIndex: index });
+  },
+
+  closeChordPicker: () => {
+    set({ chordPickerOpen: false, chordPickerTargetIndex: null });
+  },
+
   setTrackDragState: (activeId, targetId, position) => {
     set({
       trackDragActiveId: activeId,
@@ -177,5 +211,9 @@ export const useUIStore = create<UIState>((set, get) => ({
       trackDropTargetId: null,
       trackDropPosition: null,
     });
+  },
+
+  toggleProjectManager: () => {
+    set((state) => ({ showProjectManager: !state.showProjectManager }));
   },
 }));

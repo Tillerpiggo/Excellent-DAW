@@ -1,11 +1,14 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import { Project, Track, Block, TrackTypeId, InstrumentId, EventStream } from '@/core/types';
+import { Project, Track, Block, ProjectMetadata } from '@/core/types';
 import { generateId } from '@/utils/id';
 import { PATTERN_PRESETS } from '@/core/presets';
+import { ChordData, chordsToEvents } from '@/core/harmony';
+import * as storage from '@/services/storage';
 
 interface ProjectState {
   project: Project;
+  projectList: ProjectMetadata[];
 
   // Track operations
   addTrack: (parentId?: string, preset?: typeof PATTERN_PRESETS[0]) => string;
@@ -19,12 +22,20 @@ interface ProjectState {
   updateBlock: (trackId: string, blockId: string, updates: Partial<Block>) => void;
   deleteBlock: (trackId: string, blockId: string) => void;
   moveBlock: (sourceTrackId: string, blockId: string, targetTrackId: string) => void;
+  updateBlockChords: (trackId: string, blockId: string, chords: ChordData[]) => void;
 
   // Project operations
   setBpm: (bpm: number) => void;
   setTotalBars: (bars: number) => void;
   resetProject: () => void;
   loadProject: (project: Project) => void;
+
+  // Multi-project operations
+  createNewProject: () => string;
+  switchProject: (id: string) => void;
+  deleteProjectById: (id: string) => void;
+  renameProject: (id: string, name: string) => void;
+  refreshProjectList: () => void;
 }
 
 function createDefaultProject(): Project {
@@ -72,6 +83,7 @@ function createDefaultTrack(
 export const useProjectStore = create<ProjectState>()(
   immer((set, get) => ({
     project: createDefaultProject(),
+    projectList: [],
 
     addTrack: (parentId?: string, preset?: typeof PATTERN_PRESETS[0]) => {
       const track = createDefaultTrack(parentId, preset);
@@ -252,6 +264,22 @@ export const useProjectStore = create<ProjectState>()(
       });
     },
 
+    updateBlockChords: (trackId: string, blockId: string, chords: ChordData[]) => {
+      set((state) => {
+        const track = state.project.tracks[trackId];
+        if (!track) return;
+
+        const block = track.blocks.find(b => b.id === blockId);
+        if (!block) return;
+
+        // Generate new events from the chord data
+        const events = chordsToEvents(chords);
+
+        // Update the block's streams with new events
+        block.streams = [{ events }];
+      });
+    },
+
     setBpm: (bpm: number) => {
       set((state) => {
         state.project.bpm = Math.max(20, Math.min(300, bpm));
@@ -273,6 +301,87 @@ export const useProjectStore = create<ProjectState>()(
     loadProject: (project: Project) => {
       set((state) => {
         state.project = project;
+      });
+    },
+
+    createNewProject: () => {
+      const newProject = createDefaultProject();
+      const metadata = storage.projectToMetadata(newProject);
+
+      set((state) => {
+        state.project = newProject;
+        state.projectList = [metadata, ...state.projectList];
+      });
+
+      storage.saveProject(newProject);
+      storage.saveProjectList(get().projectList);
+      storage.setCurrentProjectId(newProject.id);
+
+      return newProject.id;
+    },
+
+    switchProject: (id: string) => {
+      const project = storage.getProject(id);
+      if (!project) return;
+
+      set((state) => {
+        state.project = project;
+      });
+
+      storage.setCurrentProjectId(id);
+    },
+
+    deleteProjectById: (id: string) => {
+      const currentProject = get().project;
+
+      storage.deleteProject(id);
+
+      set((state) => {
+        state.projectList = state.projectList.filter((p) => p.id !== id);
+      });
+
+      // If we deleted the current project, switch to another or create new
+      if (currentProject.id === id) {
+        const remaining = get().projectList;
+        if (remaining.length > 0) {
+          get().switchProject(remaining[0].id);
+        } else {
+          get().createNewProject();
+        }
+      }
+    },
+
+    renameProject: (id: string, name: string) => {
+      set((state) => {
+        const metadata = state.projectList.find((p) => p.id === id);
+        if (metadata) {
+          metadata.name = name;
+          metadata.updatedAt = Date.now();
+        }
+        if (state.project.id === id) {
+          state.project.name = name;
+        }
+      });
+
+      // Save updated metadata list
+      storage.saveProjectList(get().projectList);
+
+      // If it's the current project, save the full project too
+      if (get().project.id === id) {
+        storage.saveProject(get().project);
+      } else {
+        // Load, update, and save the other project
+        const project = storage.getProject(id);
+        if (project) {
+          project.name = name;
+          storage.saveProject(project);
+        }
+      }
+    },
+
+    refreshProjectList: () => {
+      set((state) => {
+        state.projectList = storage.getProjectList();
       });
     },
   }))

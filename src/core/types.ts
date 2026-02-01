@@ -1,5 +1,17 @@
 // Core Types for Pattern Composer
 
+export const CURRENT_SCHEMA_VERSION = 1;
+
+export interface ProjectMetadata {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  bpm: number;
+  totalBars: number;
+  trackCount: number;
+}
+
 export interface Event {
   time: number; // in beats
   pitch?: number; // MIDI note number

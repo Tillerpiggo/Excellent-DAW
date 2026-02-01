@@ -3,6 +3,8 @@
 import { usePlayback } from '@/hooks/usePlayback';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
+import { ProjectSelector } from './ProjectSelector/ProjectSelector';
+import { ProjectManagerModal } from './ProjectSelector/ProjectManagerModal';
 
 export function Header() {
   const { isPlaying, toggle, setBpm } = usePlayback();
@@ -15,9 +17,9 @@ export function Header() {
 
   return (
     <header className="h-14 flex items-center justify-between px-4 bg-surface border-b border-border">
-      {/* Left Section - Logo & Controls */}
+      {/* Left Section - Project Selector & Controls */}
       <div className="flex items-center gap-4">
-        <h1 className="text-xl font-bold bg-gradient-to-r from-accent-from to-accent-to bg-clip-text text-transparent">Pattern Composer</h1>
+        <ProjectSelector />
 
         <button
           onClick={() => toggleLibrary()}
@@ -115,6 +117,9 @@ export function Header() {
           Inspector
         </button>
       </div>
+
+      {/* Project Manager Modal */}
+      <ProjectManagerModal />
     </header>
   );
 }

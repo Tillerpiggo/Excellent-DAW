@@ -1,4 +1,17 @@
-import { Event, HarmonyInfo, ScaleInfo, Output } from './types';
+import { Event, HarmonyInfo, ScaleInfo, Output, Block } from './types';
+
+// Chord quality type for the chord editor
+export type ChordQuality = 'major' | 'minor' | 'diminished' | 'augmented' | 'sus2' | 'sus4' | 'major7' | 'minor7' | 'dominant7';
+
+// Data structure for a chord in the chord editor
+export interface ChordData {
+  id: string;
+  root: number; // 0-11 (C=0, C#=1, etc.)
+  quality: ChordQuality;
+  startBeat: number;
+  durationBeats: number;
+  octave: number; // Base octave for the chord
+}
 
 // Common scales
 export const SCALES: Record<string, number[]> = {
@@ -173,4 +186,127 @@ export function noteNameToMidi(name: string): number {
   const octave = parseInt(octaveStr, 10);
 
   return (octave + 1) * 12 + noteIndex;
+}
+
+// Get display name for a chord quality
+export function getQualityDisplayName(quality: ChordQuality): string {
+  const names: Record<ChordQuality, string> = {
+    major: 'Major',
+    minor: 'Minor',
+    diminished: 'Dim',
+    augmented: 'Aug',
+    sus2: 'Sus2',
+    sus4: 'Sus4',
+    major7: 'Maj7',
+    minor7: 'm7',
+    dominant7: '7',
+  };
+  return names[quality];
+}
+
+// Format a chord name for display (e.g., "C Major", "F# Minor")
+export function formatChordName(root: number, quality: ChordQuality): string {
+  const noteNames = getNoteNames();
+  const noteName = noteNames[root % 12];
+  const qualityName = getQualityDisplayName(quality);
+  return `${noteName} ${qualityName}`;
+}
+
+// Generate MIDI pitches for a chord given root, quality, and octave
+export function generateChordPitches(root: number, quality: ChordQuality, octave: number): number[] {
+  const pattern = CHORD_PATTERNS[quality];
+  if (!pattern) return [root + octave * 12];
+
+  const basePitch = root + octave * 12;
+  return pattern.map(interval => basePitch + interval);
+}
+
+// Extract chords from a block by grouping simultaneous notes
+export function extractChordsFromBlock(block: Block, beatsPerBar: number): ChordData[] {
+  const allEvents = block.streams?.flatMap(s => s.events) || [];
+  const pitchedEvents = allEvents.filter(e => e.pitch !== undefined);
+
+  if (pitchedEvents.length === 0) return [];
+
+  // Group events by start time (with small tolerance for timing variations)
+  const timeGroups = new Map<number, Event[]>();
+  const tolerance = 0.05; // beats
+
+  for (const event of pitchedEvents) {
+    let foundGroup = false;
+    for (const [time] of timeGroups) {
+      if (Math.abs(event.time - time) < tolerance) {
+        timeGroups.get(time)!.push(event);
+        foundGroup = true;
+        break;
+      }
+    }
+    if (!foundGroup) {
+      timeGroups.set(event.time, [event]);
+    }
+  }
+
+  // Sort by time
+  const sortedTimes = [...timeGroups.keys()].sort((a, b) => a - b);
+
+  const chords: ChordData[] = [];
+  let chordIndex = 0;
+
+  for (let i = 0; i < sortedTimes.length; i++) {
+    const startBeat = sortedTimes[i];
+    const events = timeGroups.get(startBeat)!;
+    const pitches = events.map(e => e.pitch!);
+
+    // Calculate duration (until next chord or use event duration)
+    const nextTime = sortedTimes[i + 1];
+    const eventDuration = Math.max(...events.map(e => e.duration || 1));
+    const durationBeats = nextTime !== undefined
+      ? Math.min(nextTime - startBeat, eventDuration)
+      : eventDuration;
+
+    // Detect the chord
+    const harmony = detectChord(pitches);
+
+    // Find the base octave from the lowest pitch
+    const lowestPitch = Math.min(...pitches);
+    const octave = Math.floor(lowestPitch / 12);
+
+    chords.push({
+      id: `chord-${chordIndex++}`,
+      root: harmony?.root ?? (lowestPitch % 12),
+      quality: mapQuality(harmony?.quality),
+      startBeat,
+      durationBeats,
+      octave,
+    });
+  }
+
+  return chords;
+}
+
+// Map HarmonyInfo quality to ChordQuality
+function mapQuality(quality: HarmonyInfo['quality'] | undefined): ChordQuality {
+  if (!quality || quality === 'unknown') return 'major';
+  if (quality === 'sus') return 'sus4';
+  return quality as ChordQuality;
+}
+
+// Generate events from chord data array
+export function chordsToEvents(chords: ChordData[]): Event[] {
+  const events: Event[] = [];
+
+  for (const chord of chords) {
+    const pitches = generateChordPitches(chord.root, chord.quality, chord.octave);
+
+    for (const pitch of pitches) {
+      events.push({
+        time: chord.startBeat,
+        pitch,
+        velocity: 80,
+        duration: chord.durationBeats,
+      });
+    }
+  }
+
+  return events;
 }

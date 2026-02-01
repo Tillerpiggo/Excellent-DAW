@@ -6,14 +6,21 @@ import { PatternLibrary } from './PatternLibrary/PatternLibrary';
 import { TrackHierarchy } from './TrackHierarchy/TrackHierarchy';
 import { Timeline } from './Timeline/Timeline';
 import { Inspector } from './Inspector/Inspector';
+import { ChordEditorPanel } from './ChordEditor';
 import { useUIStore } from '@/stores/uiStore';
 import { useKeyboard } from '@/hooks/useKeyboard';
+import { initializePersistence } from '@/stores/persistence';
 
 export function PatternComposer() {
   const { showLibrary, showInspector } = useUIStore();
 
   // Setup keyboard shortcuts
   useKeyboard();
+
+  // Initialize persistence on mount
+  useEffect(() => {
+    initializePersistence();
+  }, []);
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
@@ -41,6 +48,9 @@ export function PatternComposer() {
               <Timeline />
             </div>
           </div>
+
+          {/* Chord Editor Panel - shows when chord block is selected */}
+          <ChordEditorPanel />
         </main>
 
         {/* Inspector - Right Sidebar */}
