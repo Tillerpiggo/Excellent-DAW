@@ -183,9 +183,6 @@ export class PlaybackEngine {
 
   setBpm(bpm: number): void {
     Tone.getTransport().bpm.value = bpm;
-    if (this.project) {
-      this.project.bpm = bpm;
-    }
   }
 
   seekTo(beat: number, beatsPerBar: number): void {

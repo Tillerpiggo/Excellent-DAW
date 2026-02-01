@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { usePlayback } from '@/hooks/usePlayback';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -11,6 +12,19 @@ export function Header() {
   const project = useProjectStore((state) => state.project);
   const { setTotalBars } = useProjectStore();
   const { currentBeat, toggleLibrary, toggleInspector, showLibrary, showInspector } = useUIStore();
+
+  // Local state for inputs to allow free typing without immediate clamping
+  const [bpmInput, setBpmInput] = useState(String(project.bpm));
+  const [barsInput, setBarsInput] = useState(String(project.totalBars));
+
+  // Sync local state when project values change externally
+  useEffect(() => {
+    setBpmInput(String(project.bpm));
+  }, [project.bpm]);
+
+  useEffect(() => {
+    setBarsInput(String(project.totalBars));
+  }, [project.totalBars]);
 
   const currentBar = Math.floor(currentBeat / project.beatsPerBar) + 1;
   const beatInBar = (currentBeat % project.beatsPerBar) + 1;
@@ -61,15 +75,24 @@ export function Header() {
           <input
             type="text"
             inputMode="numeric"
-            value={project.bpm}
-            onChange={(e) => {
-              const val = parseInt(e.target.value);
-              if (!isNaN(val)) setBpm(Math.min(300, Math.max(20, val)));
+            value={bpmInput}
+            onChange={(e) => setBpmInput(e.target.value)}
+            onBlur={() => {
+              const val = parseInt(bpmInput);
+              if (isNaN(val) || val < 20) {
+                setBpm(20);
+                setBpmInput('20');
+              } else if (val > 300) {
+                setBpm(300);
+                setBpmInput('300');
+              } else {
+                setBpm(val);
+              }
             }}
-            onBlur={(e) => {
-              const val = parseInt(e.target.value);
-              if (isNaN(val) || val < 20) setBpm(20);
-              else if (val > 300) setBpm(300);
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.currentTarget.blur();
+              }
             }}
             className="w-16 px-2 py-1 rounded-lg bg-background border border-border text-center text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
           />
@@ -89,15 +112,24 @@ export function Header() {
           <input
             type="text"
             inputMode="numeric"
-            value={project.totalBars}
-            onChange={(e) => {
-              const val = parseInt(e.target.value);
-              if (!isNaN(val)) setTotalBars(Math.min(64, Math.max(1, val)));
+            value={barsInput}
+            onChange={(e) => setBarsInput(e.target.value)}
+            onBlur={() => {
+              const val = parseInt(barsInput);
+              if (isNaN(val) || val < 1) {
+                setTotalBars(1);
+                setBarsInput('1');
+              } else if (val > 64) {
+                setTotalBars(64);
+                setBarsInput('64');
+              } else {
+                setTotalBars(val);
+              }
             }}
-            onBlur={(e) => {
-              const val = parseInt(e.target.value);
-              if (isNaN(val) || val < 1) setTotalBars(1);
-              else if (val > 64) setTotalBars(64);
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.currentTarget.blur();
+              }
             }}
             className="w-14 px-2 py-1 rounded-lg bg-background border border-border text-center text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
           />

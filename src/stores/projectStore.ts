@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import { Project, Track, Block, ProjectMetadata } from '@/core/types';
+import { Project, Track, Block, ProjectMetadata, Event } from '@/core/types';
 import { generateId } from '@/utils/id';
 import { PATTERN_PRESETS } from '@/core/presets';
 import { ChordData, chordsToEvents } from '@/core/harmony';
@@ -23,6 +23,7 @@ interface ProjectState {
   deleteBlock: (trackId: string, blockId: string) => void;
   moveBlock: (sourceTrackId: string, blockId: string, targetTrackId: string) => void;
   updateBlockChords: (trackId: string, blockId: string, chords: ChordData[]) => void;
+  updateBlockDrums: (trackId: string, blockId: string, events: Event[]) => void;
 
   // Project operations
   setBpm: (bpm: number) => void;
@@ -72,7 +73,7 @@ function createDefaultTrack(
       id: generateId(),
       startBar: 0,
       durationBars: preset.durationBars,
-      loop: true,
+      loop: false,
       streams: [{ events: [...preset.events] }],
     });
   }
@@ -276,6 +277,19 @@ export const useProjectStore = create<ProjectState>()(
         const events = chordsToEvents(chords);
 
         // Update the block's streams with new events
+        block.streams = [{ events }];
+      });
+    },
+
+    updateBlockDrums: (trackId: string, blockId: string, events: Event[]) => {
+      set((state) => {
+        const track = state.project.tracks[trackId];
+        if (!track) return;
+
+        const block = track.blocks.find(b => b.id === blockId);
+        if (!block) return;
+
+        // Update the block's streams with the drum events
         block.streams = [{ events }];
       });
     },

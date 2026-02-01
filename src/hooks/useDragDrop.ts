@@ -83,7 +83,7 @@ export function useDragDrop() {
             addBlock(trackId, {
               startBar: bar,
               durationBars: preset.durationBars,
-              loop: true,
+              loop: false,
               streams: [{ events: [...preset.events] }],
             });
           }

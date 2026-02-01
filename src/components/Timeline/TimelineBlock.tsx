@@ -67,17 +67,11 @@ export function TimelineBlock({
     originalStartBar.current = block.startBar;
   }, [block.durationBars, block.startBar]);
 
-  // Right handle resize start - detect zone based on Y position
-  const handleRightResizeStart = useCallback((e: React.MouseEvent) => {
+  // Right handle resize start - mode passed directly from zone
+  const handleRightResizeStart = useCallback((e: React.MouseEvent, mode: 'loop' | 'extend') => {
     e.stopPropagation();
     e.preventDefault();
-
-    const target = e.currentTarget as HTMLElement;
-    const rect = target.getBoundingClientRect();
-    const relativeY = e.clientY - rect.top;
-    const isLoopZone = relativeY < rect.height / 2;
-
-    setResizeMode(isLoopZone ? 'right-loop' : 'right-extend');
+    setResizeMode(mode === 'loop' ? 'right-loop' : 'right-extend');
     resizeStartX.current = e.clientX;
     originalDuration.current = block.durationBars;
     originalStartBar.current = block.startBar;
@@ -107,12 +101,14 @@ export function TimelineBlock({
         });
       }
     } else if (resizeMode === 'right-loop') {
-      // Right handle loop zone: extend with loop enabled
+      // Right handle loop zone: extend with loop, disable loop if shrunk to single pattern
       const newDuration = Math.max(1, originalDuration.current + deltaBars);
       if (newDuration !== block.durationBars) {
+        // Disable loop if shrunk to pattern length or less (no actual looping)
+        const shouldLoop = newDuration > patternBars;
         updateBlock(track.id, block.id, {
           durationBars: newDuration,
-          loop: true,
+          loop: shouldLoop,
         });
       }
     } else if (resizeMode === 'right-extend') {
@@ -124,7 +120,7 @@ export function TimelineBlock({
         });
       }
     }
-  }, [resizeMode, barWidth, block.startBar, block.durationBars, block.id, track.id, updateBlock]);
+  }, [resizeMode, barWidth, patternBars, block.startBar, block.durationBars, block.id, track.id, updateBlock]);
 
   const handleResizeEnd = useCallback(() => {
     setResizeMode(null);
@@ -175,45 +171,66 @@ export function TimelineBlock({
       }}
       onDragEnd={handleDragEnd}
     >
-      {/* Iteration background containers - each is its own rounded segment */}
-      {Array.from({ length: loopCount }).map((_, i) => {
-        const iterationLeftPx = i * patternWidthPx;
-        const visibleBeats = Math.min(patternBeats, blockTotalBeats - i * patternBeats);
-        const iterationWidthPx = visibleBeats * pixelsPerBeat;
-        if (iterationWidthPx <= 0) return null;
+      {/* Iteration background containers - render differently for looped vs non-looped */}
+      {block.loop ? (
+        // Looped: render multiple iteration segments
+        Array.from({ length: loopCount }).map((_, i) => {
+          const iterationLeftPx = i * patternWidthPx;
+          const visibleBeats = Math.min(patternBeats, blockTotalBeats - i * patternBeats);
+          const iterationWidthPx = visibleBeats * pixelsPerBeat;
+          if (iterationWidthPx <= 0) return null;
 
-        const isFirst = i === 0;
-        const isLast = i === loopCount - 1;
+          const isFirst = i === 0;
+          const isLast = i === loopCount - 1;
 
-        return (
-          <div
-            key={`iter-${i}`}
-            className={`absolute top-0 bottom-0 pointer-events-none ${isLast ? 'transition-all' : ''}`}
-            style={{
-              left: iterationLeftPx,
-              width: Math.max(
-                4,
-                isLast
-                  ? Math.min(iterationWidthPx, width - iterationLeftPx - handleWidthPx)
-                  : iterationWidthPx
-              ),
-              backgroundColor: isFirst ? baseColor : darken(baseColor, 20),
-              // Last iteration blends into handle (no right border-radius)
-              borderTopLeftRadius: 6,
-              borderBottomLeftRadius: 6,
-              borderTopRightRadius: isLast ? 0 : 6,
-              borderBottomRightRadius: isLast ? 0 : 6,
-              boxSizing: 'border-box',
-              borderTop: isSelected ? `2px solid ${selectionColor}` : undefined,
-              borderBottom: isSelected ? `2px solid ${selectionColor}` : undefined,
-              borderLeft: isFirst
-                ? (isSelected ? `2px solid ${selectionColor}` : `3px solid ${baseColor}`)
-                : undefined,
-              // No right border on last - blends into handle
-            }}
-          />
-        );
-      })}
+          return (
+            <div
+              key={`iter-${i}`}
+              className={`absolute top-0 bottom-0 pointer-events-none ${isLast ? 'transition-all' : ''}`}
+              style={{
+                left: iterationLeftPx,
+                width: Math.max(
+                  4,
+                  isLast
+                    ? Math.min(iterationWidthPx, width - iterationLeftPx - handleWidthPx)
+                    : iterationWidthPx
+                ),
+                backgroundColor: isFirst ? baseColor : darken(baseColor, 20),
+                // Last iteration blends into handle (no right border-radius)
+                borderTopLeftRadius: 6,
+                borderBottomLeftRadius: 6,
+                borderTopRightRadius: isLast ? 0 : 6,
+                borderBottomRightRadius: isLast ? 0 : 6,
+                boxSizing: 'border-box',
+                borderTop: isSelected ? `2px solid ${selectionColor}` : undefined,
+                borderBottom: isSelected ? `2px solid ${selectionColor}` : undefined,
+                borderLeft: isFirst
+                  ? (isSelected ? `2px solid ${selectionColor}` : `3px solid ${baseColor}`)
+                  : undefined,
+                // No right border on last - blends into handle
+              }}
+            />
+          );
+        })
+      ) : (
+        // Not looped: render single solid background for full width
+        <div
+          className="absolute top-0 bottom-0 pointer-events-none"
+          style={{
+            left: 0,
+            width: Math.max(4, width - handleWidthPx),
+            backgroundColor: baseColor,
+            borderTopLeftRadius: 6,
+            borderBottomLeftRadius: 6,
+            borderTopRightRadius: 0,
+            borderBottomRightRadius: 0,
+            boxSizing: 'border-box',
+            borderTop: isSelected ? `2px solid ${selectionColor}` : undefined,
+            borderBottom: isSelected ? `2px solid ${selectionColor}` : undefined,
+            borderLeft: isSelected ? `2px solid ${selectionColor}` : `3px solid ${baseColor}`,
+          }}
+        />
+      )}
 
       {/* Tinted header when selected - renders under handle */}
       {isSelected && (
@@ -251,43 +268,34 @@ export function TimelineBlock({
         pixelsPerBeat={pixelsPerBeat}
       />
 
-      {/* Left resize handle */}
+      {/* Left resize handle - transparent, cursor only */}
       <div
-        className={`absolute top-0 bottom-0 left-0 w-3 cursor-ew-resize transition-opacity z-20 ${
-          isSelected ? '' : 'hover:opacity-100 opacity-80'
-        }`}
-        style={{
-          backgroundColor: isSelected ? selectedHandleColor : handleColor,
-          borderTopLeftRadius: 6,
-          borderBottomLeftRadius: 6,
-        }}
+        className="absolute top-0 bottom-0 left-0 w-3 cursor-ew-resize z-20"
         onMouseDown={handleLeftResizeStart}
       />
 
-      {/* Right resize handle - split into two zones */}
+      {/* Right resize handle - split into two interactive zones */}
       <div
-        className={`absolute top-0 bottom-0 right-0 w-3 cursor-ew-resize z-20 ${
+        className={`absolute top-0 bottom-0 right-0 w-3 z-20 ${
           isSelected ? '' : 'hover:opacity-100 opacity-80'
         }`}
         style={{
           backgroundColor: isSelected ? selectedHandleColor : handleColor,
         }}
-        onMouseDown={handleRightResizeStart}
       >
-        {/* Top half - Loop zone indicator */}
+        {/* Top half - Loop zone */}
         <div
-          className="absolute top-0 left-0 right-0 flex items-center justify-center text-[8px] text-white/60 select-none"
+          className="absolute top-0 left-0 right-0 cursor-ew-resize"
           style={{ height: '50%' }}
-        >
-          ⟳
-        </div>
-        {/* Bottom half - Extend zone (solid, no indicator) */}
+          onMouseDown={(e) => handleRightResizeStart(e, 'loop')}
+          title="Drag to loop"
+        />
+        {/* Bottom half - Extend zone */}
         <div
-          className="absolute bottom-0 left-0 right-0"
-          style={{
-            height: '50%',
-            backgroundColor: isSelected ? darken(selectedHandleColor, 10) : darken(handleColor, 10),
-          }}
+          className="absolute bottom-0 left-0 right-0 cursor-ew-resize"
+          style={{ height: '50%' }}
+          onMouseDown={(e) => handleRightResizeStart(e, 'extend')}
+          title="Drag to extend"
         />
       </div>
     </div>

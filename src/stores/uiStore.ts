@@ -43,6 +43,10 @@ interface UIState {
   showInspector: boolean;
   showLibrary: boolean;
   showChordEditor: boolean;
+  showDrumEditor: boolean;
+
+  // Drum editor state
+  drumEditorQuantize: '16th' | '8th' | 'quarter';
 
   // Chord picker state
   chordPickerOpen: boolean;
@@ -76,6 +80,8 @@ interface UIState {
   toggleInspector: () => void;
   toggleLibrary: () => void;
   setShowChordEditor: (show: boolean) => void;
+  setShowDrumEditor: (show: boolean) => void;
+  setDrumEditorQuantize: (quantize: '16th' | '8th' | 'quarter') => void;
   openChordPicker: (index: number) => void;
   closeChordPicker: () => void;
 
@@ -121,6 +127,10 @@ export const useUIStore = create<UIState>((set, get) => ({
   showInspector: true,
   showLibrary: true,
   showChordEditor: false,
+  showDrumEditor: false,
+
+  // Drum editor state
+  drumEditorQuantize: '16th',
 
   // Chord picker state
   chordPickerOpen: false,
@@ -221,6 +231,14 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   setShowChordEditor: (show) => {
     set({ showChordEditor: show });
+  },
+
+  setShowDrumEditor: (show) => {
+    set({ showDrumEditor: show });
+  },
+
+  setDrumEditorQuantize: (quantize) => {
+    set({ drumEditorQuantize: quantize });
   },
 
   openChordPicker: (index) => {

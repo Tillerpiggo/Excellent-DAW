@@ -20,17 +20,20 @@ export function ChordEditorPanel() {
     return allEvents.some(e => e.pitch !== undefined);
   }, [selectedBlock]);
 
+  // Don't show chord editor for rhythm tracks (they use drum editor)
+  const isRhythmTrack = selectedTrack?.typeId === 'rhythm';
+
   // Auto-show/hide chord editor based on selection
   useEffect(() => {
-    if (selectedBlock && hasPitchedEvents) {
+    if (selectedBlock && hasPitchedEvents && !isRhythmTrack) {
       setShowChordEditor(true);
     } else {
       setShowChordEditor(false);
     }
-  }, [selectedBlock, hasPitchedEvents, setShowChordEditor]);
+  }, [selectedBlock, hasPitchedEvents, isRhythmTrack, setShowChordEditor]);
 
-  // Don't render if no chord block selected
-  if (!showChordEditor || !selectedTrack || !selectedBlock || !hasPitchedEvents) {
+  // Don't render if no chord block selected or if it's a rhythm track
+  if (!showChordEditor || !selectedTrack || !selectedBlock || !hasPitchedEvents || isRhythmTrack) {
     return null;
   }
 

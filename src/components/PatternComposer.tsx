@@ -7,6 +7,7 @@ import { TrackHierarchy } from './TrackHierarchy/TrackHierarchy';
 import { Timeline } from './Timeline/Timeline';
 import { Inspector } from './Inspector/Inspector';
 import { ChordEditorPanel } from './ChordEditor';
+import { DrumEditorPanel } from './DrumEditor';
 import { useUIStore } from '@/stores/uiStore';
 import { useKeyboard } from '@/hooks/useKeyboard';
 import { initializePersistence } from '@/stores/persistence';
@@ -51,6 +52,9 @@ export function PatternComposer() {
 
           {/* Chord Editor Panel - shows when chord block is selected */}
           <ChordEditorPanel />
+
+          {/* Drum Editor Panel - shows when drum block is selected */}
+          <DrumEditorPanel />
         </main>
 
         {/* Inspector - Right Sidebar */}
