@@ -5,6 +5,7 @@ import { generateId } from '@/utils/id';
 import { PATTERN_PRESETS } from '@/core/presets';
 import { ChordData, chordsToEvents } from '@/core/harmony';
 import * as storage from '@/services/storage';
+import { useUIStore } from './uiStore';
 
 interface ProjectState {
   project: Project;
@@ -73,7 +74,7 @@ function createDefaultTrack(
       id: generateId(),
       startBar: 0,
       durationBars: preset.durationBars,
-      loop: false,
+      loop: true,
       streams: [{ events: [...preset.events] }],
     });
   }
@@ -347,6 +348,7 @@ export const useProjectStore = create<ProjectState>()(
 
     deleteProjectById: (id: string) => {
       const currentProject = get().project;
+      const currentView = useUIStore.getState().currentView;
 
       storage.deleteProject(id);
 
@@ -354,13 +356,18 @@ export const useProjectStore = create<ProjectState>()(
         state.projectList = state.projectList.filter((p) => p.id !== id);
       });
 
-      // If we deleted the current project, switch to another or create new
+      // If we're on homepage, just stay there (don't auto-switch)
+      if (currentView === 'home') {
+        return;
+      }
+
+      // If we deleted the current project while in editor, switch to another or go home
       if (currentProject.id === id) {
         const remaining = get().projectList;
         if (remaining.length > 0) {
           get().switchProject(remaining[0].id);
         } else {
-          get().createNewProject();
+          useUIStore.getState().setCurrentView('home');
         }
       }
     },

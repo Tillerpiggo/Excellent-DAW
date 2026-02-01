@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChordData, formatChordName } from '@/core/harmony';
+import { getPlaybackEngine } from '@/core/playback';
+import { InstrumentId } from '@/core/types';
 
 interface ChordBlockProps {
   chord: ChordData;
@@ -13,6 +15,7 @@ interface ChordBlockProps {
   containerRef: React.RefObject<HTMLDivElement | null>;
   minBeat: number;
   maxBeat: number;
+  instrumentId: InstrumentId;
 }
 
 export function ChordBlock({
@@ -25,6 +28,7 @@ export function ChordBlock({
   containerRef,
   minBeat,
   maxBeat,
+  instrumentId,
 }: ChordBlockProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isResizingLeft, setIsResizingLeft] = useState(false);
@@ -33,6 +37,35 @@ export function ChordBlock({
   const dragStartX = useRef(0);
   const originalStartBeat = useRef(chord.startBeat);
   const originalDurationBeats = useRef(chord.durationBeats);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hasPreviewedRef = useRef(false);
+
+  // Preview chord on hover (debounced)
+  const handleMouseEnter = useCallback(() => {
+    if (hasPreviewedRef.current) return;
+
+    hoverTimeoutRef.current = setTimeout(() => {
+      hasPreviewedRef.current = true;
+      getPlaybackEngine().previewChord(chord.root, chord.quality, chord.octave, instrumentId);
+    }, 100);
+  }, [chord.root, chord.quality, chord.octave, instrumentId]);
+
+  const handleMouseLeave = useCallback(() => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    hasPreviewedRef.current = false;
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Calculate position and size
   const left = chord.startBeat * pixelsPerBeat;
@@ -149,6 +182,8 @@ export function ChordBlock({
         onDoubleClick();
       }}
       onMouseDown={handleDragStart}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       {/* Left resize handle */}
       <div

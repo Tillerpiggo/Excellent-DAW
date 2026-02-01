@@ -2,6 +2,12 @@
 
 export const CURRENT_SCHEMA_VERSION = 1;
 
+export interface PreviewTrackData {
+  color: string;
+  blocks: { startBar: number; endBar: number }[];
+  level: number; // 0=root, 1+=nested
+}
+
 export interface ProjectMetadata {
   id: string;
   name: string;
@@ -10,6 +16,7 @@ export interface ProjectMetadata {
   bpm: number;
   totalBars: number;
   trackCount: number;
+  previewTracks?: PreviewTrackData[];
 }
 
 export interface Event {
@@ -79,6 +86,8 @@ export interface Project {
 
 export type PatternCategory = 'drums' | 'chords' | 'bass' | 'arp' | 'modifier' | 'rhythm';
 
+export type PresetType = 'loop' | 'pattern';
+
 export interface PatternPreset {
   id: string;
   name: string;
@@ -88,6 +97,7 @@ export interface PatternPreset {
   defaultInstrument?: InstrumentId;
   events: Event[];
   durationBars: number;
+  presetType: PresetType;
 }
 
 export interface TrackTypeDefinition {

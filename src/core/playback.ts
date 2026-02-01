@@ -2,6 +2,7 @@ import * as Tone from 'tone';
 import { Project, InstrumentId } from './types';
 import { resolveProject, ResolvedTrack } from './resolution';
 import { createInstruments, scheduleEvent, disposeInstruments, InstrumentInstances } from './instruments';
+import { ChordQuality, generateChordPitches } from './harmony';
 
 export type PlaybackState = 'stopped' | 'playing' | 'paused';
 
@@ -190,6 +191,35 @@ export class PlaybackEngine {
     const beats = beat % beatsPerBar;
     Tone.getTransport().position = `${bars}:${beats}:0`;
     this.callbacks.onBeatChange?.(beat);
+  }
+
+  async previewChord(
+    root: number,
+    quality: ChordQuality,
+    octave: number = 4,
+    instrumentId: InstrumentId = 'pad'
+  ): Promise<void> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    if (!this.instruments) return;
+
+    const pitches = generateChordPitches(root, quality, octave);
+    const now = Tone.now();
+
+    // Use the track's instrument if it supports polyphony, else fallback to pad
+    const polyInstruments: InstrumentId[] = ['synth', 'keys', 'pad'];
+    const actualInstrument = polyInstruments.includes(instrumentId) ? instrumentId : 'pad';
+
+    for (const pitch of pitches) {
+      scheduleEvent(
+        { time: 0, pitch, velocity: 90, duration: 0.5 },
+        actualInstrument,
+        this.instruments,
+        now
+      );
+    }
   }
 
   setLoopRegion(startBeat: number | null, endBeat: number | null, beatsPerBar: number): void {

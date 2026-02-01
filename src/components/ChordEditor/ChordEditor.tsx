@@ -4,10 +4,10 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { Block, Track } from '@/core/types';
 import { ChordData, ChordQuality, extractChordsFromBlock, generateChordPitches } from '@/core/harmony';
 import { useProjectStore } from '@/stores/projectStore';
-import { useUIStore } from '@/stores/uiStore';
 import { ChordBlock } from './ChordBlock';
-import { ChordPicker } from './ChordPicker';
+import { ChordStrip } from './ChordStrip';
 import { generateId } from '@/utils/id';
+import { getPlaybackEngine } from '@/core/playback';
 
 interface ChordEditorProps {
   block: Block;
@@ -18,7 +18,7 @@ interface ChordEditorProps {
 export function ChordEditor({ block, track, beatsPerBar }: ChordEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { updateBlockChords } = useProjectStore();
-  const { chordPickerOpen, chordPickerTargetIndex, openChordPicker, closeChordPicker } = useUIStore();
+  const [showChordStrip, setShowChordStrip] = useState(false);
 
   // Extract chords from block or use local state
   const [chords, setChords] = useState<ChordData[]>(() =>
@@ -57,12 +57,23 @@ export function ChordEditor({ block, track, beatsPerBar }: ChordEditorProps) {
     return () => clearTimeout(timeout);
   }, [chords, handleSaveChords]);
 
-  // Handle chord picker selection
-  const handleChordPickerSelect = useCallback((root: number, quality: ChordQuality) => {
-    if (chordPickerTargetIndex !== null) {
-      handleUpdateChord(chordPickerTargetIndex, { root, quality });
+  // Handle chord strip selection
+  const handleChordStripSelect = useCallback((root: number, quality: ChordQuality) => {
+    if (selectedChordIndex !== null) {
+      handleUpdateChord(selectedChordIndex, { root, quality });
     }
-  }, [chordPickerTargetIndex, handleUpdateChord]);
+  }, [selectedChordIndex, handleUpdateChord]);
+
+  // Open chord strip when selecting a chord
+  const handleSelectChord = useCallback((index: number) => {
+    setSelectedChordIndex(index);
+    setShowChordStrip(true);
+  }, []);
+
+  // Close chord strip
+  const handleCloseStrip = useCallback(() => {
+    setShowChordStrip(false);
+  }, []);
 
   // Add a new chord
   const handleAddChord = useCallback(() => {
@@ -98,6 +109,7 @@ export function ChordEditor({ block, track, beatsPerBar }: ChordEditorProps) {
   // Handle click on empty area to deselect
   const handleContainerClick = useCallback(() => {
     setSelectedChordIndex(null);
+    setShowChordStrip(false);
   }, []);
 
   // Draw beat lines
@@ -129,20 +141,12 @@ export function ChordEditor({ block, track, beatsPerBar }: ChordEditorProps) {
           + Add Chord
         </button>
         {selectedChordIndex !== null && (
-          <>
-            <button
-              onClick={() => openChordPicker(selectedChordIndex)}
-              className="px-3 py-1.5 bg-background border border-border text-foreground rounded-lg text-sm font-medium hover:bg-border transition-colors"
-            >
-              Edit Chord
-            </button>
-            <button
-              onClick={handleDeleteChord}
-              className="px-3 py-1.5 bg-background border border-border text-red-500 rounded-lg text-sm font-medium hover:bg-red-500/10 transition-colors"
-            >
-              Delete
-            </button>
-          </>
+          <button
+            onClick={handleDeleteChord}
+            className="px-3 py-1.5 bg-background border border-border text-red-500 rounded-lg text-sm font-medium hover:bg-red-500/10 transition-colors"
+          >
+            Delete
+          </button>
         )}
         <div className="flex-1" />
         <span className="text-xs text-muted">
@@ -184,26 +188,32 @@ export function ChordEditor({ block, track, beatsPerBar }: ChordEditorProps) {
                 chord={chord}
                 pixelsPerBeat={pixelsPerBeat}
                 isSelected={selectedChordIndex === index}
-                onSelect={() => setSelectedChordIndex(index)}
+                onSelect={() => handleSelectChord(index)}
                 onUpdate={(updates) => handleUpdateChord(index, updates)}
-                onDoubleClick={() => openChordPicker(index)}
+                onDoubleClick={() => handleSelectChord(index)}
                 containerRef={containerRef}
                 minBeat={0}
                 maxBeat={totalBeats}
+                instrumentId={track.instrumentId ?? 'pad'}
               />
             ))}
           </div>
         </div>
       </div>
 
-      {/* Chord picker modal */}
-      <ChordPicker
-        isOpen={chordPickerOpen && chordPickerTargetIndex !== null}
-        currentRoot={selectedChord?.root ?? 0}
-        currentQuality={selectedChord?.quality ?? 'major'}
-        onSelect={handleChordPickerSelect}
-        onClose={closeChordPicker}
-      />
+      {/* Inline chord strip */}
+      {showChordStrip && selectedChord && (
+        <div className="px-4 py-2 border-t border-border">
+          <ChordStrip
+            currentRoot={selectedChord.root}
+            currentQuality={selectedChord.quality}
+            octave={selectedChord.octave}
+            instrumentId={track.instrumentId ?? 'pad'}
+            onSelect={handleChordStripSelect}
+            onClose={handleCloseStrip}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -24,6 +24,9 @@ export const SCALES: Record<string, number[]> = {
   blues: [0, 3, 5, 6, 7, 10],
 };
 
+// Circle of fifths: C -> G -> D -> A -> E -> B -> F#/Gb -> Db -> Ab -> Eb -> Bb -> F -> C
+export const CIRCLE_OF_FIFTHS = [0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5];
+
 // Chord quality patterns (intervals from root)
 const CHORD_PATTERNS = {
   major: [0, 4, 7],

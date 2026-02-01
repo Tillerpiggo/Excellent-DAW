@@ -1,7 +1,7 @@
 'use client';
 
 import { PresetChip } from './PresetChip';
-import { getPresetsByCategory } from '@/core/presets';
+import { getLoopsByCategory } from '@/core/presets';
 import { CATEGORY_COLORS } from '@/utils/colors';
 import { PatternCategory } from '@/core/types';
 
@@ -21,7 +21,7 @@ const CATEGORY_LABELS: Record<PatternCategory, string> = {
 };
 
 export function CategorySection({ category, isExpanded, onToggle }: CategorySectionProps) {
-  const presets = getPresetsByCategory(category);
+  const presets = getLoopsByCategory(category);
   const color = CATEGORY_COLORS[category];
 
   return (

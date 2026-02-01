@@ -1,4 +1,4 @@
-import { PatternPreset, Event } from './types';
+import { PatternPreset, Event, PatternCategory } from './types';
 
 // Helper to create drum events
 const drum = (time: number, type: 'kick' | 'snare' | 'hihat' | 'clap', velocity = 100): Event => ({
@@ -26,6 +26,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'base',
     defaultInstrument: 'drums',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       drum(0, 'kick'),
       drum(1, 'kick'),
@@ -41,6 +42,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'base',
     defaultInstrument: 'drums',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       drum(0, 'kick'),
       drum(2.5, 'kick'),
@@ -54,6 +56,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'add',
     defaultInstrument: 'drums',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       drum(1, 'snare'),
       drum(3, 'snare'),
@@ -67,6 +70,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'add',
     defaultInstrument: 'drums',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       drum(0, 'hihat', 80),
       drum(0.5, 'hihat', 60),
@@ -86,6 +90,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'add',
     defaultInstrument: 'drums',
     durationBars: 1,
+    presetType: 'loop',
     events: Array.from({ length: 16 }, (_, i) =>
       drum(i * 0.25, 'hihat', i % 4 === 0 ? 90 : i % 2 === 0 ? 70 : 50)
     ),
@@ -98,6 +103,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'add',
     defaultInstrument: 'drums',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       drum(0.5, 'snare', 40),
       drum(1.75, 'snare', 35),
@@ -113,6 +119,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'add',
     defaultInstrument: 'drums',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       drum(1, 'clap'),
       drum(3, 'clap'),
@@ -126,6 +133,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'add',
     defaultInstrument: 'drums',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       drum(3, 'snare'),
       drum(3.25, 'snare', 90),
@@ -143,6 +151,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'base',
     defaultInstrument: 'pad',
     durationBars: 4,
+    presetType: 'loop',
     events: [
       // C major (I)
       note(0, 60, 3.5), note(0, 64, 3.5), note(0, 67, 3.5),
@@ -162,6 +171,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'base',
     defaultInstrument: 'pad',
     durationBars: 4,
+    presetType: 'loop',
     events: [
       // A minor (vi)
       note(0, 57, 3.5), note(0, 60, 3.5), note(0, 64, 3.5),
@@ -181,6 +191,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'base',
     defaultInstrument: 'pad',
     durationBars: 4,
+    presetType: 'loop',
     events: [
       // C major (I)
       note(0, 60, 3.5), note(0, 64, 3.5), note(0, 67, 3.5),
@@ -200,6 +211,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'base',
     defaultInstrument: 'synth',
     durationBars: 2,
+    presetType: 'loop',
     events: [
       note(0, 48, 3.5), note(0, 55, 3.5),
       note(4, 53, 3.5), note(4, 60, 3.5),
@@ -215,6 +227,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'base',
     defaultInstrument: 'bass',
     durationBars: 4,
+    presetType: 'loop',
     events: [
       note(0, 36, 3.5),   // C
       note(4, 31, 3.5),   // G
@@ -230,6 +243,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'base',
     defaultInstrument: 'bass',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       note(0, 36, 0.4), note(0.5, 36, 0.4),
       note(1, 36, 0.4), note(1.5, 36, 0.4),
@@ -245,6 +259,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'base',
     defaultInstrument: 'bass',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       note(0, 36, 0.4), note(0.5, 48, 0.4),
       note(1, 36, 0.4), note(1.5, 48, 0.4),
@@ -260,6 +275,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'base',
     defaultInstrument: 'bass',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       note(0, 36, 0.4),
       note(0.75, 36, 0.2),
@@ -279,6 +295,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'base',
     defaultInstrument: 'synth',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       note(0, 60, 0.4), note(0.5, 64, 0.4),
       note(1, 67, 0.4), note(1.5, 72, 0.4),
@@ -294,6 +311,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'base',
     defaultInstrument: 'synth',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       note(0, 72, 0.4), note(0.5, 67, 0.4),
       note(1, 64, 0.4), note(1.5, 60, 0.4),
@@ -309,6 +327,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'base',
     defaultInstrument: 'synth',
     durationBars: 1,
+    presetType: 'loop',
     events: Array.from({ length: 16 }, (_, i) => {
       const pitches = [60, 64, 67, 72];
       return note(i * 0.25, pitches[i % 4], 0.2, 80 + (i % 4) * 10);
@@ -322,6 +341,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'base',
     defaultInstrument: 'synth',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       note(0, 60, 0.4), note(0.5, 67, 0.4),
       note(1, 64, 0.4), note(1.5, 72, 0.4),
@@ -338,6 +358,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     description: 'Adds swing timing',
     defaultTrackType: 'shift',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       // Slightly late events for swing feel
       { time: 0.5, pitch: 60, velocity: 100 },
@@ -353,6 +374,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     description: 'Emphasizes certain beats',
     defaultTrackType: 'scale',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       { time: 0, velocity: 127 },
       { time: 1, velocity: 80 },
@@ -367,6 +389,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     description: 'Gradually increases intensity',
     defaultTrackType: 'scale',
     durationBars: 2,
+    presetType: 'loop',
     events: Array.from({ length: 8 }, (_, i) => ({
       time: i,
       velocity: 50 + i * 10,
@@ -379,6 +402,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     description: 'Only lets off-beats through',
     defaultTrackType: 'gate',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       { time: 0.5, velocity: 100 },
       { time: 1.5, velocity: 100 },
@@ -393,6 +417,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     description: 'Only lets downbeats through',
     defaultTrackType: 'gate',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       { time: 0, velocity: 100 },
       { time: 1, velocity: 100 },
@@ -407,6 +432,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     description: 'Shifts all notes up one octave',
     defaultTrackType: 'shift',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       { time: 0, pitch: 72, velocity: 100 }, // 60 + 12 = octave up
     ],
@@ -418,6 +444,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     description: 'Shifts all notes down one octave',
     defaultTrackType: 'shift',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       { time: 0, pitch: 48, velocity: 100 }, // 60 - 12 = octave down
     ],
@@ -429,6 +456,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     description: 'Silences one bar',
     defaultTrackType: 'mute',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       { time: 0, velocity: 100 },
     ],
@@ -440,6 +468,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     description: 'Silences bars 2 and 4 (even bars)',
     defaultTrackType: 'mute',
     durationBars: 4,
+    presetType: 'loop',
     events: [
       { time: 4, velocity: 100 },   // Bar 2 (beats 4-7)
       { time: 12, velocity: 100 },  // Bar 4 (beats 12-15)
@@ -452,6 +481,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     description: 'Silences bars 1 and 3 (odd bars)',
     defaultTrackType: 'mute',
     durationBars: 4,
+    presetType: 'loop',
     events: [
       { time: 0, velocity: 100 },   // Bar 1 (beats 0-3)
       { time: 8, velocity: 100 },   // Bar 3 (beats 8-11)
@@ -466,6 +496,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     description: 'Triggers on every beat',
     defaultTrackType: 'rhythm',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       note(0, 60, 0.25), note(1, 60, 0.25),
       note(2, 60, 0.25), note(3, 60, 0.25),
@@ -478,6 +509,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     description: 'Triggers on every eighth note',
     defaultTrackType: 'rhythm',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       note(0, 60, 0.25), note(0.5, 60, 0.25),
       note(1, 60, 0.25), note(1.5, 60, 0.25),
@@ -492,6 +524,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     description: 'Triggers on every sixteenth note',
     defaultTrackType: 'rhythm',
     durationBars: 1,
+    presetType: 'loop',
     events: Array.from({ length: 16 }, (_, i) =>
       note(i * 0.25, 60, 0.125, i % 4 === 0 ? 100 : 80)
     ),
@@ -503,6 +536,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     description: 'Triggers on the off-beats (ands)',
     defaultTrackType: 'rhythm',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       note(0.5, 60, 0.25), note(1.5, 60, 0.25),
       note(2.5, 60, 0.25), note(3.5, 60, 0.25),
@@ -515,6 +549,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     description: 'Off-beat syncopated pattern',
     defaultTrackType: 'rhythm',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       note(0, 60, 0.25),
       note(0.75, 60, 0.25),
@@ -531,10 +566,97 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     description: 'Classic Afro-Cuban 3+3+2 pattern',
     defaultTrackType: 'rhythm',
     durationBars: 1,
+    presetType: 'loop',
     events: [
       note(0, 60, 0.25),
       note(1.5, 60, 0.25),
       note(3, 60, 0.25),
+    ],
+  },
+
+  // ========== BASIC PATTERNS (one per category) ==========
+  {
+    id: 'drums-basic',
+    name: 'Drums',
+    category: 'drums',
+    description: 'Simple 4-beat kick pattern',
+    defaultTrackType: 'base',
+    defaultInstrument: 'drums',
+    durationBars: 1,
+    presetType: 'pattern',
+    events: [
+      drum(0, 'kick'),
+      drum(1, 'kick'),
+      drum(2, 'kick'),
+      drum(3, 'kick'),
+    ],
+  },
+  {
+    id: 'chords-basic',
+    name: 'Chords',
+    category: 'chords',
+    description: 'Single C major chord (1 bar)',
+    defaultTrackType: 'base',
+    defaultInstrument: 'pad',
+    durationBars: 1,
+    presetType: 'pattern',
+    events: [
+      note(0, 60, 3.5), note(0, 64, 3.5), note(0, 67, 3.5),
+    ],
+  },
+  {
+    id: 'bass-basic',
+    name: 'Bass',
+    category: 'bass',
+    description: 'Simple root note',
+    defaultTrackType: 'base',
+    defaultInstrument: 'bass',
+    durationBars: 1,
+    presetType: 'pattern',
+    events: [
+      note(0, 36, 3.5),
+    ],
+  },
+  {
+    id: 'arp-basic',
+    name: 'Arp',
+    category: 'arp',
+    description: 'Simple 4-note arpeggio',
+    defaultTrackType: 'base',
+    defaultInstrument: 'synth',
+    durationBars: 1,
+    presetType: 'pattern',
+    events: [
+      note(0, 60, 0.4), note(1, 64, 0.4),
+      note(2, 67, 0.4), note(3, 72, 0.4),
+    ],
+  },
+  {
+    id: 'modifier-basic',
+    name: 'Modifier',
+    category: 'modifier',
+    description: 'Accent pattern',
+    defaultTrackType: 'scale',
+    durationBars: 1,
+    presetType: 'pattern',
+    events: [
+      { time: 0, velocity: 127 },
+      { time: 1, velocity: 90 },
+      { time: 2, velocity: 100 },
+      { time: 3, velocity: 90 },
+    ],
+  },
+  {
+    id: 'rhythm-basic',
+    name: 'Rhythm',
+    category: 'rhythm',
+    description: 'Quarter notes',
+    defaultTrackType: 'rhythm',
+    durationBars: 1,
+    presetType: 'pattern',
+    events: [
+      note(0, 60, 0.25), note(1, 60, 0.25),
+      note(2, 60, 0.25), note(3, 60, 0.25),
     ],
   },
 ];
@@ -545,6 +667,22 @@ export function getPreset(id: string): PatternPreset | undefined {
 
 export function getPresetsByCategory(category: string): PatternPreset[] {
   return PATTERN_PRESETS.filter(p => p.category === category);
+}
+
+export function getLoopPresets(): PatternPreset[] {
+  return PATTERN_PRESETS.filter(p => p.presetType === 'loop');
+}
+
+export function getPatternPresets(): PatternPreset[] {
+  return PATTERN_PRESETS.filter(p => p.presetType === 'pattern');
+}
+
+export function getLoopsByCategory(category: PatternCategory): PatternPreset[] {
+  return PATTERN_PRESETS.filter(p => p.category === category && p.presetType === 'loop');
+}
+
+export function getPatternByCategory(category: PatternCategory): PatternPreset | undefined {
+  return PATTERN_PRESETS.find(p => p.category === category && p.presetType === 'pattern');
 }
 
 export const PRESET_CATEGORIES = ['drums', 'chords', 'bass', 'arp', 'modifier', 'rhythm'] as const;

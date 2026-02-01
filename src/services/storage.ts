@@ -1,4 +1,5 @@
-import { Project, ProjectMetadata, CURRENT_SCHEMA_VERSION } from '@/core/types';
+import { Project, ProjectMetadata, PreviewTrackData, CURRENT_SCHEMA_VERSION } from '@/core/types';
+import { INSTRUMENTS } from '@/core/instruments';
 
 const STORAGE_KEYS = {
   PROJECT_LIST: 'pc_project_list',
@@ -70,6 +71,42 @@ export function setCurrentProjectId(id: string): void {
   }
 }
 
+export function generatePreviewTracks(project: Project): PreviewTrackData[] {
+  const previewTracks: PreviewTrackData[] = [];
+
+  function processTrack(trackId: string, level: number) {
+    const track = project.tracks[trackId];
+    if (!track) return;
+
+    // Get color from instrument or use default
+    const color = track.instrumentId
+      ? INSTRUMENTS[track.instrumentId]?.color || '#6b7280'
+      : '#6b7280';
+
+    // Extract block ranges
+    const blocks = track.blocks.map((block) => ({
+      startBar: block.startBar,
+      endBar: block.startBar + block.durationBars,
+    }));
+
+    if (blocks.length > 0) {
+      previewTracks.push({ color, blocks, level });
+    }
+
+    // Process children
+    for (const childId of track.childIds) {
+      processTrack(childId, level + 1);
+    }
+  }
+
+  // Process root tracks
+  for (const rootId of project.rootTracks) {
+    processTrack(rootId, 0);
+  }
+
+  return previewTracks;
+}
+
 export function projectToMetadata(project: Project): ProjectMetadata {
   return {
     id: project.id,
@@ -79,6 +116,7 @@ export function projectToMetadata(project: Project): ProjectMetadata {
     bpm: project.bpm,
     totalBars: project.totalBars,
     trackCount: Object.keys(project.tracks).length,
+    previewTracks: generatePreviewTracks(project),
   };
 }
 
@@ -93,6 +131,7 @@ export function updateMetadataFromProject(
     bpm: project.bpm,
     totalBars: project.totalBars,
     trackCount: Object.keys(project.tracks).length,
+    previewTracks: generatePreviewTracks(project),
   };
 }
 
@@ -116,7 +155,21 @@ export function setSchemaVersion(version: number): void {
 export function migrateStorageIfNeeded(): void {
   const storedVersion = getSchemaVersion();
   if (storedVersion < CURRENT_SCHEMA_VERSION) {
-    // Future migrations would go here
+    // Migrate preview data for existing projects
+    const projectList = getProjectList();
+    const updatedList = projectList.map((metadata) => {
+      if (!metadata.previewTracks) {
+        const project = getProject(metadata.id);
+        if (project) {
+          return {
+            ...metadata,
+            previewTracks: generatePreviewTracks(project),
+          };
+        }
+      }
+      return metadata;
+    });
+    saveProjectList(updatedList);
     setSchemaVersion(CURRENT_SCHEMA_VERSION);
   }
 }

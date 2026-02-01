@@ -52,8 +52,8 @@ interface UIState {
   chordPickerOpen: boolean;
   chordPickerTargetIndex: number | null;
 
-  // Project manager
-  showProjectManager: boolean;
+  // View state
+  currentView: 'home' | 'editor';
 
   // Actions
   selectTrack: (trackId: string | null) => void;
@@ -89,8 +89,8 @@ interface UIState {
   setTrackDragState: (activeId: string, targetId: string | null, position: DropPosition | null) => void;
   clearTrackDragState: () => void;
 
-  // Project manager actions
-  toggleProjectManager: () => void;
+  // View actions
+  setCurrentView: (view: 'home' | 'editor') => void;
 }
 
 export const useUIStore = create<UIState>((set, get) => ({
@@ -136,8 +136,8 @@ export const useUIStore = create<UIState>((set, get) => ({
   chordPickerOpen: false,
   chordPickerTargetIndex: null,
 
-  // Project manager
-  showProjectManager: false,
+  // View state
+  currentView: 'home',
 
   selectTrack: (trackId) => {
     set({ selectedTrackId: trackId, selectedBlockId: null });
@@ -265,7 +265,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     });
   },
 
-  toggleProjectManager: () => {
-    set((state) => ({ showProjectManager: !state.showProjectManager }));
+  setCurrentView: (view) => {
+    set({ currentView: view });
   },
 }));

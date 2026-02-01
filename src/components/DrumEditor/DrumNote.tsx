@@ -168,17 +168,19 @@ export function DrumNote({
       }}
       onMouseDown={handleDragStart}
     >
-      {/* Left resize handle */}
+      {/* Left resize handle - disabled for now, may add as advanced option later
       <div
         className="absolute top-0 bottom-0 left-0 w-2 cursor-ew-resize hover:bg-black/20 rounded-l"
         onMouseDown={handleLeftResizeStart}
       />
+      */}
 
-      {/* Right resize handle */}
+      {/* Right resize handle - disabled for now, may add as advanced option later
       <div
         className="absolute top-0 bottom-0 right-0 w-2 cursor-ew-resize hover:bg-black/20 rounded-r"
         onMouseDown={handleRightResizeStart}
       />
+      */}
     </div>
   );
 }

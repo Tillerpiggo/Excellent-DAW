@@ -4,10 +4,12 @@ import { useEffect, useMemo } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { ChordEditor } from './ChordEditor';
+import { PresetSelector } from '@/components/shared/PresetSelector';
+import { PatternPreset } from '@/core/types';
 
 export function ChordEditorPanel() {
   const { selectedBlockId, selectedTrackId, showChordEditor, setShowChordEditor } = useUIStore();
-  const { project } = useProjectStore();
+  const { project, updateBlock } = useProjectStore();
 
   // Get the selected track and block
   const selectedTrack = selectedTrackId ? project.tracks[selectedTrackId] : null;
@@ -20,7 +22,7 @@ export function ChordEditorPanel() {
     return allEvents.some(e => e.pitch !== undefined);
   }, [selectedBlock]);
 
-  // Don't show chord editor for rhythm tracks (they use drum editor)
+  // Don't show chord editor for rhythm tracks (they're timing modifiers, not chord sources)
   const isRhythmTrack = selectedTrack?.typeId === 'rhythm';
 
   // Auto-show/hide chord editor based on selection
@@ -31,6 +33,16 @@ export function ChordEditorPanel() {
       setShowChordEditor(false);
     }
   }, [selectedBlock, hasPitchedEvents, isRhythmTrack, setShowChordEditor]);
+
+  // Handle applying a preset to the selected block
+  const handleApplyPreset = (preset: PatternPreset) => {
+    if (!selectedTrackId || !selectedBlockId) return;
+
+    updateBlock(selectedTrackId, selectedBlockId, {
+      streams: [{ events: [...preset.events] }],
+      durationBars: preset.durationBars,
+    });
+  };
 
   // Don't render if no chord block selected or if it's a rhythm track
   if (!showChordEditor || !selectedTrack || !selectedBlock || !hasPitchedEvents || isRhythmTrack) {
@@ -54,6 +66,11 @@ export function ChordEditorPanel() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
+      </div>
+
+      {/* Preset Selector */}
+      <div className="py-2 border-b border-border/50 bg-surface/50">
+        <PresetSelector category="chords" onSelectPreset={handleApplyPreset} />
       </div>
 
       {/* Editor content */}

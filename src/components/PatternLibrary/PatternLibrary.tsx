@@ -2,9 +2,12 @@
 
 import { useState } from 'react';
 import { CategorySection } from './CategorySection';
+import { SegmentedControl } from './SegmentedControl';
+import { PatternGrid } from './PatternGrid';
 import { PRESET_CATEGORIES } from '@/core/presets';
 
 export function PatternLibrary() {
+  const [activeTab, setActiveTab] = useState<'loops' | 'patterns'>('loops');
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set(PRESET_CATEGORIES)
   );
@@ -27,16 +30,22 @@ export function PatternLibrary() {
         Pattern Library
       </h2>
 
-      <div className="space-y-2">
-        {PRESET_CATEGORIES.map((category) => (
-          <CategorySection
-            key={category}
-            category={category}
-            isExpanded={expandedCategories.has(category)}
-            onToggle={() => toggleCategory(category)}
-          />
-        ))}
-      </div>
+      <SegmentedControl activeTab={activeTab} onChange={setActiveTab} />
+
+      {activeTab === 'loops' ? (
+        <div className="space-y-2">
+          {PRESET_CATEGORIES.map((category) => (
+            <CategorySection
+              key={category}
+              category={category}
+              isExpanded={expandedCategories.has(category)}
+              onToggle={() => toggleCategory(category)}
+            />
+          ))}
+        </div>
+      ) : (
+        <PatternGrid />
+      )}
 
       <div className="mt-4 pt-4 border-t border-border">
         <p className="text-xs text-muted-foreground">

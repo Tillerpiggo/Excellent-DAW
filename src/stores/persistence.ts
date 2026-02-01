@@ -1,4 +1,5 @@
 import { useProjectStore } from './projectStore';
+import { useUIStore } from './uiStore';
 import * as storage from '@/services/storage';
 import { debounce } from '@/utils/debounce';
 
@@ -43,31 +44,19 @@ export function initializePersistence(): void {
     const project = storage.getProject(currentId);
     if (project) {
       useProjectStore.getState().loadProject(project);
+      useUIStore.getState().setCurrentView('editor');
       loaded = true;
     }
   }
 
-  // If no project loaded, try first in list or create new
+  // If no project loaded, stay on homepage (or create default project for first visit)
   if (!loaded) {
     if (projectList.length > 0) {
-      const project = storage.getProject(projectList[0].id);
-      if (project) {
-        useProjectStore.getState().loadProject(project);
-        storage.setCurrentProjectId(project.id);
-        loaded = true;
-      }
-    }
-
-    if (!loaded) {
-      // Create a new project and add to list
-      const { project } = useProjectStore.getState();
-      const metadata = storage.projectToMetadata(project);
-      const newList = [metadata];
-
-      storage.saveProject(project);
-      storage.saveProjectList(newList);
-      storage.setCurrentProjectId(project.id);
-      useProjectStore.setState({ projectList: newList });
+      // Projects exist but none currently open - stay on homepage
+      useUIStore.getState().setCurrentView('home');
+    } else {
+      // First visit - stay on homepage, no need to create a project
+      useUIStore.getState().setCurrentView('home');
     }
   }
 
