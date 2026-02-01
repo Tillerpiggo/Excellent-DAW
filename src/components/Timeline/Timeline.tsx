@@ -32,7 +32,7 @@ export function Timeline() {
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Ruler */}
-      <div className="h-8 flex-shrink-0 overflow-hidden border-b border-border">
+      <div className="h-12 flex-shrink-0 overflow-hidden border-b border-border bg-surface">
         <div
           className="h-full overflow-x-auto scrollbar-hide"
           style={{ marginLeft: -scrollLeft }}

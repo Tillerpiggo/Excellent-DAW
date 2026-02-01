@@ -33,7 +33,7 @@ export function TrackRow({ node }: TrackRowProps) {
 
   return (
     <div
-      className={`flex items-center h-10 px-2 cursor-pointer transition-colors ${
+      className={`flex items-center h-16 px-2 cursor-pointer transition-colors ${
         isSelected ? 'bg-accent/20' : 'hover:bg-muted/50'
       } ${isDropTarget && dragState.type === 'preset' ? 'bg-accent/30' : ''}`}
       style={{ paddingLeft: `${8 + depth * 16}px` }}
@@ -73,7 +73,7 @@ export function TrackRow({ node }: TrackRowProps) {
 
       {/* Track Name */}
       <span
-        className={`flex-1 text-sm truncate ${
+        className={`flex-1 text-base truncate ${
           track.muted ? 'text-muted-foreground line-through' : ''
         }`}
       >

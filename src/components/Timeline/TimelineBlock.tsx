@@ -43,9 +43,6 @@ export function TimelineBlock({
   // Darker color for the handle
   const handleColor = darken(baseColor, 40);
 
-  // Count events to show density
-  const eventCount = block.streams?.reduce((sum, s) => sum + s.events.length, 0) || 0;
-
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
@@ -111,38 +108,26 @@ export function TimelineBlock({
       }}
       onDragEnd={handleDragEnd}
     >
-      {/* Block content */}
-      <div className="h-full flex flex-col justify-center px-2 overflow-hidden pr-4">
+      {/* Block content - track name */}
+      <div className="absolute top-0.5 left-1 z-10">
         <span className="text-xs font-medium truncate text-white/90">
           {track.name}
         </span>
-        {eventCount > 0 && (
-          <span className="text-[10px] text-white/60">
-            {eventCount} {eventCount === 1 ? 'event' : 'events'}
-          </span>
-        )}
       </div>
 
       {/* Loop indicator */}
       {block.loop && (
-        <div className="absolute top-0.5 right-4 text-[10px] text-white/70">
+        <div className="absolute top-0.5 right-4 text-[10px] text-white/70 z-10">
           ⟳
         </div>
       )}
 
-      {/* Visual event representation */}
-      <div className="absolute bottom-0 left-0 right-3 h-1 flex gap-px px-1">
-        {block.streams?.[0]?.events.slice(0, 16).map((event, i) => (
-          <div
-            key={i}
-            className="flex-1 rounded-t-sm bg-white/40"
-            style={{
-              maxWidth: 4,
-              opacity: (event.velocity || 100) / 127,
-            }}
-          />
-        ))}
-      </div>
+      {/* Visual event representation - piano roll style */}
+      <EventVisualization
+        block={block}
+        beatsPerBar={beatsPerBar}
+        pixelsPerBeat={pixelsPerBeat}
+      />
 
       {/* Resize handle */}
       <div
@@ -157,6 +142,148 @@ export function TimelineBlock({
           <div className="w-0.5 h-2 bg-white/50 rounded-full" />
         </div>
       </div>
+    </div>
+  );
+}
+
+// Event visualization component - shows events at their actual positions
+interface EventVisualizationProps {
+  block: Block;
+  beatsPerBar: number;
+  pixelsPerBeat: number;
+}
+
+function EventVisualization({
+  block,
+  beatsPerBar,
+  pixelsPerBeat,
+}: EventVisualizationProps) {
+  // Gather all events from all streams
+  const allEvents = block.streams?.flatMap((s) => s.events) || [];
+  if (allEvents.length === 0) return null;
+
+  // Calculate the block's total duration in beats
+  const blockTotalBeats = block.durationBars * beatsPerBar;
+  const blockWidthPx = blockTotalBeats * pixelsPerBeat;
+
+  // Calculate the original pattern length (find the end of the last event)
+  const patternLengthBeats = Math.max(
+    ...allEvents.map((e) => e.time + (e.duration || 0.25)),
+    beatsPerBar // At least one bar
+  );
+  // Round up to nearest bar for clean looping
+  const patternBars = Math.ceil(patternLengthBeats / beatsPerBar);
+  const patternBeats = patternBars * beatsPerBar;
+
+  // Find pitch range for vertical positioning
+  const pitches = allEvents.filter((e) => e.pitch !== undefined).map((e) => e.pitch!);
+  const minPitch = pitches.length > 0 ? Math.min(...pitches) : 60;
+  const maxPitch = pitches.length > 0 ? Math.max(...pitches) : 72;
+  const pitchRange = Math.max(maxPitch - minPitch + 1, 1);
+
+  // Reserved space
+  const handleWidthPx = 12;
+
+  // Calculate how many loop iterations we need
+  const loopCount = block.loop ? Math.ceil(blockTotalBeats / patternBeats) : 1;
+
+  // Build all events to render (including loop repetitions)
+  const eventsToRender: Array<{
+    event: (typeof allEvents)[0];
+    offsetBeats: number;
+    loopIndex: number;
+  }> = [];
+
+  for (let loopIdx = 0; loopIdx < loopCount; loopIdx++) {
+    const offsetBeats = loopIdx * patternBeats;
+    for (const event of allEvents) {
+      const eventStartBeat = event.time + offsetBeats;
+      // Only include if the event starts within the block duration
+      if (eventStartBeat < blockTotalBeats) {
+        eventsToRender.push({ event, offsetBeats, loopIndex: loopIdx });
+      }
+    }
+  }
+
+  return (
+    <div
+      className="absolute overflow-hidden pointer-events-none"
+      style={{
+        top: 4,
+        bottom: 4,
+        left: 3, // Account for left border
+        right: handleWidthPx,
+      }}
+    >
+      {/* Loop boundary markers */}
+      {block.loop &&
+        Array.from({ length: loopCount - 1 }).map((_, i) => {
+          const boundaryBeat = (i + 1) * patternBeats;
+          const xPercent = (boundaryBeat / blockTotalBeats) * 100;
+          if (xPercent >= 100) return null;
+          return (
+            <div
+              key={`loop-${i}`}
+              className="absolute top-0 bottom-0 w-px bg-white/30"
+              style={{ left: `${xPercent}%` }}
+            />
+          );
+        })}
+
+      {/* Event blocks */}
+      {eventsToRender.map(({ event, offsetBeats, loopIndex }, i) => {
+        const eventStartBeat = event.time + offsetBeats;
+        const duration = event.duration || 0.25;
+
+        // Calculate horizontal position and width as percentage
+        const xPercent = (eventStartBeat / blockTotalBeats) * 100;
+        const widthPercent = (duration / blockTotalBeats) * 100;
+
+        // Clip if event extends beyond block
+        const clippedWidthPercent = Math.min(widthPercent, 100 - xPercent);
+
+        // Calculate vertical position based on pitch or drum type
+        let topPercent: number;
+        let heightPercent: number;
+
+        if (event.drum) {
+          // Drums: position based on drum type with fixed lanes
+          const drumLanes: Record<string, number> = {
+            hihat: 0,
+            clap: 1,
+            snare: 2,
+            kick: 3,
+          };
+          const laneCount = 4;
+          const lane = drumLanes[event.drum] ?? 2;
+          heightPercent = 100 / laneCount - 4;
+          topPercent = (lane / laneCount) * 100 + 2;
+        } else if (event.pitch !== undefined) {
+          // Melodic: position based on pitch (higher pitch = higher position)
+          const normalizedPitch = (event.pitch - minPitch) / pitchRange;
+          heightPercent = Math.max(100 / pitchRange, 6);
+          topPercent = (1 - normalizedPitch) * (100 - heightPercent);
+        } else {
+          topPercent = 40;
+          heightPercent = 20;
+        }
+
+        return (
+          <div
+            key={`${loopIndex}-${i}`}
+            className="absolute rounded-sm"
+            style={{
+              left: `${xPercent}%`,
+              width: `${Math.max(clippedWidthPercent, 0.5)}%`,
+              top: `${topPercent}%`,
+              height: `${heightPercent}%`,
+              backgroundColor: 'rgba(255, 255, 255, 0.8)',
+              opacity: Math.max((event.velocity || 100) / 127, 0.4),
+              minWidth: 2,
+            }}
+          />
+        );
+      })}
     </div>
   );
 }

@@ -17,7 +17,7 @@ export function TrackHierarchy() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="p-3 border-b border-border flex items-center justify-between">
+      <div className="h-12 px-3 border-b border-border flex items-center justify-between">
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
           Tracks
         </h2>

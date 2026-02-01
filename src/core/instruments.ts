@@ -150,8 +150,10 @@ export function scheduleEvent(
   instruments: InstrumentInstances,
   absoluteTime: number
 ): void {
-  // Ensure time is never negative (can happen due to timing jitter)
-  const time = Math.max(Tone.now(), absoluteTime);
+  // Use the precise time directly - do NOT clamp to Tone.now()
+  // The lookAhead system schedules callbacks early so we can schedule
+  // audio events precisely. Clamping breaks sample-accurate timing.
+  const time = absoluteTime;
   const velocity = (event.velocity ?? 100) / 127;
   const duration = event.duration ?? 0.25;
 

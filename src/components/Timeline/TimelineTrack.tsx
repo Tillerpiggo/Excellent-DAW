@@ -44,7 +44,7 @@ export function TimelineTrack({
 
   return (
     <div
-      className={`h-10 relative border-b border-border transition-colors ${
+      className={`h-16 relative border-b border-border transition-colors ${
         isSelected ? 'bg-accent/10' : 'hover:bg-muted/30'
       } ${track.muted ? 'opacity-50' : ''}`}
       style={{ width: trackWidth }}
