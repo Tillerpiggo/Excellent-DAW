@@ -96,7 +96,10 @@ export function resolveBlocks(
         (max, e) => Math.max(max, e.time + (e.duration || 0)),
         0
       );
-      const loopLength = maxEventTime > 0 ? maxEventTime : blockDurationBeats;
+      // Round up to the nearest bar to ensure patterns loop on bar boundaries
+      const loopLength = maxEventTime > 0
+        ? Math.ceil(maxEventTime / context.beatsPerBar) * context.beatsPerBar
+        : blockDurationBeats;
 
       // Loop events to fill block duration
       let currentOffset = 0;

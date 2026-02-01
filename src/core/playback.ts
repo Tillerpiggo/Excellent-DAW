@@ -80,7 +80,7 @@ export class PlaybackEngine {
             event,
             resolved.instrumentId as InstrumentId,
             this.instruments!,
-            time - Tone.now()
+            time
           );
         }, timeString);
 

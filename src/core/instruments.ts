@@ -140,9 +140,10 @@ export function scheduleEvent(
   event: Event,
   instrumentId: InstrumentId,
   instruments: InstrumentInstances,
-  startTime: number
+  absoluteTime: number
 ): void {
-  const time = startTime + Tone.Time(`${event.time}:0`).toSeconds();
+  // Ensure time is never negative (can happen due to timing jitter)
+  const time = Math.max(Tone.now(), absoluteTime);
   const velocity = (event.velocity ?? 100) / 127;
   const duration = event.duration ?? 0.25;
 
