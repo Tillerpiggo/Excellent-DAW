@@ -452,7 +452,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
   {
     id: 'mod-mute-bar',
     name: 'Mute Bar',
-    category: 'modifier',
+    category: 'mute',
     description: 'Silences one bar',
     defaultTrackType: 'mute',
     durationBars: 1,
@@ -464,7 +464,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
   {
     id: 'mod-mute-even',
     name: 'Mute Even Bars',
-    category: 'modifier',
+    category: 'mute',
     description: 'Silences bars 2 and 4 (even bars)',
     defaultTrackType: 'mute',
     durationBars: 4,
@@ -477,7 +477,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
   {
     id: 'mod-mute-odd',
     name: 'Mute Odd Bars',
-    category: 'modifier',
+    category: 'mute',
     description: 'Silences bars 1 and 3 (odd bars)',
     defaultTrackType: 'mute',
     durationBars: 4,
@@ -486,6 +486,134 @@ export const PATTERN_PRESETS: PatternPreset[] = [
       { time: 0, velocity: 100 },   // Bar 1 (beats 0-3)
       { time: 8, velocity: 100 },   // Bar 3 (beats 8-11)
     ],
+  },
+  {
+    id: 'mute-offbeats',
+    name: 'Off-beats',
+    category: 'mute',
+    description: 'Mutes all off-beats',
+    defaultTrackType: 'mute',
+    durationBars: 1,
+    presetType: 'loop',
+    events: [
+      { time: 0.5, velocity: 100 },
+      { time: 1.5, velocity: 100 },
+      { time: 2.5, velocity: 100 },
+      { time: 3.5, velocity: 100 },
+    ],
+  },
+  {
+    id: 'mute-downbeats',
+    name: 'Downbeats',
+    category: 'mute',
+    description: 'Mutes all downbeats',
+    defaultTrackType: 'mute',
+    durationBars: 1,
+    presetType: 'loop',
+    events: [
+      { time: 0, velocity: 100 },
+      { time: 1, velocity: 100 },
+      { time: 2, velocity: 100 },
+      { time: 3, velocity: 100 },
+    ],
+  },
+  {
+    id: 'mute-sparse',
+    name: 'Sparse',
+    category: 'mute',
+    description: 'Occasional mutes for variation',
+    defaultTrackType: 'mute',
+    durationBars: 2,
+    presetType: 'loop',
+    events: [
+      { time: 1.5, velocity: 100 },
+      { time: 5, velocity: 100 },
+      { time: 6.5, velocity: 100 },
+    ],
+  },
+  {
+    id: 'mute-stutter',
+    name: 'Stutter',
+    category: 'mute',
+    description: '16th note mutes for stutter effect',
+    defaultTrackType: 'mute',
+    durationBars: 1,
+    presetType: 'loop',
+    events: [
+      { time: 2, velocity: 100 },
+      { time: 2.25, velocity: 100 },
+      { time: 2.75, velocity: 100 },
+      { time: 3, velocity: 100 },
+    ],
+  },
+  {
+    id: 'mute-buildup',
+    name: 'Buildup',
+    category: 'mute',
+    description: 'Progressive unmuting for tension',
+    defaultTrackType: 'mute',
+    durationBars: 4,
+    presetType: 'loop',
+    events: [
+      { time: 0, velocity: 100 },
+      { time: 1, velocity: 100 },
+      { time: 2, velocity: 100 },
+      { time: 4, velocity: 100 },
+      { time: 5, velocity: 100 },
+      { time: 8, velocity: 100 },
+    ],
+  },
+
+  // ========== RESTS ==========
+  {
+    id: 'rest-1bar',
+    name: '1 Bar Rest',
+    category: 'rest',
+    description: 'One bar of silence',
+    defaultTrackType: 'rest',
+    durationBars: 1,
+    presetType: 'loop',
+    events: [],
+  },
+  {
+    id: 'rest-2bar',
+    name: '2 Bar Rest',
+    category: 'rest',
+    description: 'Two bars of silence',
+    defaultTrackType: 'rest',
+    durationBars: 2,
+    presetType: 'loop',
+    events: [],
+  },
+  {
+    id: 'rest-4bar',
+    name: '4 Bar Rest',
+    category: 'rest',
+    description: 'Four bars of silence',
+    defaultTrackType: 'rest',
+    durationBars: 4,
+    presetType: 'loop',
+    events: [],
+  },
+  {
+    id: 'rest-8bar',
+    name: '8 Bar Rest',
+    category: 'rest',
+    description: 'Eight bars of silence (intro/outro)',
+    defaultTrackType: 'rest',
+    durationBars: 8,
+    presetType: 'loop',
+    events: [],
+  },
+  {
+    id: 'rest-half',
+    name: 'Half Bar Rest',
+    category: 'rest',
+    description: 'Half bar of silence',
+    defaultTrackType: 'rest',
+    durationBars: 0.5,
+    presetType: 'loop',
+    events: [],
   },
 
   // ========== RHYTHM ==========
@@ -659,6 +787,28 @@ export const PATTERN_PRESETS: PatternPreset[] = [
       note(2, 60, 0.25), note(3, 60, 0.25),
     ],
   },
+  {
+    id: 'mute-basic',
+    name: 'Mute',
+    category: 'mute',
+    description: 'Silences output',
+    defaultTrackType: 'mute',
+    durationBars: 1,
+    presetType: 'pattern',
+    events: [
+      { time: 0, velocity: 100 },
+    ],
+  },
+  {
+    id: 'rest-basic',
+    name: 'Rest',
+    category: 'rest',
+    description: 'One bar of silence',
+    defaultTrackType: 'rest',
+    durationBars: 1,
+    presetType: 'pattern',
+    events: [],
+  },
 ];
 
 export function getPreset(id: string): PatternPreset | undefined {
@@ -685,4 +835,4 @@ export function getPatternByCategory(category: PatternCategory): PatternPreset |
   return PATTERN_PRESETS.find(p => p.category === category && p.presetType === 'pattern');
 }
 
-export const PRESET_CATEGORIES = ['drums', 'chords', 'bass', 'arp', 'modifier', 'rhythm'] as const;
+export const PRESET_CATEGORIES = ['drums', 'chords', 'bass', 'arp', 'modifier', 'rhythm', 'mute', 'rest'] as const;

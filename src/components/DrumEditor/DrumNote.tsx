@@ -125,6 +125,7 @@ export function DrumNote({
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (isSelected && (e.key === 'Delete' || e.key === 'Backspace')) {
       e.preventDefault();
+      e.stopImmediatePropagation(); // Prevent global handler from deleting the block
       onDelete();
     }
   }, [isSelected, onDelete]);
@@ -153,13 +154,13 @@ export function DrumNote({
       data-drum-note
       className={`absolute top-0.5 bottom-0.5 rounded cursor-pointer transition-shadow select-none ${
         isDragging || isResizingLeft || isResizingRight ? 'opacity-80' : ''
-      } ${isSelected ? 'ring-2 ring-white ring-offset-1 ring-offset-surface z-10' : ''}`}
+      } ${isSelected ? 'ring-2 ring-white/60 ring-offset-1 ring-offset-surface z-10' : ''}`}
       style={{
         left,
         width: Math.max(width, 8),
-        backgroundColor: color,
+        backgroundColor: isSelected ? `color-mix(in srgb, ${color} 60%, white)` : color,
         boxShadow: isSelected
-          ? `0 2px 8px ${color}80`
+          ? `0 0 6px 2px ${color}90, 0 0 12px 4px ${color}50`
           : '0 1px 3px rgba(0, 0, 0, 0.3)',
       }}
       onClick={(e) => {

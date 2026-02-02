@@ -2,7 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { Block, Track } from '@/core/types';
-import { ChordData, ChordQuality, extractChordsFromBlock, generateChordPitches } from '@/core/harmony';
+import { ChordData, ChordQuality, ChordVoicing, extractChordsFromBlock, generateChordPitches } from '@/core/harmony';
 import { useProjectStore } from '@/stores/projectStore';
 import { ChordBlock } from './ChordBlock';
 import { CircleOfFifths } from './CircleOfFifths';
@@ -62,6 +62,20 @@ export function ChordEditor({ block, track, beatsPerBar }: ChordEditorProps) {
     }
   }, [selectedChordIndex, handleUpdateChord]);
 
+  // Handle octave change
+  const handleOctaveChange = useCallback((octave: number) => {
+    if (selectedChordIndex !== null) {
+      handleUpdateChord(selectedChordIndex, { octave });
+    }
+  }, [selectedChordIndex, handleUpdateChord]);
+
+  // Handle voicing change
+  const handleVoicingChange = useCallback((voicing: ChordVoicing) => {
+    if (selectedChordIndex !== null) {
+      handleUpdateChord(selectedChordIndex, { voicing });
+    }
+  }, [selectedChordIndex, handleUpdateChord]);
+
   // Select a chord
   const handleSelectChord = useCallback((index: number) => {
     setSelectedChordIndex(index);
@@ -98,6 +112,30 @@ export function ChordEditor({ block, track, beatsPerBar }: ChordEditorProps) {
     setSelectedChordIndex(null);
   }, [selectedChordIndex]);
 
+  // Handle keyboard events for the chord editor
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle if we have a selected chord
+      if (selectedChordIndex === null) return;
+
+      // Check if the event target is within our editor
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
+      if (e.code === 'Delete' || e.code === 'Backspace') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleDeleteChord();
+      }
+    };
+
+    // Use capture phase to intercept before global handler
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [selectedChordIndex, handleDeleteChord]);
+
   // Handle click on empty area to deselect
   const handleContainerClick = useCallback(() => {
     setSelectedChordIndex(null);
@@ -122,7 +160,7 @@ export function ChordEditor({ block, track, beatsPerBar }: ChordEditorProps) {
   const selectedChord = selectedChordIndex !== null ? chords[selectedChordIndex] : null;
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full" data-editor-panel="chord">
       {/* Main content - Timeline */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Toolbar */}
@@ -202,8 +240,11 @@ export function ChordEditor({ block, track, beatsPerBar }: ChordEditorProps) {
             currentRoot={selectedChord.root}
             currentQuality={selectedChord.quality}
             octave={selectedChord.octave}
+            voicing={selectedChord.voicing ?? 'close'}
             instrumentId={track.instrumentId ?? 'pad'}
             onSelect={handleCircleSelect}
+            onOctaveChange={handleOctaveChange}
+            onVoicingChange={handleVoicingChange}
           />
         </div>
       )}

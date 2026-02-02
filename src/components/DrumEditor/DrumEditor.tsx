@@ -94,7 +94,7 @@ export function DrumEditor({ block, track, beatsPerBar }: DrumEditorProps) {
   }, []);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" data-editor-panel="drum">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border">
         {/* Quantize selector */}

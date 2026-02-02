@@ -29,6 +29,14 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
     combine: (_parent, self) => self,
   },
 
+  rest: {
+    id: 'rest',
+    name: 'Rest',
+    description: 'Silent region - outputs no events',
+    category: 'source',
+    combine: () => ({ events: [], harmony: undefined }),
+  },
+
   // Combiners - merge with parent output
   add: {
     id: 'add',
@@ -150,6 +158,47 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
 
       return {
         events: shiftedEvents,
+        harmony: parent.harmony,
+      };
+    },
+  },
+
+  transpose: {
+    id: 'transpose',
+    name: 'Transpose',
+    description: 'Transposes parent events within regions defined by MIDI notes (pitch = semitones from C4)',
+    category: 'modifier',
+    combine: (parent, self) => {
+      if (self.events.length === 0) return parent;
+
+      // Helper to find transpose amount at a given time
+      // Uses duration of transpose notes to define regions
+      const getTransposeAtTime = (time: number): number | null => {
+        for (const transposeEvent of self.events) {
+          const start = transposeEvent.time;
+          const end = start + (transposeEvent.duration ?? 1);
+          if (time >= start && time < end) {
+            // Pitch relative to C4 (60) = transposition amount in semitones
+            return (transposeEvent.pitch ?? 60) - 60;
+          }
+        }
+        return null;
+      };
+
+      const transposedEvents = parent.events.map(parentEvent => {
+        const transposeAmount = getTransposeAtTime(parentEvent.time);
+        if (transposeAmount === null) return parentEvent;
+
+        return {
+          ...parentEvent,
+          pitch: parentEvent.pitch !== undefined
+            ? parentEvent.pitch + transposeAmount
+            : parentEvent.pitch,
+        };
+      });
+
+      return {
+        events: transposedEvents,
         harmony: parent.harmony,
       };
     },

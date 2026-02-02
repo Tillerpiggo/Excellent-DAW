@@ -13,10 +13,12 @@ interface TrackInspectorProps {
 
 const TRACK_TYPE_OPTIONS: { id: TrackTypeId; label: string; category: string }[] = [
   { id: 'base', label: 'Base', category: 'Source' },
+  { id: 'rest', label: 'Rest', category: 'Source' },
   { id: 'add', label: 'Add', category: 'Combiner' },
   { id: 'override', label: 'Override', category: 'Combiner' },
   { id: 'gate', label: 'Gate', category: 'Modifier' },
   { id: 'shift', label: 'Shift', category: 'Modifier' },
+  { id: 'transpose', label: 'Transpose', category: 'Modifier' },
   { id: 'scale', label: 'Scale Velocity', category: 'Modifier' },
   { id: 'scaleShift', label: 'Scale Shift', category: 'Modifier' },
   { id: 'harmonyMap', label: 'Harmony Map', category: 'Mapper' },

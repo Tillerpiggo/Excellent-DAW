@@ -55,10 +55,12 @@ export type TrackTypeId =
   | 'mute'
   | 'gate'
   | 'shift'
+  | 'transpose'
   | 'scale'
   | 'scaleShift'
   | 'harmonyMap'
-  | 'rhythm';
+  | 'rhythm'
+  | 'rest';
 
 export type InstrumentId = 'synth' | 'keys' | 'pad' | 'bass' | 'drums';
 
@@ -85,7 +87,7 @@ export interface Project {
   tracks: Record<string, Track>;
 }
 
-export type PatternCategory = 'drums' | 'chords' | 'bass' | 'arp' | 'modifier' | 'rhythm';
+export type PatternCategory = 'drums' | 'chords' | 'bass' | 'arp' | 'modifier' | 'rhythm' | 'mute' | 'rest';
 
 export type PresetType = 'loop' | 'pattern';
 

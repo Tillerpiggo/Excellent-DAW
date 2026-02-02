@@ -8,10 +8,12 @@ import { useProjectStore } from '@/stores/projectStore';
 interface PlayheadProps {
   currentBeat: number;
   pixelsPerBeat: number;
+  scrollLeft: number;
 }
 
-export function Playhead({ currentBeat, pixelsPerBeat }: PlayheadProps) {
-  const position = currentBeat * pixelsPerBeat;
+export function Playhead({ currentBeat, pixelsPerBeat, scrollLeft }: PlayheadProps) {
+  // Position relative to the fixed overlay container (accounts for scroll)
+  const position = currentBeat * pixelsPerBeat - scrollLeft;
 
   const { isPlaying, seekTo } = usePlayback();
   const { isScrubbing, setIsScrubbing, setCurrentBeat } = useUIStore();
@@ -23,12 +25,13 @@ export function Playhead({ currentBeat, pixelsPerBeat }: PlayheadProps) {
   const pixelToBeat = useCallback(
     (pixelX: number) => {
       const totalBeats = project.totalBars * project.beatsPerBar;
-      const beat = pixelX / pixelsPerBeat;
+      // Add scrollLeft back to convert from screen position to timeline position
+      const beat = (pixelX + scrollLeft) / pixelsPerBeat;
       const quantize = 0.25; // 1/16th note
       const quantized = Math.round(beat / quantize) * quantize;
       return Math.max(0, Math.min(totalBeats - quantize, quantized));
     },
-    [pixelsPerBeat, project.totalBars, project.beatsPerBar]
+    [pixelsPerBeat, scrollLeft, project.totalBars, project.beatsPerBar]
   );
 
   const handleMouseDown = useCallback(
@@ -45,11 +48,11 @@ export function Playhead({ currentBeat, pixelsPerBeat }: PlayheadProps) {
     (e: MouseEvent) => {
       if (!isDraggingRef.current) return;
 
-      // Get the timeline container to calculate position
-      const timeline = containerRef.current?.closest('.timeline-content');
-      if (!timeline) return;
+      // Get the playhead's parent container to calculate position
+      const container = containerRef.current?.parentElement;
+      if (!container) return;
 
-      const rect = timeline.getBoundingClientRect();
+      const rect = container.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const beat = pixelToBeat(x);
 
@@ -82,7 +85,7 @@ export function Playhead({ currentBeat, pixelsPerBeat }: PlayheadProps) {
   return (
     <div
       ref={containerRef}
-      className={`absolute top-0 bottom-0 w-0.5 bg-accent-to z-20 ${
+      className={`absolute top-0 bottom-0 w-0.5 bg-accent-to ${
         isScrubbing ? '' : 'transition-[left] duration-75'
       }`}
       style={{ left: position, pointerEvents: 'none' }}

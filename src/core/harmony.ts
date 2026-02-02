@@ -3,6 +3,9 @@ import { Event, HarmonyInfo, ScaleInfo, Output, Block } from './types';
 // Chord quality type for the chord editor
 export type ChordQuality = 'major' | 'minor' | 'diminished' | 'augmented' | 'sus2' | 'sus4' | 'major7' | 'minor7' | 'dominant7';
 
+// Voicing types for chord arrangement
+export type ChordVoicing = 'close' | 'open' | 'drop2' | 'spread';
+
 // Data structure for a chord in the chord editor
 export interface ChordData {
   id: string;
@@ -11,6 +14,7 @@ export interface ChordData {
   startBeat: number;
   durationBeats: number;
   octave: number; // Base octave for the chord
+  voicing?: ChordVoicing; // How to arrange the chord notes
 }
 
 // Common scales
@@ -215,13 +219,59 @@ export function formatChordName(root: number, quality: ChordQuality): string {
   return `${noteName} ${qualityName}`;
 }
 
-// Generate MIDI pitches for a chord given root, quality, and octave
-export function generateChordPitches(root: number, quality: ChordQuality, octave: number): number[] {
+// Generate MIDI pitches for a chord given root, quality, octave, and voicing
+export function generateChordPitches(
+  root: number,
+  quality: ChordQuality,
+  octave: number,
+  voicing: ChordVoicing = 'close'
+): number[] {
   const pattern = CHORD_PATTERNS[quality];
   if (!pattern) return [root + octave * 12];
 
   const basePitch = root + octave * 12;
-  return pattern.map(interval => basePitch + interval);
+  const closePitches = pattern.map(interval => basePitch + interval);
+
+  switch (voicing) {
+    case 'close':
+      // Default close voicing - all notes in same octave
+      return closePitches;
+
+    case 'open':
+      // Open voicing - raise middle note(s) up an octave
+      if (closePitches.length >= 3) {
+        const result = [...closePitches];
+        // Raise the 2nd note (3rd of chord) up an octave
+        result[1] = result[1] + 12;
+        return result.sort((a, b) => a - b);
+      }
+      return closePitches;
+
+    case 'drop2':
+      // Drop 2 voicing - drop the 2nd note from top down an octave
+      if (closePitches.length >= 3) {
+        const sorted = [...closePitches].sort((a, b) => a - b);
+        const secondFromTop = sorted[sorted.length - 2];
+        return sorted.map(p => p === secondFromTop ? p - 12 : p).sort((a, b) => a - b);
+      }
+      return closePitches;
+
+    case 'spread':
+      // Spread voicing - distribute notes across 2 octaves
+      if (closePitches.length >= 3) {
+        const result = closePitches.map((p, i) => {
+          // Alternate octaves: root stays, 3rd up, 5th up more
+          if (i === 0) return p;
+          if (i === 1) return p + 12;
+          return p + (i % 2 === 0 ? 0 : 12);
+        });
+        return result.sort((a, b) => a - b);
+      }
+      return closePitches;
+
+    default:
+      return closePitches;
+  }
 }
 
 // Extract chords from a block by grouping simultaneous notes
@@ -299,7 +349,7 @@ export function chordsToEvents(chords: ChordData[]): Event[] {
   const events: Event[] = [];
 
   for (const chord of chords) {
-    const pitches = generateChordPitches(chord.root, chord.quality, chord.octave);
+    const pitches = generateChordPitches(chord.root, chord.quality, chord.octave, chord.voicing);
 
     for (const pitch of pitches) {
       events.push({

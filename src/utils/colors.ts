@@ -9,6 +9,8 @@ export const CATEGORY_COLORS: Record<PatternCategory, string> = {
   arp: '#4ECDC4',      // Teal
   modifier: '#95E1D3', // Mint
   rhythm: '#F9A826',   // Orange
+  mute: '#64748b',     // Slate
+  rest: '#9ca3af',     // Gray
 };
 
 // Track type colors
@@ -19,10 +21,12 @@ export const TRACK_TYPE_COLORS: Record<TrackTypeId, string> = {
   mute: '#64748b',       // Slate (muted gray)
   gate: '#f59e0b',       // Amber
   shift: '#06b6d4',      // Cyan
+  transpose: '#0ea5e9',  // Sky blue
   scale: '#8b5cf6',      // Violet
   scaleShift: '#ec4899', // Pink
   harmonyMap: '#14b8a6', // Teal
   rhythm: '#F9A826',     // Orange
+  rest: '#9ca3af',       // Gray
 };
 
 // Instrument colors - derived from INSTRUMENTS registry

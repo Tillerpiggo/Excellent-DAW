@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import { ChordQuality, getNoteNames, CIRCLE_OF_FIFTHS } from '@/core/harmony';
+import { ChordQuality, ChordVoicing, getNoteNames, CIRCLE_OF_FIFTHS } from '@/core/harmony';
 import { getPlaybackEngine } from '@/core/playback';
 import { InstrumentId } from '@/core/types';
 
@@ -9,8 +9,11 @@ interface CircleOfFifthsProps {
   currentRoot: number;
   currentQuality: ChordQuality;
   octave: number;
+  voicing: ChordVoicing;
   instrumentId: InstrumentId;
   onSelect: (root: number, quality: ChordQuality) => void;
+  onOctaveChange: (octave: number) => void;
+  onVoicingChange: (voicing: ChordVoicing) => void;
 }
 
 // Relative minor for each major (same position in circle)
@@ -21,12 +24,22 @@ const RELATIVE_MINORS = [9, 4, 11, 6, 1, 8, 3, 10, 5, 0, 7, 2];
 // In C major, the diminished is B dim. For circle positions:
 const DIMINISHED_ROOTS = [11, 6, 1, 8, 3, 10, 5, 0, 7, 2, 9, 4];
 
+const VOICING_OPTIONS: { value: ChordVoicing; label: string; description: string }[] = [
+  { value: 'close', label: 'Close', description: 'Notes close together' },
+  { value: 'open', label: 'Open', description: 'Spread out voicing' },
+  { value: 'drop2', label: 'Drop 2', description: 'Jazz voicing' },
+  { value: 'spread', label: 'Spread', description: 'Wide across octaves' },
+];
+
 export function CircleOfFifths({
   currentRoot,
   currentQuality,
   octave,
+  voicing,
   instrumentId,
   onSelect,
+  onOctaveChange,
+  onVoicingChange,
 }: CircleOfFifthsProps) {
   const noteNames = getNoteNames();
 
@@ -51,13 +64,13 @@ export function CircleOfFifths({
   };
 
   return (
-    <div className="flex flex-col h-full bg-surface border-l border-border">
-      <div className="px-3 py-2 border-b border-border">
+    <div className="flex flex-col h-full bg-surface border-l border-border overflow-y-auto">
+      <div className="px-3 py-2 border-b border-border sticky top-0 bg-surface z-10">
         <span className="text-xs font-medium text-muted">Circle of Fifths</span>
       </div>
 
-      <div className="flex-1 flex items-center justify-center p-2">
-        <svg viewBox="0 0 100 100" className="w-full h-full max-w-[280px] max-h-[280px]">
+      <div className="flex items-center justify-center p-2 min-h-[200px]">
+        <svg viewBox="0 0 100 100" className="w-full max-w-[280px] max-h-[280px] aspect-square">
           {/* Outer ring - Major chords */}
           {CIRCLE_OF_FIFTHS.map((root, index) => {
             const pos = getPosition(index, 42);
@@ -191,6 +204,47 @@ export function CircleOfFifths({
                quality === 'sus2' ? 'sus2' :
                quality === 'sus4' ? 'sus4' :
                quality === 'augmented' ? 'Aug' : quality}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Octave control */}
+      <div className="px-3 py-2 border-t border-border">
+        <div className="text-xs text-muted mb-1.5">Octave</div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onOctaveChange(Math.max(1, octave - 1))}
+            className="w-8 h-8 rounded bg-background border border-border text-foreground hover:bg-border transition-colors text-sm font-medium"
+          >
+            -
+          </button>
+          <span className="flex-1 text-center text-sm font-medium">{octave}</span>
+          <button
+            onClick={() => onOctaveChange(Math.min(7, octave + 1))}
+            className="w-8 h-8 rounded bg-background border border-border text-foreground hover:bg-border transition-colors text-sm font-medium"
+          >
+            +
+          </button>
+        </div>
+      </div>
+
+      {/* Voicing control */}
+      <div className="px-3 py-2 border-t border-border">
+        <div className="text-xs text-muted mb-1.5">Voicing</div>
+        <div className="flex flex-wrap gap-1">
+          {VOICING_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => onVoicingChange(option.value)}
+              className={`px-2 py-0.5 rounded text-xs font-medium transition-all ${
+                voicing === option.value
+                  ? 'bg-coral text-white'
+                  : 'bg-background hover:bg-border text-foreground'
+              }`}
+              title={option.description}
+            >
+              {option.label}
             </button>
           ))}
         </div>

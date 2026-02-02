@@ -38,6 +38,7 @@ interface UIState {
   collapsedTrackIds: Set<string>;
   pixelsPerBeat: number;
   scrollLeft: number;
+  scrollTop: number;
 
   // Panel visibility
   showInspector: boolean;
@@ -45,12 +46,20 @@ interface UIState {
   showChordEditor: boolean;
   showDrumEditor: boolean;
   showArpEditor: boolean;
+  showMuteEditor: boolean;
+  showTransposeEditor: boolean;
 
   // Drum editor state
   drumEditorQuantize: '16th' | '8th' | 'quarter';
 
   // Arp editor state
   arpEditorQuantize: '16th' | '8th' | 'quarter';
+
+  // Mute editor state
+  muteEditorQuantize: '16th' | '8th' | 'quarter' | 'bar';
+
+  // Transpose editor state
+  transposeEditorQuantize: '16th' | '8th' | 'quarter' | 'bar';
 
   // Chord picker state
   chordPickerOpen: boolean;
@@ -80,14 +89,19 @@ interface UIState {
   toggleTrackCollapsed: (trackId: string) => void;
   setPixelsPerBeat: (pixels: number) => void;
   setScrollLeft: (scroll: number) => void;
+  setScrollTop: (scroll: number) => void;
 
   toggleInspector: () => void;
   toggleLibrary: () => void;
   setShowChordEditor: (show: boolean) => void;
   setShowDrumEditor: (show: boolean) => void;
   setShowArpEditor: (show: boolean) => void;
+  setShowMuteEditor: (show: boolean) => void;
+  setShowTransposeEditor: (show: boolean) => void;
   setDrumEditorQuantize: (quantize: '16th' | '8th' | 'quarter') => void;
   setArpEditorQuantize: (quantize: '16th' | '8th' | 'quarter') => void;
+  setMuteEditorQuantize: (quantize: '16th' | '8th' | 'quarter' | 'bar') => void;
+  setTransposeEditorQuantize: (quantize: '16th' | '8th' | 'quarter' | 'bar') => void;
   openChordPicker: (index: number) => void;
   closeChordPicker: () => void;
 
@@ -128,6 +142,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   collapsedTrackIds: new Set(),
   pixelsPerBeat: 30,
   scrollLeft: 0,
+  scrollTop: 0,
 
   // Panel visibility
   showInspector: true,
@@ -135,12 +150,20 @@ export const useUIStore = create<UIState>((set, get) => ({
   showChordEditor: false,
   showDrumEditor: false,
   showArpEditor: false,
+  showMuteEditor: false,
+  showTransposeEditor: false,
 
   // Drum editor state
   drumEditorQuantize: '16th',
 
   // Arp editor state
   arpEditorQuantize: '16th',
+
+  // Mute editor state
+  muteEditorQuantize: 'bar',
+
+  // Transpose editor state
+  transposeEditorQuantize: 'bar',
 
   // Chord picker state
   chordPickerOpen: false,
@@ -231,6 +254,10 @@ export const useUIStore = create<UIState>((set, get) => ({
     set({ scrollLeft: Math.max(0, scroll) });
   },
 
+  setScrollTop: (scroll) => {
+    set({ scrollTop: Math.max(0, scroll) });
+  },
+
   toggleInspector: () => {
     set((state) => ({ showInspector: !state.showInspector }));
   },
@@ -251,12 +278,28 @@ export const useUIStore = create<UIState>((set, get) => ({
     set({ showArpEditor: show });
   },
 
+  setShowMuteEditor: (show) => {
+    set({ showMuteEditor: show });
+  },
+
+  setShowTransposeEditor: (show) => {
+    set({ showTransposeEditor: show });
+  },
+
   setDrumEditorQuantize: (quantize) => {
     set({ drumEditorQuantize: quantize });
   },
 
   setArpEditorQuantize: (quantize) => {
     set({ arpEditorQuantize: quantize });
+  },
+
+  setMuteEditorQuantize: (quantize) => {
+    set({ muteEditorQuantize: quantize });
+  },
+
+  setTransposeEditorQuantize: (quantize) => {
+    set({ transposeEditorQuantize: quantize });
   },
 
   openChordPicker: (index) => {

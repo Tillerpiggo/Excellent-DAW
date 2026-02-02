@@ -27,6 +27,10 @@ export function useKeyboard() {
         return;
       }
 
+      // Check if we're inside an editor panel (chord editor, drum editor, etc.)
+      // These panels handle their own delete key behavior
+      const isInEditorPanel = target.closest('[data-editor-panel]') !== null;
+
       switch (e.code) {
         case 'Space':
           e.preventDefault();
@@ -35,6 +39,10 @@ export function useKeyboard() {
 
         case 'Delete':
         case 'Backspace':
+          // Skip if inside an editor panel - let the panel handle it
+          if (isInEditorPanel) {
+            return;
+          }
           if (selectedBlockId && selectedTrackId) {
             deleteBlock(selectedTrackId, selectedBlockId);
             selectBlock(null);
