@@ -8,7 +8,15 @@ import { useUIStore } from '@/stores/uiStore';
 export function usePlayback() {
   const engineRef = useRef(getPlaybackEngine());
   const project = useProjectStore((state) => state.project);
-  const { isPlaying, setPlaying, setCurrentBeat, setLoopRegion: setUILoopRegion } = useUIStore();
+  const {
+    isPlaying,
+    setPlaying,
+    setCurrentBeat,
+    setLoopRegion: setUILoopRegion,
+    loopStart,
+    loopEnd,
+    loopEnabled,
+  } = useUIStore();
 
   // Setup callbacks on mount
   useEffect(() => {
@@ -29,10 +37,27 @@ export function usePlayback() {
     };
   }, [setCurrentBeat, setPlaying]);
 
+  // Sync loop region with engine when loopEnabled changes
+  useEffect(() => {
+    if (!isPlaying) return;
+
+    const engine = engineRef.current;
+    if (loopEnabled && loopStart !== null && loopEnd !== null && loopStart !== loopEnd) {
+      engine.setLoopRegion(loopStart, loopEnd, project.beatsPerBar);
+    } else {
+      // Clear custom loop - restore full project loop
+      engine.setLoopRegion(null, null, project.beatsPerBar);
+    }
+  }, [isPlaying, loopEnabled, loopStart, loopEnd, project.beatsPerBar]);
+
   const play = useCallback(async () => {
     const engine = engineRef.current;
     await engine.play(project);
-  }, [project]);
+    // Apply loop region after playback starts if enabled
+    if (loopEnabled && loopStart !== null && loopEnd !== null && loopStart !== loopEnd) {
+      engine.setLoopRegion(loopStart, loopEnd, project.beatsPerBar);
+    }
+  }, [project, loopEnabled, loopStart, loopEnd]);
 
   const stop = useCallback(() => {
     const engine = engineRef.current;

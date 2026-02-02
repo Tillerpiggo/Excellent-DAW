@@ -46,6 +46,7 @@ interface UIState {
   // View
   collapsedTrackIds: Set<string>;
   pixelsPerBeat: number;
+  trackHeightScale: number;
   scrollLeft: number;
   scrollTop: number;
 
@@ -59,6 +60,7 @@ interface UIState {
   showTransposeEditor: boolean;
   showRhythmEditor: boolean;
   showSwingEditor: boolean;
+  showVisualView: boolean;
 
   // Drum editor state
   drumEditorQuantize: '16th' | '8th' | 'quarter';
@@ -110,6 +112,7 @@ interface UIState {
 
   toggleTrackCollapsed: (trackId: string) => void;
   setPixelsPerBeat: (pixels: number) => void;
+  setTrackHeightScale: (scale: number) => void;
   setScrollLeft: (scroll: number) => void;
   setScrollTop: (scroll: number) => void;
 
@@ -122,6 +125,7 @@ interface UIState {
   setShowTransposeEditor: (show: boolean) => void;
   setShowRhythmEditor: (show: boolean) => void;
   setShowSwingEditor: (show: boolean) => void;
+  setShowVisualView: (show: boolean) => void;
   setDrumEditorQuantize: (quantize: '16th' | '8th' | 'quarter') => void;
   setArpEditorQuantize: (quantize: '16th' | '8th' | 'quarter') => void;
   setMuteEditorQuantize: (quantize: '16th' | '8th' | 'quarter' | 'bar') => void;
@@ -168,6 +172,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   // View
   collapsedTrackIds: new Set(),
   pixelsPerBeat: 30,
+  trackHeightScale: 1.0,
   scrollLeft: 0,
   scrollTop: 0,
 
@@ -181,6 +186,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   showTransposeEditor: false,
   showRhythmEditor: false,
   showSwingEditor: false,
+  showVisualView: false,
 
   // Drum editor state
   drumEditorQuantize: '16th',
@@ -333,6 +339,10 @@ export const useUIStore = create<UIState>((set, get) => ({
     set({ pixelsPerBeat: Math.max(10, Math.min(100, pixels)) });
   },
 
+  setTrackHeightScale: (scale) => {
+    set({ trackHeightScale: Math.max(0.5, Math.min(2.0, scale)) });
+  },
+
   setScrollLeft: (scroll) => {
     set({ scrollLeft: Math.max(0, scroll) });
   },
@@ -375,6 +385,10 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   setShowSwingEditor: (show) => {
     set({ showSwingEditor: show });
+  },
+
+  setShowVisualView: (show) => {
+    set({ showVisualView: show });
   },
 
   setDrumEditorQuantize: (quantize) => {

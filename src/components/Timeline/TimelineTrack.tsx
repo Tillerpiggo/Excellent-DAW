@@ -18,8 +18,10 @@ export function TimelineTrack({
   beatsPerBar,
   totalBars,
 }: TimelineTrackProps) {
-  const { selectedTrackId, selectTrack, dropTargetTrackId, dropTargetBar, dragState } =
+  const { selectedTrackId, selectTrack, dropTargetTrackId, dropTargetBar, dragState, trackHeightScale } =
     useUIStore();
+
+  const trackHeight = Math.round(64 * trackHeightScale);
   const { handleDragOver, handleDragLeave, handleTimelineDrop } = useDragDrop();
 
   const isSelected = selectedTrackId === track.id;
@@ -44,11 +46,12 @@ export function TimelineTrack({
 
   return (
     <div
-      className={`h-16 relative border-b border-border transition-colors ${
+      className={`relative border-b border-border transition-colors ${
         isSelected ? '' : 'hover:bg-muted/30'
       } ${track.muted ? 'opacity-50' : ''}`}
       style={{
         width: trackWidth,
+        height: trackHeight,
         ...(isSelected ? { background: 'linear-gradient(90deg, rgba(100, 116, 139, 0.25) 0%, rgba(71, 85, 105, 0.1) 100%)' } : {}),
       }}
       onClick={() => selectTrack(track.id)}

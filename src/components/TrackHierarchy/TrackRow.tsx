@@ -29,7 +29,10 @@ export function TrackRow({ node }: TrackRowProps) {
     trackDragActiveId,
     trackDropTargetId,
     trackDropPosition,
+    trackHeightScale,
   } = useUIStore();
+
+  const trackHeight = Math.round(64 * trackHeightScale);
   const { handleDragOver, handleDragLeave, handleHierarchyDrop } = useDragDrop();
 
   // Sortable hook for drag and drop reordering
@@ -73,13 +76,14 @@ export function TrackRow({ node }: TrackRowProps) {
   return (
     <div
       ref={setNodeRef}
-      className={`group relative flex items-center h-16 px-2 cursor-pointer transition-colors ${
+      className={`group relative flex items-center px-2 cursor-pointer transition-colors ${
         isSelected ? '' : 'hover:bg-muted/50'
       } ${isDropTarget && dragState.type === 'preset' ? 'bg-accent-from/30' : ''} ${
         isBeingDragged ? 'z-10' : ''
       }`}
       style={{
         ...style,
+        height: trackHeight,
         ...(isSelected ? { background: 'linear-gradient(90deg, rgba(100, 116, 139, 0.25) 0%, rgba(71, 85, 105, 0.1) 100%)' } : {}),
       }}
       onClick={() => selectTrack(track.id)}

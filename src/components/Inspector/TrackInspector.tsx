@@ -1,10 +1,11 @@
 'use client';
 
-import { Track, TrackTypeId, InstrumentId } from '@/core/types';
+import { Track, TrackTypeId, InstrumentId, VisualInstrumentId } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { TRACK_TYPES } from '@/core/trackTypes';
 import { INSTRUMENTS } from '@/core/instruments';
+import { VISUAL_INSTRUMENTS, getVisualInstrumentOptions } from '@/core/visualInstruments';
 import { TRACK_TYPE_COLORS } from '@/utils/colors';
 
 interface TrackInspectorProps {
@@ -29,6 +30,9 @@ const INSTRUMENT_OPTIONS = Object.entries(INSTRUMENTS).map(([id, def]) => ({
   id: id as InstrumentId,
   label: def.name,
 }));
+
+// Visual instrument options
+const VISUAL_INSTRUMENT_OPTIONS = getVisualInstrumentOptions();
 
 export function TrackInspector({ track }: TrackInspectorProps) {
   const { updateTrack, deleteTrack } = useProjectStore();
@@ -73,9 +77,9 @@ export function TrackInspector({ track }: TrackInspectorProps) {
         <p className="text-xs text-muted-foreground mt-1">{trackType?.description}</p>
       </div>
 
-      {/* Instrument */}
+      {/* Audio Instrument */}
       <div>
-        <label className="block text-xs text-muted-foreground mb-1">Instrument</label>
+        <label className="block text-xs text-muted-foreground mb-1">Audio Instrument</label>
         <select
           value={track.instrumentId || ''}
           onChange={(e) =>
@@ -95,6 +99,32 @@ export function TrackInspector({ track }: TrackInspectorProps) {
         {track.instrumentId && (
           <p className="text-xs text-muted-foreground mt-1">
             {INSTRUMENTS[track.instrumentId]?.description}
+          </p>
+        )}
+      </div>
+
+      {/* Visual Instrument */}
+      <div>
+        <label className="block text-xs text-muted-foreground mb-1">Visual Instrument</label>
+        <select
+          value={track.visualInstrumentId || ''}
+          onChange={(e) =>
+            updateTrack(track.id, {
+              visualInstrumentId: e.target.value ? (e.target.value as VisualInstrumentId) : undefined,
+            })
+          }
+          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
+        >
+          <option value="">None</option>
+          {VISUAL_INSTRUMENT_OPTIONS.map((opt) => (
+            <option key={opt.id} value={opt.id}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        {track.visualInstrumentId && (
+          <p className="text-xs text-muted-foreground mt-1">
+            {VISUAL_INSTRUMENTS[track.visualInstrumentId]?.description}
           </p>
         )}
       </div>

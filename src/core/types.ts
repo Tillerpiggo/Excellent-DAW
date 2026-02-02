@@ -65,11 +65,14 @@ export type TrackTypeId =
 
 export type InstrumentId = 'synth' | 'keys' | 'pad' | 'bass' | 'drums';
 
+export type VisualInstrumentId = 'polarFlower';
+
 export interface Track {
   id: string;
   name: string;
   typeId: TrackTypeId;
   instrumentId?: InstrumentId;
+  visualInstrumentId?: VisualInstrumentId;
   muted: boolean;
   collapsed: boolean;
   blocks: Block[];

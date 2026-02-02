@@ -3,6 +3,7 @@ import { Project, InstrumentId } from './types';
 import { resolveProject, ResolvedTrack } from './resolution';
 import { createInstruments, scheduleEvent, disposeInstruments, InstrumentInstances } from './instruments';
 import { ChordQuality, generateChordPitches } from './harmony';
+import { getVisualPlaybackEngine, VisualPlaybackEngine } from './visualPlayback';
 
 export type PlaybackState = 'stopped' | 'playing' | 'paused';
 
@@ -20,6 +21,7 @@ export class PlaybackEngine {
   private parts: Tone.Part[] = [];
   private project: Project | null = null;
   private isInitialized = false;
+  private visualEngine: VisualPlaybackEngine | null = null;
 
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
@@ -54,6 +56,16 @@ export class PlaybackEngine {
 
     // Schedule all events
     this.scheduleEvents(resolvedTracks, project);
+
+    // Initialize and start visual playback engine
+    this.visualEngine = getVisualPlaybackEngine();
+    this.visualEngine.initialize(
+      resolvedTracks,
+      project.bpm,
+      project.beatsPerBar,
+      project.totalBars
+    );
+    this.visualEngine.start();
 
     // Start transport
     Tone.getTransport().start();
@@ -138,6 +150,11 @@ export class PlaybackEngine {
       part.dispose();
     }
     this.parts = [];
+
+    // Stop visual playback
+    if (this.visualEngine) {
+      this.visualEngine.stop();
+    }
 
     // Stop beat tracking
     if (this.animationFrame !== null) {

@@ -1,10 +1,11 @@
-import { Project, Track, Block, Event, Output, ProcessContext, HarmonyInfo } from './types';
+import { Project, Track, Block, Event, Output, ProcessContext, HarmonyInfo, VisualInstrumentId } from './types';
 import { getTrackType } from './trackTypes';
 import { findHarmonyInOutput, deriveScaleFromHarmony } from './harmony';
 
 export interface ResolvedTrack {
   trackId: string;
   instrumentId?: string;
+  visualInstrumentId?: VisualInstrumentId;
   output: Output;
 }
 
@@ -136,10 +137,15 @@ export function resolveTrack(
   );
 
   // Step 5: Push this track's output
-  if (track.instrumentId && combinedOutput.events.length > 0) {
+  // Include track if it has an audio instrument OR a visual instrument
+  const hasAudioInstrument = track.instrumentId && combinedOutput.events.length > 0;
+  const hasVisualInstrument = track.visualInstrumentId && combinedOutput.events.length > 0;
+
+  if (hasAudioInstrument || hasVisualInstrument) {
     results.push({
       trackId: track.id,
       instrumentId: track.instrumentId,
+      visualInstrumentId: track.visualInstrumentId,
       output: combinedOutput,
     });
   }

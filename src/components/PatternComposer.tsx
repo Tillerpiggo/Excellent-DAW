@@ -13,12 +13,13 @@ import { MuteEditorPanel } from './MuteEditor';
 import { TransposeEditorPanel } from './TransposeEditor';
 import { RhythmEditorPanel } from './RhythmEditor';
 import { SwingEditorPanel } from './SwingEditor';
+import { VisualViewPanel } from './VisualView';
 import { useUIStore } from '@/stores/uiStore';
 import { useKeyboard } from '@/hooks/useKeyboard';
 
 export function PatternComposer() {
-  const { showLibrary, showInspector, showChordEditor, showDrumEditor, showArpEditor, showMuteEditor, showTransposeEditor, showRhythmEditor, showSwingEditor } = useUIStore();
-  const showBottomPanel = showChordEditor || showDrumEditor || showArpEditor || showMuteEditor || showTransposeEditor || showRhythmEditor || showSwingEditor;
+  const { showLibrary, showInspector, showChordEditor, showDrumEditor, showArpEditor, showMuteEditor, showTransposeEditor, showRhythmEditor, showSwingEditor, showVisualView } = useUIStore();
+  const showBottomPanel = showChordEditor || showDrumEditor || showArpEditor || showMuteEditor || showTransposeEditor || showRhythmEditor || showSwingEditor || showVisualView;
 
   // Panel refs for imperative collapse/expand control
   const libraryPanelRef = usePanelRef();
@@ -92,6 +93,7 @@ export function PatternComposer() {
                     <TransposeEditorPanel />
                     <RhythmEditorPanel />
                     <SwingEditorPanel />
+                    <VisualViewPanel />
                   </div>
                 </Panel>
               </Group>
@@ -108,6 +110,7 @@ export function PatternComposer() {
                   <TransposeEditorPanel />
                   <RhythmEditorPanel />
                   <SwingEditorPanel />
+                  <VisualViewPanel />
                 </div>
               </>
             )}

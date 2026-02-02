@@ -5,6 +5,7 @@ import { TimelineRuler } from '../Timeline/TimelineRuler';
 import { TimelineContent } from './TimelineContent';
 import { TrackLabels } from './TrackLabels';
 import { Playhead } from '../Timeline/Playhead';
+import { ZoomControls } from './ZoomControls';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { flattenTracks } from '@/utils/tree';
@@ -15,10 +16,13 @@ export function ArrangementView() {
   const {
     collapsedTrackIds,
     pixelsPerBeat,
+    trackHeightScale,
     scrollLeft,
     currentBeat,
     setScrollLeft,
     setScrollTop,
+    setPixelsPerBeat,
+    setTrackHeightScale,
   } = useUIStore();
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -37,6 +41,39 @@ export function ArrangementView() {
     [setScrollLeft, setScrollTop]
   );
 
+  // Handle wheel zoom
+  const handleWheel = useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      // Ctrl + scroll: Horizontal zoom
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -5 : 5;
+        const newPixelsPerBeat = Math.max(10, Math.min(100, pixelsPerBeat + delta));
+
+        // Zoom centered on cursor position
+        if (containerRef.current) {
+          const rect = containerRef.current.getBoundingClientRect();
+          const cursorX = e.clientX - rect.left - trackLabelWidth + scrollLeft;
+          const beatAtCursor = cursorX / pixelsPerBeat;
+          const newCursorX = beatAtCursor * newPixelsPerBeat;
+          const newScrollLeft = newCursorX - (e.clientX - rect.left - trackLabelWidth);
+
+          setPixelsPerBeat(newPixelsPerBeat);
+          setScrollLeft(Math.max(0, newScrollLeft));
+        } else {
+          setPixelsPerBeat(newPixelsPerBeat);
+        }
+      }
+      // Shift + scroll: Vertical zoom
+      else if (e.shiftKey) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -0.1 : 0.1;
+        setTrackHeightScale(Math.max(0.5, Math.min(2.0, trackHeightScale + delta)));
+      }
+    },
+    [pixelsPerBeat, trackHeightScale, scrollLeft, trackLabelWidth, setPixelsPerBeat, setTrackHeightScale, setScrollLeft]
+  );
+
   // Calculate playhead position relative to the visible area
   const playheadPosition = trackLabelWidth + currentBeat * pixelsPerBeat - scrollLeft;
   const isPlayheadVisible = playheadPosition >= trackLabelWidth && playheadPosition <= trackLabelWidth + timelineWidth;
@@ -48,6 +85,7 @@ export function ArrangementView() {
         ref={containerRef}
         className="h-full overflow-auto bg-background"
         onScroll={handleScroll}
+        onWheel={handleWheel}
       >
         <div
           className="grid timeline-content"
@@ -114,6 +152,9 @@ export function ArrangementView() {
           />
         </div>
       )}
+
+      {/* Zoom Controls */}
+      <ZoomControls />
     </div>
   );
 }

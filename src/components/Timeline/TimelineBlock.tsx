@@ -16,6 +16,33 @@ interface TimelineBlockProps {
   beatsPerBar: number;
 }
 
+// Helper to find track ID for a given block ID
+function findTrackForBlock(tracks: Record<string, Track>, blockId: string): string | null {
+  for (const [trackId, track] of Object.entries(tracks)) {
+    if (track.blocks.some(b => b.id === blockId)) {
+      return trackId;
+    }
+  }
+  return null;
+}
+
+// Helper to calculate pattern bars for a block
+function getPatternBars(block: Block, beatsPerBar: number): number {
+  const allEvents = block.streams?.flatMap((s) => s.events) || [];
+  const patternLengthBeats = allEvents.length > 0
+    ? Math.max(...allEvents.map((e) => e.time + (e.duration || 0.25)), beatsPerBar)
+    : beatsPerBar;
+  return Math.ceil(patternLengthBeats / beatsPerBar);
+}
+
+interface SelectedBlockInfo {
+  blockId: string;
+  trackId: string;
+  originalDuration: number;
+  originalStartBar: number;
+  patternBars: number;
+}
+
 export function TimelineBlock({
   block,
   track,
@@ -24,12 +51,15 @@ export function TimelineBlock({
 }: TimelineBlockProps) {
   const { selectedBlockIds, selectBlock } = useUIStore();
   const { updateBlock } = useProjectStore();
+  const project = useProjectStore((state) => state.project);
   const { handleBlockDragStart, handleDragEnd } = useDragDrop();
 
   const [resizeMode, setResizeMode] = useState<ResizeMode>(null);
   const resizeStartX = useRef(0);
   const originalDuration = useRef(block.durationBars);
   const originalStartBar = useRef(block.startBar);
+  // Track info for all selected blocks at resize start
+  const selectedBlocksInfo = useRef<SelectedBlockInfo[]>([]);
 
   const isSelected = selectedBlockIds.has(block.id);
 
@@ -57,6 +87,27 @@ export function TimelineBlock({
   const blockTotalBeats = block.durationBars * beatsPerBar;
   const loopCount = block.loop ? Math.ceil(blockTotalBeats / patternBeats) : 1;
 
+  // Capture info for all selected blocks at resize start
+  const captureSelectedBlocksInfo = useCallback(() => {
+    const info: SelectedBlockInfo[] = [];
+    for (const blockId of selectedBlockIds) {
+      const trackId = findTrackForBlock(project.tracks, blockId);
+      if (trackId) {
+        const foundBlock = project.tracks[trackId].blocks.find(b => b.id === blockId);
+        if (foundBlock) {
+          info.push({
+            blockId,
+            trackId,
+            originalDuration: foundBlock.durationBars,
+            originalStartBar: foundBlock.startBar,
+            patternBars: getPatternBars(foundBlock, beatsPerBar),
+          });
+        }
+      }
+    }
+    selectedBlocksInfo.current = info;
+  }, [selectedBlockIds, project.tracks, beatsPerBar]);
+
   // Left handle resize start
   const handleLeftResizeStart = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -65,7 +116,8 @@ export function TimelineBlock({
     resizeStartX.current = e.clientX;
     originalDuration.current = block.durationBars;
     originalStartBar.current = block.startBar;
-  }, [block.durationBars, block.startBar]);
+    captureSelectedBlocksInfo();
+  }, [block.durationBars, block.startBar, captureSelectedBlocksInfo]);
 
   // Right handle resize start - mode passed directly from zone
   const handleRightResizeStart = useCallback((e: React.MouseEvent, mode: 'loop' | 'extend') => {
@@ -75,7 +127,8 @@ export function TimelineBlock({
     resizeStartX.current = e.clientX;
     originalDuration.current = block.durationBars;
     originalStartBar.current = block.startBar;
-  }, [block.durationBars, block.startBar]);
+    captureSelectedBlocksInfo();
+  }, [block.durationBars, block.startBar, captureSelectedBlocksInfo]);
 
   const handleResizeMove = useCallback((e: MouseEvent) => {
     if (!resizeMode) return;
@@ -102,25 +155,45 @@ export function TimelineBlock({
       }
     } else if (resizeMode === 'right-loop') {
       // Right handle loop zone: extend with loop, disable loop if shrunk to single pattern
-      const newDuration = Math.max(1, originalDuration.current + deltaBars);
-      if (newDuration !== block.durationBars) {
-        // Disable loop if shrunk to pattern length or less (no actual looping)
-        const shouldLoop = newDuration > patternBars;
-        updateBlock(track.id, block.id, {
-          durationBars: newDuration,
-          loop: shouldLoop,
-        });
+      // Apply to all selected blocks (Logic Pro-style: each block respects its own minimum)
+      const blocksToUpdate = selectedBlocksInfo.current.length > 0
+        ? selectedBlocksInfo.current
+        : [{ blockId: block.id, trackId: track.id, originalDuration: originalDuration.current, originalStartBar: originalStartBar.current, patternBars }];
+
+      for (const info of blocksToUpdate) {
+        // Each block applies delta independently, respecting its own minimum
+        const newDuration = Math.max(1, info.originalDuration + deltaBars);
+        // Only update if actually changed
+        const currentBlock = project.tracks[info.trackId]?.blocks.find(b => b.id === info.blockId);
+        if (currentBlock && newDuration !== currentBlock.durationBars) {
+          // Disable loop if shrunk to pattern length or less (no actual looping)
+          const shouldLoop = newDuration > info.patternBars;
+          updateBlock(info.trackId, info.blockId, {
+            durationBars: newDuration,
+            loop: shouldLoop,
+          });
+        }
       }
     } else if (resizeMode === 'right-extend') {
       // Right handle extend zone: extend without touching loop
-      const newDuration = Math.max(1, originalDuration.current + deltaBars);
-      if (newDuration !== block.durationBars) {
-        updateBlock(track.id, block.id, {
-          durationBars: newDuration,
-        });
+      // Apply to all selected blocks (Logic Pro-style: each block respects its own minimum)
+      const blocksToUpdate = selectedBlocksInfo.current.length > 0
+        ? selectedBlocksInfo.current
+        : [{ blockId: block.id, trackId: track.id, originalDuration: originalDuration.current, originalStartBar: originalStartBar.current, patternBars }];
+
+      for (const info of blocksToUpdate) {
+        // Each block applies delta independently, respecting its own minimum
+        const newDuration = Math.max(1, info.originalDuration + deltaBars);
+        // Only update if actually changed
+        const currentBlock = project.tracks[info.trackId]?.blocks.find(b => b.id === info.blockId);
+        if (currentBlock && newDuration !== currentBlock.durationBars) {
+          updateBlock(info.trackId, info.blockId, {
+            durationBars: newDuration,
+          });
+        }
       }
     }
-  }, [resizeMode, barWidth, patternBars, block.startBar, block.durationBars, block.id, track.id, updateBlock]);
+  }, [resizeMode, barWidth, patternBars, block.startBar, block.durationBars, block.id, track.id, updateBlock, project.tracks]);
 
   const handleResizeEnd = useCallback(() => {
     setResizeMode(null);

@@ -29,12 +29,13 @@ export function TimelineContent({
     endMarqueeSelection,
     selectBlocks,
     clearBlockSelection,
+    trackHeightScale,
   } = useUIStore();
 
   const project = useProjectStore((state) => state.project);
 
-  // Track height constant (matches TimelineTrack h-16 = 64px)
-  const trackHeight = 64;
+  // Track height (scaled from base 64px)
+  const trackHeight = Math.round(64 * trackHeightScale);
   const barWidth = beatsPerBar * pixelsPerBeat;
 
   // Calculate which blocks are inside the marquee selection
