@@ -3,12 +3,12 @@
 import { useEffect, useMemo } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore } from '@/stores/projectStore';
-import { MuteEditor } from './MuteEditor';
+import { RhythmEditor } from './RhythmEditor';
 import { PresetSelector } from '@/components/shared/PresetSelector';
 import { PatternPreset } from '@/core/types';
 
-export function MuteEditorPanel() {
-  const { selectedBlockIds, selectedTrackId, showMuteEditor, setShowMuteEditor } = useUIStore();
+export function RhythmEditorPanel() {
+  const { selectedBlockIds, selectedTrackId, showRhythmEditor, setShowRhythmEditor } = useUIStore();
   const { project, updateBlock } = useProjectStore();
 
   // Only show editor when exactly 1 block is selected
@@ -18,22 +18,22 @@ export function MuteEditorPanel() {
   const selectedTrack = selectedTrackId ? project.tracks[selectedTrackId] : null;
   const selectedBlock = selectedTrack?.blocks.find(b => b.id === selectedBlockId);
 
-  // Check if this is a mute track
-  const isMuteTrack = selectedTrack?.typeId === 'mute';
+  // Check if this is a rhythm track
+  const isRhythmTrack = selectedTrack?.typeId === 'rhythm';
 
-  // Determine if we should show mute editor
-  const shouldShowMuteEditor = useMemo(() => {
-    return selectedTrack && selectedBlock && isMuteTrack;
-  }, [selectedTrack, selectedBlock, isMuteTrack]);
+  // Determine if we should show rhythm editor
+  const shouldShowRhythmEditor = useMemo(() => {
+    return selectedTrack && selectedBlock && isRhythmTrack;
+  }, [selectedTrack, selectedBlock, isRhythmTrack]);
 
-  // Auto-show/hide mute editor based on selection
+  // Auto-show/hide rhythm editor based on selection
   useEffect(() => {
-    if (shouldShowMuteEditor) {
-      setShowMuteEditor(true);
+    if (shouldShowRhythmEditor) {
+      setShowRhythmEditor(true);
     } else {
-      setShowMuteEditor(false);
+      setShowRhythmEditor(false);
     }
-  }, [shouldShowMuteEditor, setShowMuteEditor]);
+  }, [shouldShowRhythmEditor, setShowRhythmEditor]);
 
   // Handle applying a preset to the selected block
   const handleApplyPreset = (preset: PatternPreset) => {
@@ -46,7 +46,7 @@ export function MuteEditorPanel() {
   };
 
   // Don't render if conditions aren't met
-  if (!showMuteEditor || !selectedTrack || !selectedBlock) {
+  if (!showRhythmEditor || !selectedTrack || !selectedBlock) {
     return null;
   }
 
@@ -55,13 +55,13 @@ export function MuteEditorPanel() {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-surface">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-foreground">Mute Editor</span>
+          <span className="text-sm font-medium text-foreground">Rhythm Editor</span>
           <span className="text-xs text-muted">- {selectedTrack.name}</span>
         </div>
         <button
-          onClick={() => setShowMuteEditor(false)}
+          onClick={() => setShowRhythmEditor(false)}
           className="text-muted hover:text-foreground transition-colors p-1"
-          title="Close mute editor"
+          title="Close rhythm editor"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -71,12 +71,12 @@ export function MuteEditorPanel() {
 
       {/* Preset Selector */}
       <div className="py-2 border-b border-border/50 bg-surface/50">
-        <PresetSelector category="mute" onSelectPreset={handleApplyPreset} />
+        <PresetSelector category="rhythm" onSelectPreset={handleApplyPreset} />
       </div>
 
       {/* Editor content */}
       <div className="flex-1 overflow-hidden">
-        <MuteEditor
+        <RhythmEditor
           block={selectedBlock}
           track={selectedTrack}
           beatsPerBar={project.beatsPerBar}

@@ -9,12 +9,14 @@ export interface MidiNoteProps {
   pixelsPerBeat: number;
   color: string;
   isSelected: boolean;
-  onSelect: () => void;
+  onSelect: (addToSelection: boolean) => void;
   onUpdate: (updates: { time?: number; duration?: number }) => void;
   onDelete: () => void;
   minTime: number;
   maxTime: number;
   quantize: number;
+  selectedCount: number;
+  onUpdateSelected: (deltaTime: number) => void;
 }
 
 export function MidiNoteComponent({
@@ -30,11 +32,14 @@ export function MidiNoteComponent({
   minTime,
   maxTime,
   quantize,
+  selectedCount,
+  onUpdateSelected,
 }: MidiNoteProps) {
   const [isDragging, setIsDragging] = useState(false);
 
   const dragStartX = useRef(0);
   const originalTime = useRef(time);
+  const lastDeltaTime = useRef(0);
 
   const left = time * pixelsPerBeat;
   const width = duration * pixelsPerBeat;
@@ -46,7 +51,9 @@ export function MidiNoteComponent({
     setIsDragging(true);
     dragStartX.current = e.clientX;
     originalTime.current = time;
-    onSelect();
+    lastDeltaTime.current = 0;
+    // Select with shift key support
+    onSelect(e.shiftKey);
   }, [time, onSelect]);
 
   // Handle mouse move
@@ -56,27 +63,31 @@ export function MidiNoteComponent({
     const deltaX = e.clientX - dragStartX.current;
     const deltaBeats = deltaX / pixelsPerBeat;
 
-    // Move the note - snap to quantize grid
-    let newTime = Math.round((originalTime.current + deltaBeats) / quantize) * quantize;
-    newTime = Math.max(minTime, Math.min(maxTime - duration, newTime));
-    if (newTime !== time) {
-      onUpdate({ time: newTime });
+    // Calculate snapped delta
+    const snappedDelta = Math.round(deltaBeats / quantize) * quantize;
+
+    // If multiple notes selected, move all of them
+    if (isSelected && selectedCount > 1) {
+      const actualDelta = snappedDelta - lastDeltaTime.current;
+      if (actualDelta !== 0) {
+        lastDeltaTime.current = snappedDelta;
+        onUpdateSelected(actualDelta);
+      }
+    } else {
+      // Move single note
+      let newTime = Math.round((originalTime.current + deltaBeats) / quantize) * quantize;
+      newTime = Math.max(minTime, Math.min(maxTime - duration, newTime));
+      if (newTime !== time) {
+        onUpdate({ time: newTime });
+      }
     }
-  }, [isDragging, pixelsPerBeat, quantize, time, duration, onUpdate, minTime, maxTime]);
+  }, [isDragging, pixelsPerBeat, quantize, time, duration, onUpdate, minTime, maxTime, isSelected, selectedCount, onUpdateSelected]);
 
   // Handle mouse up
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
+    lastDeltaTime.current = 0;
   }, []);
-
-  // Handle keyboard delete
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (isSelected && (e.key === 'Delete' || e.key === 'Backspace')) {
-      e.preventDefault();
-      e.stopImmediatePropagation(); // Prevent global handler from deleting the block
-      onDelete();
-    }
-  }, [isSelected, onDelete]);
 
   // Add/remove event listeners
   useEffect(() => {
@@ -89,13 +100,6 @@ export function MidiNoteComponent({
       };
     }
   }, [isDragging, handleMouseMove, handleMouseUp]);
-
-  useEffect(() => {
-    if (isSelected) {
-      document.addEventListener('keydown', handleKeyDown);
-      return () => document.removeEventListener('keydown', handleKeyDown);
-    }
-  }, [isSelected, handleKeyDown]);
 
   return (
     <div
@@ -113,7 +117,7 @@ export function MidiNoteComponent({
       }}
       onClick={(e) => {
         e.stopPropagation();
-        onSelect();
+        onSelect(e.shiftKey);
       }}
       onMouseDown={handleDragStart}
     />

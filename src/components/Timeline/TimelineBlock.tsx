@@ -22,7 +22,7 @@ export function TimelineBlock({
   pixelsPerBeat,
   beatsPerBar,
 }: TimelineBlockProps) {
-  const { selectedBlockId, selectBlock } = useUIStore();
+  const { selectedBlockIds, selectBlock } = useUIStore();
   const { updateBlock } = useProjectStore();
   const { handleBlockDragStart, handleDragEnd } = useDragDrop();
 
@@ -31,7 +31,7 @@ export function TimelineBlock({
   const originalDuration = useRef(block.durationBars);
   const originalStartBar = useRef(block.startBar);
 
-  const isSelected = selectedBlockId === block.id;
+  const isSelected = selectedBlockIds.has(block.id);
 
   // Calculate position and size
   const barWidth = beatsPerBar * pixelsPerBeat;
@@ -149,7 +149,10 @@ export function TimelineBlock({
 
   return (
     <div
-      className={`absolute top-1 bottom-1 rounded-md cursor-pointer overflow-hidden transition-all ${
+      data-block
+      data-block-id={block.id}
+      data-track-id={track.id}
+      className={`absolute top-1 bottom-1 rounded-md cursor-pointer overflow-hidden transition-all select-none ${
         isResizing ? 'cursor-ew-resize' : ''
       }`}
       style={{
@@ -159,7 +162,7 @@ export function TimelineBlock({
       }}
       onClick={(e) => {
         e.stopPropagation();
-        selectBlock(block.id, track.id);
+        selectBlock(block.id, track.id, e.shiftKey);
       }}
       draggable={!isResizing}
       onDragStart={(e) => {

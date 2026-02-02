@@ -60,7 +60,8 @@ export type TrackTypeId =
   | 'scaleShift'
   | 'harmonyMap'
   | 'rhythm'
-  | 'rest';
+  | 'rest'
+  | 'swing';
 
 export type InstrumentId = 'synth' | 'keys' | 'pad' | 'bass' | 'drums';
 
@@ -87,7 +88,7 @@ export interface Project {
   tracks: Record<string, Track>;
 }
 
-export type PatternCategory = 'drums' | 'chords' | 'bass' | 'arp' | 'modifier' | 'rhythm' | 'mute' | 'rest';
+export type PatternCategory = 'drums' | 'chords' | 'bass' | 'arp' | 'modifier' | 'rhythm' | 'mute' | 'rest' | 'swing';
 
 export type PresetType = 'loop' | 'pattern';
 

@@ -9,10 +9,19 @@ interface DragState {
   sourceTrackId?: string;
 }
 
+interface MarqueeSelection {
+  isActive: boolean;
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+}
+
 interface UIState {
   // Selection
   selectedTrackId: string | null;
-  selectedBlockId: string | null;
+  selectedBlockIds: Set<string>;
+  marqueeSelection: MarqueeSelection | null;
 
   // Drag state (for preset/block dragging)
   dragState: DragState;
@@ -48,6 +57,8 @@ interface UIState {
   showArpEditor: boolean;
   showMuteEditor: boolean;
   showTransposeEditor: boolean;
+  showRhythmEditor: boolean;
+  showSwingEditor: boolean;
 
   // Drum editor state
   drumEditorQuantize: '16th' | '8th' | 'quarter';
@@ -61,6 +72,12 @@ interface UIState {
   // Transpose editor state
   transposeEditorQuantize: '16th' | '8th' | 'quarter' | 'bar';
 
+  // Rhythm editor state
+  rhythmEditorQuantize: '16th' | '8th' | 'quarter';
+
+  // Swing editor state
+  swingEditorQuantize: '16th' | '8th' | 'quarter';
+
   // Chord picker state
   chordPickerOpen: boolean;
   chordPickerTargetIndex: number | null;
@@ -70,7 +87,12 @@ interface UIState {
 
   // Actions
   selectTrack: (trackId: string | null) => void;
-  selectBlock: (blockId: string | null, trackId?: string) => void;
+  selectBlock: (blockId: string | null, trackId?: string, addToSelection?: boolean) => void;
+  selectBlocks: (blockIds: string[]) => void;
+  clearBlockSelection: () => void;
+  startMarqueeSelection: (x: number, y: number) => void;
+  updateMarqueeSelection: (x: number, y: number) => void;
+  endMarqueeSelection: () => void;
 
   startDragPreset: (preset: PatternPreset) => void;
   startDragBlock: (blockId: string, sourceTrackId: string) => void;
@@ -98,10 +120,14 @@ interface UIState {
   setShowArpEditor: (show: boolean) => void;
   setShowMuteEditor: (show: boolean) => void;
   setShowTransposeEditor: (show: boolean) => void;
+  setShowRhythmEditor: (show: boolean) => void;
+  setShowSwingEditor: (show: boolean) => void;
   setDrumEditorQuantize: (quantize: '16th' | '8th' | 'quarter') => void;
   setArpEditorQuantize: (quantize: '16th' | '8th' | 'quarter') => void;
   setMuteEditorQuantize: (quantize: '16th' | '8th' | 'quarter' | 'bar') => void;
   setTransposeEditorQuantize: (quantize: '16th' | '8th' | 'quarter' | 'bar') => void;
+  setRhythmEditorQuantize: (quantize: '16th' | '8th' | 'quarter') => void;
+  setSwingEditorQuantize: (quantize: '16th' | '8th' | 'quarter') => void;
   openChordPicker: (index: number) => void;
   closeChordPicker: () => void;
 
@@ -116,7 +142,8 @@ interface UIState {
 export const useUIStore = create<UIState>((set, get) => ({
   // Selection
   selectedTrackId: null,
-  selectedBlockId: null,
+  selectedBlockIds: new Set(),
+  marqueeSelection: null,
 
   // Drag state
   dragState: { type: null },
@@ -152,6 +179,8 @@ export const useUIStore = create<UIState>((set, get) => ({
   showArpEditor: false,
   showMuteEditor: false,
   showTransposeEditor: false,
+  showRhythmEditor: false,
+  showSwingEditor: false,
 
   // Drum editor state
   drumEditorQuantize: '16th',
@@ -160,10 +189,16 @@ export const useUIStore = create<UIState>((set, get) => ({
   arpEditorQuantize: '16th',
 
   // Mute editor state
-  muteEditorQuantize: 'bar',
+  muteEditorQuantize: '16th',
 
   // Transpose editor state
   transposeEditorQuantize: 'bar',
+
+  // Rhythm editor state
+  rhythmEditorQuantize: '16th',
+
+  // Swing editor state
+  swingEditorQuantize: '8th',
 
   // Chord picker state
   chordPickerOpen: false,
@@ -173,14 +208,62 @@ export const useUIStore = create<UIState>((set, get) => ({
   currentView: 'home',
 
   selectTrack: (trackId) => {
-    set({ selectedTrackId: trackId, selectedBlockId: null });
+    set({ selectedTrackId: trackId, selectedBlockIds: new Set() });
   },
 
-  selectBlock: (blockId, trackId) => {
-    set({
-      selectedBlockId: blockId,
-      selectedTrackId: trackId || get().selectedTrackId,
+  selectBlock: (blockId, trackId, addToSelection = false) => {
+    set((state) => {
+      if (blockId === null) {
+        return { selectedBlockIds: new Set(), selectedTrackId: trackId || state.selectedTrackId };
+      }
+      if (addToSelection) {
+        const newSet = new Set(state.selectedBlockIds);
+        if (newSet.has(blockId)) {
+          newSet.delete(blockId);
+        } else {
+          newSet.add(blockId);
+        }
+        return { selectedBlockIds: newSet, selectedTrackId: trackId || state.selectedTrackId };
+      }
+      return { selectedBlockIds: new Set([blockId]), selectedTrackId: trackId || state.selectedTrackId };
     });
+  },
+
+  selectBlocks: (blockIds) => {
+    set({ selectedBlockIds: new Set(blockIds) });
+  },
+
+  clearBlockSelection: () => {
+    set({ selectedBlockIds: new Set() });
+  },
+
+  startMarqueeSelection: (x, y) => {
+    set({
+      marqueeSelection: {
+        isActive: true,
+        startX: x,
+        startY: y,
+        currentX: x,
+        currentY: y,
+      },
+    });
+  },
+
+  updateMarqueeSelection: (x, y) => {
+    set((state) => {
+      if (!state.marqueeSelection) return state;
+      return {
+        marqueeSelection: {
+          ...state.marqueeSelection,
+          currentX: x,
+          currentY: y,
+        },
+      };
+    });
+  },
+
+  endMarqueeSelection: () => {
+    set({ marqueeSelection: null });
   },
 
   startDragPreset: (preset) => {
@@ -286,6 +369,14 @@ export const useUIStore = create<UIState>((set, get) => ({
     set({ showTransposeEditor: show });
   },
 
+  setShowRhythmEditor: (show) => {
+    set({ showRhythmEditor: show });
+  },
+
+  setShowSwingEditor: (show) => {
+    set({ showSwingEditor: show });
+  },
+
   setDrumEditorQuantize: (quantize) => {
     set({ drumEditorQuantize: quantize });
   },
@@ -300,6 +391,14 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   setTransposeEditorQuantize: (quantize) => {
     set({ transposeEditorQuantize: quantize });
+  },
+
+  setRhythmEditorQuantize: (quantize) => {
+    set({ rhythmEditorQuantize: quantize });
+  },
+
+  setSwingEditorQuantize: (quantize) => {
+    set({ swingEditorQuantize: quantize });
   },
 
   openChordPicker: (index) => {

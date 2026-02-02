@@ -11,6 +11,7 @@ export const CATEGORY_COLORS: Record<PatternCategory, string> = {
   rhythm: '#F9A826',   // Orange
   mute: '#64748b',     // Slate
   rest: '#9ca3af',     // Gray
+  swing: '#f472b6',    // Pink (groove feel)
 };
 
 // Track type colors
@@ -27,6 +28,7 @@ export const TRACK_TYPE_COLORS: Record<TrackTypeId, string> = {
   harmonyMap: '#14b8a6', // Teal
   rhythm: '#F9A826',     // Orange
   rest: '#9ca3af',       // Gray
+  swing: '#f472b6',      // Pink (groove feel)
 };
 
 // Instrument colors - derived from INSTRUMENTS registry

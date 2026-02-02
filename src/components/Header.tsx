@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { usePlayback } from '@/hooks/usePlayback';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
+import { UndoRedoButtons } from './UndoRedoButtons';
 
 export function Header() {
   const { isPlaying, toggle, setBpm } = usePlayback();
@@ -100,6 +101,8 @@ export function Header() {
         >
           Library
         </button>
+
+        <UndoRedoButtons />
       </div>
 
       {/* Center Section - Transport */}

@@ -58,8 +58,8 @@ export function ArrangementView() {
             minHeight: '100%',
           }}
         >
-          {/* Corner - sticky top-left */}
-          <div className="sticky left-0 top-0 z-30 bg-surface border-b border-r border-border">
+          {/* Corner - sticky top-left, highest z-index */}
+          <div className="sticky left-0 top-0 z-40 bg-surface border-b border-r border-border">
             <div className="h-12 px-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                 Tracks
@@ -82,8 +82,8 @@ export function ArrangementView() {
             />
           </div>
 
-          {/* Track Labels - sticky left */}
-          <div className="sticky left-0 z-10 bg-surface border-r border-border">
+          {/* Track Labels - sticky left, z-30 to stay above timeline blocks and handles */}
+          <div className="sticky left-0 z-30 bg-surface border-r border-border">
             <TrackLabels flatTracks={flatTracks} />
           </div>
 

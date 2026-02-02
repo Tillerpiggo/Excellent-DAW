@@ -8,8 +8,11 @@ import { PresetSelector } from '@/components/shared/PresetSelector';
 import { PatternPreset } from '@/core/types';
 
 export function DrumEditorPanel() {
-  const { selectedBlockId, selectedTrackId, showDrumEditor, setShowDrumEditor } = useUIStore();
+  const { selectedBlockIds, selectedTrackId, showDrumEditor, setShowDrumEditor } = useUIStore();
   const { project, updateBlock } = useProjectStore();
+
+  // Only show editor when exactly 1 block is selected
+  const selectedBlockId = selectedBlockIds.size === 1 ? Array.from(selectedBlockIds)[0] : null;
 
   // Get the selected track and block
   const selectedTrack = selectedTrackId ? project.tracks[selectedTrackId] : null;

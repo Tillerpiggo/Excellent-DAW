@@ -1,11 +1,11 @@
 import { create } from 'zustand';
-import { immer } from 'zustand/middleware/immer';
 import { Project, Track, Block, ProjectMetadata, Event } from '@/core/types';
 import { generateId } from '@/utils/id';
 import { PATTERN_PRESETS } from '@/core/presets';
 import { ChordData, chordsToEvents } from '@/core/harmony';
 import * as storage from '@/services/storage';
 import { useUIStore } from './uiStore';
+import { historyMiddleware, useHistoryStore } from './history';
 
 interface ProjectState {
   project: Project;
@@ -84,7 +84,7 @@ function createDefaultTrack(
 }
 
 export const useProjectStore = create<ProjectState>()(
-  immer((set, get) => ({
+  historyMiddleware((set, get) => ({
     project: createDefaultProject(),
     projectList: [],
 
@@ -324,6 +324,9 @@ export const useProjectStore = create<ProjectState>()(
       const newProject = createDefaultProject();
       const metadata = storage.projectToMetadata(newProject);
 
+      // Disable history during project creation
+      useHistoryStore.getState().setEnabled(false);
+
       set((state) => {
         state.project = newProject;
         state.projectList = [metadata, ...state.projectList];
@@ -333,6 +336,10 @@ export const useProjectStore = create<ProjectState>()(
       storage.saveProjectList(get().projectList);
       storage.setCurrentProjectId(newProject.id);
 
+      // Re-enable and clear history
+      useHistoryStore.getState().setEnabled(true);
+      useHistoryStore.getState().clearHistory();
+
       return newProject.id;
     },
 
@@ -340,11 +347,18 @@ export const useProjectStore = create<ProjectState>()(
       const project = storage.getProject(id);
       if (!project) return;
 
+      // Disable history during project switch
+      useHistoryStore.getState().setEnabled(false);
+
       set((state) => {
         state.project = project;
       });
 
       storage.setCurrentProjectId(id);
+
+      // Re-enable and clear history
+      useHistoryStore.getState().setEnabled(true);
+      useHistoryStore.getState().clearHistory();
     },
 
     deleteProjectById: (id: string) => {

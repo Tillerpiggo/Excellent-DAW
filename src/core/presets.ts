@@ -350,23 +350,101 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     ],
   },
 
-  // ========== MODIFIERS ==========
+  // ========== SWING ==========
   {
-    id: 'mod-swing',
-    name: 'Swing Feel',
-    category: 'modifier',
-    description: 'Adds swing timing',
-    defaultTrackType: 'shift',
+    id: 'swing-light',
+    name: 'Light Swing',
+    category: 'swing',
+    description: 'Subtle swing feel (33%)',
+    defaultTrackType: 'swing',
     durationBars: 1,
     presetType: 'loop',
     events: [
-      // Slightly late events for swing feel
-      { time: 0.5, pitch: 60, velocity: 100 },
-      { time: 1.5, pitch: 60, velocity: 100 },
-      { time: 2.5, pitch: 60, velocity: 100 },
-      { time: 3.5, pitch: 60, velocity: 100 },
+      { time: 0.5, velocity: 42 },  // 33% swing
+      { time: 1.5, velocity: 42 },
+      { time: 2.5, velocity: 42 },
+      { time: 3.5, velocity: 42 },
     ],
   },
+  {
+    id: 'swing-medium',
+    name: 'Medium Swing',
+    category: 'swing',
+    description: 'Standard swing feel (50%)',
+    defaultTrackType: 'swing',
+    durationBars: 1,
+    presetType: 'loop',
+    events: [
+      { time: 0.5, velocity: 64 },  // 50% swing
+      { time: 1.5, velocity: 64 },
+      { time: 2.5, velocity: 64 },
+      { time: 3.5, velocity: 64 },
+    ],
+  },
+  {
+    id: 'swing-triplet',
+    name: 'Triplet Swing',
+    category: 'swing',
+    description: 'Classic jazz triplet feel (66%)',
+    defaultTrackType: 'swing',
+    durationBars: 1,
+    presetType: 'loop',
+    events: [
+      { time: 0.5, velocity: 84 },  // 66% swing
+      { time: 1.5, velocity: 84 },
+      { time: 2.5, velocity: 84 },
+      { time: 3.5, velocity: 84 },
+    ],
+  },
+  {
+    id: 'swing-heavy',
+    name: 'Heavy Swing',
+    category: 'swing',
+    description: 'Exaggerated shuffle (85%)',
+    defaultTrackType: 'swing',
+    durationBars: 1,
+    presetType: 'loop',
+    events: [
+      { time: 0.5, velocity: 108 },  // 85% swing
+      { time: 1.5, velocity: 108 },
+      { time: 2.5, velocity: 108 },
+      { time: 3.5, velocity: 108 },
+    ],
+  },
+  {
+    id: 'swing-16th',
+    name: '16th Note Swing',
+    category: 'swing',
+    description: 'Swing on 16th note off-beats',
+    defaultTrackType: 'swing',
+    durationBars: 1,
+    presetType: 'loop',
+    events: [
+      { time: 0.25, velocity: 64 },
+      { time: 0.75, velocity: 64 },
+      { time: 1.25, velocity: 64 },
+      { time: 1.75, velocity: 64 },
+      { time: 2.25, velocity: 64 },
+      { time: 2.75, velocity: 64 },
+      { time: 3.25, velocity: 64 },
+      { time: 3.75, velocity: 64 },
+    ],
+  },
+  {
+    id: 'swing-half-time',
+    name: 'Half-time Swing',
+    category: 'swing',
+    description: 'Swing on beats 2 and 4 only',
+    defaultTrackType: 'swing',
+    durationBars: 1,
+    presetType: 'loop',
+    events: [
+      { time: 1.5, velocity: 84 },
+      { time: 3.5, velocity: 84 },
+    ],
+  },
+
+  // ========== MODIFIERS ==========
   {
     id: 'mod-accents',
     name: 'Accent Pattern',
@@ -760,18 +838,15 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     ],
   },
   {
-    id: 'modifier-basic',
-    name: 'Modifier',
+    id: 'transpose-basic',
+    name: 'Transpose',
     category: 'modifier',
-    description: 'Accent pattern',
-    defaultTrackType: 'scale',
+    description: 'Transpose notes by semitones',
+    defaultTrackType: 'transpose',
     durationBars: 1,
     presetType: 'pattern',
     events: [
-      { time: 0, velocity: 127 },
-      { time: 1, velocity: 90 },
-      { time: 2, velocity: 100 },
-      { time: 3, velocity: 90 },
+      note(0, 60, 4), // C4 = no transposition (0 semitones), duration covers whole bar
     ],
   },
   {
@@ -809,6 +884,21 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     presetType: 'pattern',
     events: [],
   },
+  {
+    id: 'swing-basic',
+    name: 'Swing',
+    category: 'swing',
+    description: 'Off-beat swing feel',
+    defaultTrackType: 'swing',
+    durationBars: 1,
+    presetType: 'pattern',
+    events: [
+      { time: 0.5, velocity: 84 },
+      { time: 1.5, velocity: 84 },
+      { time: 2.5, velocity: 84 },
+      { time: 3.5, velocity: 84 },
+    ],
+  },
 ];
 
 export function getPreset(id: string): PatternPreset | undefined {
@@ -835,4 +925,4 @@ export function getPatternByCategory(category: PatternCategory): PatternPreset |
   return PATTERN_PRESETS.find(p => p.category === category && p.presetType === 'pattern');
 }
 
-export const PRESET_CATEGORIES = ['drums', 'chords', 'bass', 'arp', 'modifier', 'rhythm', 'mute', 'rest'] as const;
+export const PRESET_CATEGORIES = ['drums', 'chords', 'bass', 'arp', 'modifier', 'rhythm', 'mute', 'rest', 'swing'] as const;

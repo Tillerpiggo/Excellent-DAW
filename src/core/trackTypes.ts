@@ -87,26 +87,26 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
   mute: {
     id: 'mute',
     name: 'Mute',
-    description: 'Silences parent events in bars where this track has events',
+    description: 'Silences parent events whose start time falls within mute regions',
     category: 'modifier',
-    combine: (parent, self, ctx) => {
+    combine: (parent, self) => {
       if (self.events.length === 0) return parent;
       if (parent.events.length === 0) return parent;
 
-      const beatsPerBar = ctx?.beatsPerBar || 4;
+      // Check if a time falls within any mute region
+      const isMuted = (time: number): boolean => {
+        for (const muteEvent of self.events) {
+          const muteStart = muteEvent.time;
+          const muteEnd = muteStart + (muteEvent.duration ?? 0.25);
+          if (time >= muteStart && time < muteEnd) {
+            return true;
+          }
+        }
+        return false;
+      };
 
-      // Find which bars have mute events
-      const mutedBars = new Set<number>();
-      for (const event of self.events) {
-        const bar = Math.floor(event.time / beatsPerBar);
-        mutedBars.add(bar);
-      }
-
-      // Keep only parent events in non-muted bars
-      const keptEvents = parent.events.filter(e => {
-        const bar = Math.floor(e.time / beatsPerBar);
-        return !mutedBars.has(bar);
-      });
+      // Keep only parent events whose start time is not within a mute region
+      const keptEvents = parent.events.filter(e => !isMuted(e.time));
 
       return {
         events: keptEvents,
@@ -284,23 +284,23 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
     category: 'modifier',
     combine: (parent, self) => {
       if (self.events.length === 0) return { events: [], harmony: parent.harmony };
+      if (parent.events.length === 0) return { events: [], harmony: parent.harmony };
 
-      const parentPitched = parent.events.filter(e => e.pitch !== undefined);
-      if (parentPitched.length === 0) return { events: [], harmony: parent.harmony };
-
-      // Find chord/notes active at a given time
-      const getNotesAtTime = (time: number): Event[] => {
-        const active = parentPitched.filter(e => {
+      // Get events active at a given time (works for both pitched and drum events)
+      const getEventsAtTime = (time: number): Event[] => {
+        // Find events that are active at this time (within their duration)
+        const active = parent.events.filter(e => {
           const end = e.time + (e.duration || 0.5);
           return e.time <= time && time < end;
         });
         if (active.length > 0) return active;
 
-        // Fallback: most recent notes before this time
-        const before = parentPitched.filter(e => e.time <= time);
+        // Fallback: most recent events before this time
+        const before = parent.events.filter(e => e.time <= time);
         if (before.length === 0) {
-          const firstTime = Math.min(...parentPitched.map(e => e.time));
-          return parentPitched.filter(e => Math.abs(e.time - firstTime) < 0.1);
+          // Use first events if nothing before
+          const firstTime = Math.min(...parent.events.map(e => e.time));
+          return parent.events.filter(e => Math.abs(e.time - firstTime) < 0.1);
         }
         const lastTime = Math.max(...before.map(e => e.time));
         return before.filter(e => Math.abs(e.time - lastTime) < 0.1);
@@ -308,13 +308,25 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
 
       const triggered: Event[] = [];
       for (const rhythmEvent of self.events) {
-        for (const note of getNotesAtTime(rhythmEvent.time)) {
-          triggered.push({
-            time: rhythmEvent.time,
-            pitch: note.pitch,
-            velocity: rhythmEvent.velocity ?? note.velocity,
-            duration: rhythmEvent.duration ?? 0.25,
-          });
+        for (const parentEvent of getEventsAtTime(rhythmEvent.time)) {
+          // Preserve the event type (pitched or drum)
+          if (parentEvent.drum !== undefined) {
+            // Drum event - preserve drum property
+            triggered.push({
+              time: rhythmEvent.time,
+              drum: parentEvent.drum,
+              velocity: rhythmEvent.velocity ?? parentEvent.velocity,
+              duration: rhythmEvent.duration ?? 0.25,
+            });
+          } else if (parentEvent.pitch !== undefined) {
+            // Pitched event - preserve pitch property
+            triggered.push({
+              time: rhythmEvent.time,
+              pitch: parentEvent.pitch,
+              velocity: rhythmEvent.velocity ?? parentEvent.velocity,
+              duration: rhythmEvent.duration ?? 0.25,
+            });
+          }
         }
       }
       return { events: triggered.sort((a, b) => a.time - b.time), harmony: parent.harmony };
@@ -427,6 +439,65 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
       return {
         events: mappedEvents,
         harmony: harmonySource.harmony,
+      };
+    },
+  },
+
+  // Swing - delays off-beat events to create swing/groove feel
+  swing: {
+    id: 'swing',
+    name: 'Swing',
+    description: 'Delays events to create swing timing (velocity controls amount)',
+    category: 'modifier',
+    combine: (parent, self, ctx) => {
+      if (self.events.length === 0) return parent;
+      if (parent.events.length === 0) return parent;
+
+      const beatsPerBar = ctx?.beatsPerBar || 4;
+
+      // Build a map of swing markers: time -> swing amount (0-1)
+      // Velocity 0 = no swing, 127 = maximum swing
+      const swingMarkers = new Map<number, number>();
+      for (const event of self.events) {
+        const swingAmount = (event.velocity ?? 64) / 127;
+        swingMarkers.set(event.time, swingAmount);
+      }
+
+      // Helper to find the nearest swing marker for a given time
+      const getSwingAmount = (time: number): number | null => {
+        // Check for exact match first
+        if (swingMarkers.has(time)) {
+          return swingMarkers.get(time)!;
+        }
+        // Check within a small tolerance (for floating point issues)
+        for (const [markerTime, amount] of swingMarkers) {
+          if (Math.abs(markerTime - time) < 0.01) {
+            return amount;
+          }
+        }
+        return null;
+      };
+
+      // Apply swing to parent events
+      const swungEvents = parent.events.map(parentEvent => {
+        const swingAmount = getSwingAmount(parentEvent.time);
+        if (swingAmount === null) return parentEvent;
+
+        // Calculate delay based on swing amount
+        // Max delay is 1/3 of an 8th note (0.167 beats) for classic triplet swing
+        // This creates the "shuffle" feel where off-beats land 2/3 through
+        const maxDelay = 0.167; // ~1/6 beat, creates triplet feel at max
+        const delay = swingAmount * maxDelay;
+
+        return {
+          ...parentEvent,
+          time: parentEvent.time + delay,
+        };
+      });
+
+      return {
+        events: swungEvents.sort((a, b) => a.time - b.time),
+        harmony: parent.harmony,
       };
     },
   },

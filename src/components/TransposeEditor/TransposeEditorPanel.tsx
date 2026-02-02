@@ -6,8 +6,11 @@ import { useProjectStore } from '@/stores/projectStore';
 import { TransposeEditor } from './TransposeEditor';
 
 export function TransposeEditorPanel() {
-  const { selectedBlockId, selectedTrackId, showTransposeEditor, setShowTransposeEditor } = useUIStore();
+  const { selectedBlockIds, selectedTrackId, showTransposeEditor, setShowTransposeEditor } = useUIStore();
   const { project } = useProjectStore();
+
+  // Only show editor when exactly 1 block is selected
+  const selectedBlockId = selectedBlockIds.size === 1 ? Array.from(selectedBlockIds)[0] : null;
 
   // Get the selected track and block
   const selectedTrack = selectedTrackId ? project.tracks[selectedTrackId] : null;

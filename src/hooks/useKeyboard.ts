@@ -3,15 +3,17 @@
 import { useEffect, useCallback } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { useHistoryStore } from '@/stores/history';
 import { usePlayback } from './usePlayback';
 
 export function useKeyboard() {
   const { toggle } = usePlayback();
   const {
     selectedTrackId,
-    selectedBlockId,
+    selectedBlockIds,
     selectTrack,
     selectBlock,
+    clearBlockSelection,
     setPixelsPerBeat,
     pixelsPerBeat,
   } = useUIStore();
@@ -43,9 +45,20 @@ export function useKeyboard() {
           if (isInEditorPanel) {
             return;
           }
-          if (selectedBlockId && selectedTrackId) {
-            deleteBlock(selectedTrackId, selectedBlockId);
-            selectBlock(null);
+          if (selectedBlockIds.size > 0) {
+            // Delete all selected blocks
+            // We need to find which track each block belongs to
+            const tracks = Object.values(project.tracks);
+            selectedBlockIds.forEach((blockId) => {
+              for (const track of tracks) {
+                const block = track.blocks.find((b) => b.id === blockId);
+                if (block) {
+                  deleteBlock(track.id, blockId);
+                  break;
+                }
+              }
+            });
+            clearBlockSelection();
           } else if (selectedTrackId) {
             deleteTrack(selectedTrackId);
             selectTrack(null);
@@ -54,7 +67,7 @@ export function useKeyboard() {
 
         case 'Escape':
           selectTrack(null);
-          selectBlock(null);
+          clearBlockSelection();
           break;
 
         case 'Equal':
@@ -105,16 +118,34 @@ export function useKeyboard() {
             }
           }
           break;
+
+        case 'KeyZ':
+          if (e.metaKey || e.ctrlKey) {
+            e.preventDefault();
+            if (e.shiftKey) {
+              useHistoryStore.getState().redo();
+            } else {
+              useHistoryStore.getState().undo();
+            }
+          }
+          break;
+
+        case 'KeyY':
+          if (e.ctrlKey) {
+            e.preventDefault();
+            useHistoryStore.getState().redo();
+          }
+          break;
       }
     },
     [
       toggle,
       selectedTrackId,
-      selectedBlockId,
+      selectedBlockIds,
       deleteTrack,
       deleteBlock,
       selectTrack,
-      selectBlock,
+      clearBlockSelection,
       setPixelsPerBeat,
       pixelsPerBeat,
       project.tracks,

@@ -8,8 +8,11 @@ import { PresetSelector } from '@/components/shared/PresetSelector';
 import { PatternPreset } from '@/core/types';
 
 export function ChordEditorPanel() {
-  const { selectedBlockId, selectedTrackId, showChordEditor, setShowChordEditor } = useUIStore();
+  const { selectedBlockIds, selectedTrackId, showChordEditor, setShowChordEditor } = useUIStore();
   const { project, updateBlock } = useProjectStore();
+
+  // Only show editor when exactly 1 block is selected
+  const selectedBlockId = selectedBlockIds.size === 1 ? Array.from(selectedBlockIds)[0] : null;
 
   // Get the selected track and block
   const selectedTrack = selectedTrackId ? project.tracks[selectedTrackId] : null;
@@ -28,14 +31,17 @@ export function ChordEditorPanel() {
   // Don't show chord editor for arp tracks (they have their own editor)
   const isArpTrack = selectedTrack?.patternCategory === 'arp';
 
+  // Don't show chord editor for transpose tracks (they have their own editor)
+  const isTransposeTrack = selectedTrack?.typeId === 'transpose';
+
   // Auto-show/hide chord editor based on selection
   useEffect(() => {
-    if (selectedBlock && hasPitchedEvents && !isRhythmTrack && !isArpTrack) {
+    if (selectedBlock && hasPitchedEvents && !isRhythmTrack && !isArpTrack && !isTransposeTrack) {
       setShowChordEditor(true);
     } else {
       setShowChordEditor(false);
     }
-  }, [selectedBlock, hasPitchedEvents, isRhythmTrack, isArpTrack, setShowChordEditor]);
+  }, [selectedBlock, hasPitchedEvents, isRhythmTrack, isArpTrack, isTransposeTrack, setShowChordEditor]);
 
   // Handle applying a preset to the selected block
   const handleApplyPreset = (preset: PatternPreset) => {
@@ -47,8 +53,8 @@ export function ChordEditorPanel() {
     });
   };
 
-  // Don't render if no chord block selected or if it's a rhythm/arp track
-  if (!showChordEditor || !selectedTrack || !selectedBlock || !hasPitchedEvents || isRhythmTrack || isArpTrack) {
+  // Don't render if no chord block selected or if it's a rhythm/arp/transpose track
+  if (!showChordEditor || !selectedTrack || !selectedBlock || !hasPitchedEvents || isRhythmTrack || isArpTrack || isTransposeTrack) {
     return null;
   }
 

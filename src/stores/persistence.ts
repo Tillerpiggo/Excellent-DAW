@@ -1,5 +1,6 @@
 import { useProjectStore } from './projectStore';
 import { useUIStore } from './uiStore';
+import { useHistoryStore } from './history';
 import * as storage from '@/services/storage';
 import { debounce } from '@/utils/debounce';
 
@@ -43,7 +44,12 @@ export function initializePersistence(): void {
   if (currentId) {
     const project = storage.getProject(currentId);
     if (project) {
+      // Disable history during initial load
+      useHistoryStore.getState().setEnabled(false);
       useProjectStore.getState().loadProject(project);
+      useHistoryStore.getState().setEnabled(true);
+      useHistoryStore.getState().clearHistory();
+
       useUIStore.getState().setCurrentView('editor');
       loaded = true;
     }

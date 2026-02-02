@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import { ChordQuality, ChordVoicing, getNoteNames, CIRCLE_OF_FIFTHS } from '@/core/harmony';
+import { ChordQuality, ChordVoicing, ChordInversion, getNoteNames, CIRCLE_OF_FIFTHS, getChordNoteCount, getInversionName } from '@/core/harmony';
 import { getPlaybackEngine } from '@/core/playback';
 import { InstrumentId } from '@/core/types';
 
@@ -10,10 +10,12 @@ interface CircleOfFifthsProps {
   currentQuality: ChordQuality;
   octave: number;
   voicing: ChordVoicing;
+  inversion: ChordInversion;
   instrumentId: InstrumentId;
   onSelect: (root: number, quality: ChordQuality) => void;
   onOctaveChange: (octave: number) => void;
   onVoicingChange: (voicing: ChordVoicing) => void;
+  onInversionChange: (inversion: ChordInversion) => void;
 }
 
 // Relative minor for each major (same position in circle)
@@ -36,12 +38,15 @@ export function CircleOfFifths({
   currentQuality,
   octave,
   voicing,
+  inversion,
   instrumentId,
   onSelect,
   onOctaveChange,
   onVoicingChange,
+  onInversionChange,
 }: CircleOfFifthsProps) {
   const noteNames = getNoteNames();
+  const noteCount = getChordNoteCount(currentQuality);
 
   const handleClick = useCallback((root: number, quality: ChordQuality) => {
     onSelect(root, quality);
@@ -247,6 +252,29 @@ export function CircleOfFifths({
               {option.label}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Inversion control */}
+      <div className="px-3 py-2 border-t border-border">
+        <div className="text-xs text-muted mb-1.5">Inversion</div>
+        <div className="flex flex-wrap gap-1">
+          {([0, 1, 2, 3] as ChordInversion[])
+            .filter(inv => inv < noteCount)
+            .map((inv) => (
+              <button
+                key={inv}
+                onClick={() => onInversionChange(inv)}
+                className={`px-2 py-0.5 rounded text-xs font-medium transition-all ${
+                  inversion === inv
+                    ? 'bg-coral text-white'
+                    : 'bg-background hover:bg-border text-foreground'
+                }`}
+                title={`${getInversionName(inv, currentQuality)} position`}
+              >
+                {getInversionName(inv, currentQuality)}
+              </button>
+            ))}
         </div>
       </div>
     </div>

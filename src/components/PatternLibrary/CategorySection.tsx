@@ -20,6 +20,7 @@ const CATEGORY_LABELS: Record<PatternCategory, string> = {
   rhythm: 'Rhythms',
   mute: 'Mutes',
   rest: 'Rests',
+  swing: 'Swing',
 };
 
 export function CategorySection({ category, isExpanded, onToggle }: CategorySectionProps) {

@@ -8,13 +8,15 @@ interface ChordBlockProps {
   chord: ChordData;
   pixelsPerBeat: number;
   isSelected: boolean;
-  onSelect: () => void;
+  onSelect: (addToSelection: boolean) => void;
   onUpdate: (updates: Partial<ChordData>) => void;
   onDoubleClick: () => void;
   containerRef: React.RefObject<HTMLDivElement | null>;
   minBeat: number;
   maxBeat: number;
   instrumentId: InstrumentId;
+  selectedCount: number;
+  onUpdateSelected: (deltaBeats: number) => void;
 }
 
 export function ChordBlock({
@@ -28,6 +30,8 @@ export function ChordBlock({
   minBeat,
   maxBeat,
   instrumentId,
+  selectedCount,
+  onUpdateSelected,
 }: ChordBlockProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isResizingLeft, setIsResizingLeft] = useState(false);
@@ -36,6 +40,7 @@ export function ChordBlock({
   const dragStartX = useRef(0);
   const originalStartBeat = useRef(chord.startBeat);
   const originalDurationBeats = useRef(chord.durationBeats);
+  const lastDeltaBeats = useRef(0);
 
   // Calculate position and size
   const left = chord.startBeat * pixelsPerBeat;
@@ -53,7 +58,8 @@ export function ChordBlock({
     setIsDragging(true);
     dragStartX.current = e.clientX;
     originalStartBeat.current = chord.startBeat;
-    onSelect();
+    lastDeltaBeats.current = 0;
+    onSelect(e.shiftKey);
   }, [chord.startBeat, isResizingLeft, isResizingRight, onSelect]);
 
   // Handle left resize start
@@ -64,7 +70,7 @@ export function ChordBlock({
     dragStartX.current = e.clientX;
     originalStartBeat.current = chord.startBeat;
     originalDurationBeats.current = chord.durationBeats;
-    onSelect();
+    onSelect(e.shiftKey);
   }, [chord.startBeat, chord.durationBeats, onSelect]);
 
   // Handle right resize start
@@ -74,7 +80,7 @@ export function ChordBlock({
     setIsResizingRight(true);
     dragStartX.current = e.clientX;
     originalDurationBeats.current = chord.durationBeats;
-    onSelect();
+    onSelect(e.shiftKey);
   }, [chord.durationBeats, onSelect]);
 
   // Handle mouse move
@@ -83,11 +89,23 @@ export function ChordBlock({
     const deltaBeats = deltaX / pixelsPerBeat;
 
     if (isDragging) {
-      // Move the chord
-      let newStartBeat = Math.round((originalStartBeat.current + deltaBeats) * 4) / 4; // Snap to quarter beats
-      newStartBeat = Math.max(minBeat, Math.min(maxBeat - chord.durationBeats, newStartBeat));
-      if (newStartBeat !== chord.startBeat) {
-        onUpdate({ startBeat: newStartBeat });
+      // Snap to quarter beats
+      const snappedDelta = Math.round(deltaBeats * 4) / 4;
+
+      // If multiple chords selected, move all of them
+      if (isSelected && selectedCount > 1) {
+        const actualDelta = snappedDelta - lastDeltaBeats.current;
+        if (actualDelta !== 0) {
+          lastDeltaBeats.current = snappedDelta;
+          onUpdateSelected(actualDelta);
+        }
+      } else {
+        // Move single chord
+        let newStartBeat = Math.round((originalStartBeat.current + deltaBeats) * 4) / 4;
+        newStartBeat = Math.max(minBeat, Math.min(maxBeat - chord.durationBeats, newStartBeat));
+        if (newStartBeat !== chord.startBeat) {
+          onUpdate({ startBeat: newStartBeat });
+        }
       }
     } else if (isResizingLeft) {
       // Resize from left edge (changes start and duration)
@@ -107,13 +125,14 @@ export function ChordBlock({
         onUpdate({ durationBeats: newDuration });
       }
     }
-  }, [isDragging, isResizingLeft, isResizingRight, pixelsPerBeat, chord, onUpdate, minBeat, maxBeat]);
+  }, [isDragging, isResizingLeft, isResizingRight, pixelsPerBeat, chord, onUpdate, minBeat, maxBeat, isSelected, selectedCount, onUpdateSelected]);
 
   // Handle mouse up
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
     setIsResizingLeft(false);
     setIsResizingRight(false);
+    lastDeltaBeats.current = 0;
   }, []);
 
   // Add/remove event listeners
@@ -132,6 +151,7 @@ export function ChordBlock({
 
   return (
     <div
+      data-chord-block
       className={`absolute top-2 bottom-2 rounded-xl cursor-pointer transition-all select-none ${
         isDragging || isResizingLeft || isResizingRight ? 'opacity-90' : ''
       } ${isSelected ? 'ring-2 ring-white ring-offset-2 ring-offset-surface' : ''}`}
@@ -145,7 +165,7 @@ export function ChordBlock({
       }}
       onClick={(e) => {
         e.stopPropagation();
-        onSelect();
+        onSelect(e.shiftKey);
       }}
       onDoubleClick={(e) => {
         e.stopPropagation();
