@@ -114,13 +114,6 @@ export function ArrangementView() {
     [pixelsPerBeat, trackHeightScale, scrollLeft, trackLabelWidth, setPixelsPerBeat, setTrackHeightScale, setScrollLeft]
   );
 
-  // Calculate playhead position relative to the visible area
-  const playheadPosition = trackLabelWidth + currentBeat * pixelsPerBeat - scrollLeft;
-  // Use actual viewport width for visibility check (not total timeline width)
-  const isPlayheadVisible = viewportWidth > 0
-    ? playheadPosition >= trackLabelWidth && playheadPosition <= viewportWidth
-    : true; // Default to visible before viewport is measured
-
   return (
     <div className="h-full relative">
       {/* Scrollable content */}
@@ -179,22 +172,20 @@ export function ArrangementView() {
       </div>
 
       {/* Fixed Playhead - positioned outside scroll container, starts at bottom half of ruler */}
-      {isPlayheadVisible && (
-        <div
-          className="absolute top-6 bottom-0 pointer-events-none z-40"
-          style={{
-            left: trackLabelWidth,
-            right: 0,
-            overflow: 'hidden',
-          }}
-        >
-          <Playhead
-            currentBeat={currentBeat}
-            pixelsPerBeat={pixelsPerBeat}
-            scrollLeft={scrollLeft}
-          />
-        </div>
-      )}
+      <div
+        className="absolute top-6 bottom-0 pointer-events-none z-40"
+        style={{
+          left: trackLabelWidth,
+          right: 0,
+          overflow: 'hidden',
+        }}
+      >
+        <Playhead
+          currentBeat={currentBeat}
+          pixelsPerBeat={pixelsPerBeat}
+          scrollLeft={scrollLeft}
+        />
+      </div>
 
       {/* Zoom Controls */}
       <ZoomControls />

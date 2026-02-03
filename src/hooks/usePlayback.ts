@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useCallback } from 'react';
-import { getPlaybackEngine, disposePlaybackEngine, PlaybackState } from '@/core/playback';
+import { getPlaybackEngine, PlaybackState } from '@/core/playback';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 
@@ -31,10 +31,9 @@ export function usePlayback() {
       },
     });
 
-    // Cleanup on unmount
-    return () => {
-      disposePlaybackEngine();
-    };
+    // Note: We don't dispose the engine on unmount because multiple components
+    // share the singleton engine. Disposing when any component unmounts would
+    // kill playback for all other components. The engine persists for the app lifetime.
   }, [setCurrentBeat, setPlaying]);
 
   // Sync loop region with engine when loopEnabled changes
