@@ -4,16 +4,15 @@ import { VisualInstrumentId } from './types';
 import { VisualInstrumentDefinition, VisualInstrumentState, ActiveNote } from './visualTypes';
 
 export const VISUAL_INSTRUMENTS: Record<VisualInstrumentId, VisualInstrumentDefinition> = {
-  polarFlower: {
-    id: 'polarFlower',
-    name: 'Polar Flower',
-    description: '3D flower shape that rotates and blooms with MIDI events',
-    icon: '🌸',
+  silkSymmetry: {
+    id: 'silkSymmetry',
+    name: 'Silk Symmetry',
+    description: 'Flowing silk-like patterns with radial symmetry - MIDI inverts spiral direction',
+    icon: '🌀',
     defaultParams: {
-      petals: 5,
-      baseRotationSpeed: 0.5,
-      bloomIntensity: 1.0,
-      colorSaturation: 0.7,
+      symmetryFolds: 8,
+      lineCount: 12,
+      glowIntensity: 0.7,
     },
   },
   hexagonDots: {
@@ -25,6 +24,17 @@ export const VISUAL_INSTRUMENTS: Record<VisualInstrumentId, VisualInstrumentDefi
       dotSpeed: 4.0,
       hexagonDistance: 25,
       dotSize: 0.15,
+    },
+  },
+  fractalTunnel: {
+    id: 'fractalTunnel',
+    name: 'Fractal Tunnel',
+    description: 'Hypnotic fractal flower tunnel with BPM-synced spiral flipping',
+    icon: '🌸',
+    defaultParams: {
+      symmetry: 6,
+      generations: 3,
+      glowIntensity: 0.9,
     },
   },
 };

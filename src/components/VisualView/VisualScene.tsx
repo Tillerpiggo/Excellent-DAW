@@ -2,8 +2,9 @@
 
 import { OrbitControls } from '@react-three/drei';
 import { useVisualStore } from '@/stores/visualStore';
-import { PolarFlower } from './instruments/PolarFlower';
+import { SilkSymmetry } from './instruments/SilkSymmetry';
 import { HexagonDots } from './instruments/HexagonDots';
+import { FractalTunnel } from './instruments/FractalTunnel';
 
 interface VisualSceneProps {
   trackIds: string[];
@@ -35,11 +36,14 @@ export function VisualScene({ trackIds }: VisualSceneProps) {
 
         return (
           <group key={trackId} position={[0, 0, 0]}>
-            {state.instrumentId === 'polarFlower' && (
-              <PolarFlower state={state} />
+            {state.instrumentId === 'silkSymmetry' && (
+              <SilkSymmetry state={state} />
             )}
             {state.instrumentId === 'hexagonDots' && (
               <HexagonDots state={state} />
+            )}
+            {state.instrumentId === 'fractalTunnel' && (
+              <FractalTunnel state={state} />
             )}
           </group>
         );

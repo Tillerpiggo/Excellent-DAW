@@ -48,30 +48,6 @@ export function ArrangementView() {
     return () => window.removeEventListener('resize', updateViewportWidth);
   }, []);
 
-  // Auto-scroll to follow playhead during playback
-  useEffect(() => {
-    if (!isPlaying || isScrubbing || !containerRef.current || viewportWidth === 0) return;
-
-    const playheadPixelPosition = currentBeat * pixelsPerBeat;
-    const visibleTimelineWidth = viewportWidth - trackLabelWidth;
-    const margin = visibleTimelineWidth * 0.15; // 15% margin before edge
-
-    // Check if playhead is approaching or past the right edge
-    const rightEdge = scrollLeft + visibleTimelineWidth - margin;
-    if (playheadPixelPosition > rightEdge) {
-      // Scroll to keep playhead at 25% from right edge
-      const newScrollLeft = playheadPixelPosition - visibleTimelineWidth * 0.75;
-      containerRef.current.scrollLeft = Math.max(0, newScrollLeft);
-    }
-
-    // Check if playhead jumped back (loop) and is now before visible area
-    const leftEdge = scrollLeft + margin;
-    if (playheadPixelPosition < scrollLeft) {
-      // Playhead looped back - scroll to show it at the left
-      containerRef.current.scrollLeft = Math.max(0, playheadPixelPosition - margin);
-    }
-  }, [currentBeat, isPlaying, isScrubbing, pixelsPerBeat, scrollLeft, viewportWidth, trackLabelWidth]);
-
   // Handle scroll
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {

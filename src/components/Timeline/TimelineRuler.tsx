@@ -219,16 +219,15 @@ export function TimelineRuler({
           {Array.from({ length: totalBars }).map((_, barIdx) => (
             <div
               key={barIdx}
-              className="h-full flex items-end border-r border-border"
+              className="h-full relative border-r border-border"
               style={{ width: barWidth }}
             >
               {Array.from({ length: beatsPerBar - 1 }).map((_, beatIdx) => (
                 <div
                   key={beatIdx}
-                  className="flex-1 flex justify-end items-end pb-1"
-                >
-                  <div className="w-px h-2 bg-border" />
-                </div>
+                  className="absolute bottom-1 w-px h-2 bg-border"
+                  style={{ left: (beatIdx + 1) * pixelsPerBeat }}
+                />
               ))}
             </div>
           ))}
