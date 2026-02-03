@@ -138,10 +138,13 @@ export function resolveTrack(
 
   // Step 5: Push this track's output
   // Include track if it has an audio instrument OR a visual instrument
+  // Audio tracks are special - they have audioData in blocks, not MIDI events
+  const isAudioTrack = track.instrumentId === 'audio';
+  const hasAudioBlocks = isAudioTrack && track.blocks.some(b => b.audioData);
   const hasAudioInstrument = track.instrumentId && combinedOutput.events.length > 0;
   const hasVisualInstrument = track.visualInstrumentId && combinedOutput.events.length > 0;
 
-  if (hasAudioInstrument || hasVisualInstrument) {
+  if (hasAudioBlocks || hasAudioInstrument || hasVisualInstrument) {
     results.push({
       trackId: track.id,
       instrumentId: track.instrumentId,

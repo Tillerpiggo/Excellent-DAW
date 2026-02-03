@@ -1,5 +1,6 @@
 import * as Tone from 'tone';
-import { InstrumentDefinition, InstrumentId, Event } from './types';
+import { InstrumentDefinition, InstrumentId, Event, AudioData } from './types';
+import { getAudioFile, createAudioBlobUrl, revokeAudioBlobUrl } from '@/services/audioStorage';
 
 export const INSTRUMENTS: Record<InstrumentId, InstrumentDefinition> = {
   synth: {
@@ -32,6 +33,12 @@ export const INSTRUMENTS: Record<InstrumentId, InstrumentDefinition> = {
     description: 'Drum kit with kick, snare, and hi-hat',
     color: '#ef4444',
   },
+  audio: {
+    id: 'audio',
+    name: 'Audio',
+    description: 'Audio file playback',
+    color: '#22c55e',
+  },
 };
 
 export type InstrumentInstances = {
@@ -45,6 +52,10 @@ export type InstrumentInstances = {
   snare: Tone.NoiseSynth;
   hihat: Tone.MetalSynth;
   clap: Tone.NoiseSynth;
+  // Audio players for audio tracks (keyed by block ID)
+  audioPlayers: Map<string, Tone.Player>;
+  // Blob URLs that need to be revoked on cleanup
+  audioBlobUrls: Map<string, string>;
 };
 
 export function createInstruments(): InstrumentInstances {
@@ -171,7 +182,12 @@ export function createInstruments(): InstrumentInstances {
   }).toDestination();
   clap.volume.value = -8;
 
-  return { synth, synthFilter, keys, keysReverb, pad, bass, kick, snare, hihat, clap };
+  // Audio players map (empty initially - players created on demand)
+  const audioPlayers = new Map<string, Tone.Player>();
+  // Blob URLs for cleanup
+  const audioBlobUrls = new Map<string, string>();
+
+  return { synth, synthFilter, keys, keysReverb, pad, bass, kick, snare, hihat, clap, audioPlayers, audioBlobUrls };
 }
 
 export function midiToFreq(midi: number): number {
@@ -230,6 +246,71 @@ export function scheduleEvent(
   }
 }
 
+// Get or create an audio player for a block
+export async function getOrCreateAudioPlayer(
+  blockId: string,
+  audioData: AudioData,
+  instruments: InstrumentInstances
+): Promise<Tone.Player | null> {
+  // Return existing player if available
+  if (instruments.audioPlayers.has(blockId)) {
+    return instruments.audioPlayers.get(blockId)!;
+  }
+
+  // Load audio from IndexedDB
+  const stored = await getAudioFile(audioData.storageId);
+  if (!stored) {
+    console.error(`Audio file not found in storage: ${audioData.storageId}`);
+    return null;
+  }
+
+  // Create blob URL for the player
+  const blobUrl = createAudioBlobUrl(stored.blob);
+  instruments.audioBlobUrls.set(blockId, blobUrl);
+
+  // Create and load player
+  const player = new Tone.Player(blobUrl).toDestination();
+  player.volume.value = -6; // Match synth levels
+
+  // Wait for buffer to load
+  await Tone.loaded();
+
+  instruments.audioPlayers.set(blockId, player);
+  return player;
+}
+
+// Dispose a specific audio player
+export function disposeAudioPlayer(blockId: string, instruments: InstrumentInstances): void {
+  const player = instruments.audioPlayers.get(blockId);
+  if (player) {
+    player.stop();
+    player.dispose();
+    instruments.audioPlayers.delete(blockId);
+  }
+
+  // Revoke the blob URL
+  const blobUrl = instruments.audioBlobUrls.get(blockId);
+  if (blobUrl) {
+    revokeAudioBlobUrl(blobUrl);
+    instruments.audioBlobUrls.delete(blockId);
+  }
+}
+
+// Clear all audio players
+export function clearAudioPlayers(instruments: InstrumentInstances): void {
+  for (const player of instruments.audioPlayers.values()) {
+    player.stop();
+    player.dispose();
+  }
+  instruments.audioPlayers.clear();
+
+  // Revoke all blob URLs
+  for (const blobUrl of instruments.audioBlobUrls.values()) {
+    revokeAudioBlobUrl(blobUrl);
+  }
+  instruments.audioBlobUrls.clear();
+}
+
 export function disposeInstruments(instruments: InstrumentInstances): void {
   instruments.synth.dispose();
   instruments.synthFilter.dispose();
@@ -241,4 +322,7 @@ export function disposeInstruments(instruments: InstrumentInstances): void {
   instruments.snare.dispose();
   instruments.hihat.dispose();
   instruments.clap.dispose();
+
+  // Dispose all audio players
+  clearAudioPlayers(instruments);
 }

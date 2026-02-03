@@ -16,6 +16,17 @@ export const VISUAL_INSTRUMENTS: Record<VisualInstrumentId, VisualInstrumentDefi
       colorSaturation: 0.7,
     },
   },
+  hexagonDots: {
+    id: 'hexagonDots',
+    name: 'Hexagon Dots',
+    description: 'Glowing dots spawn from a distant hexagon and float towards the camera',
+    icon: '✨',
+    defaultParams: {
+      dotSpeed: 4.0,
+      hexagonDistance: 25,
+      dotSize: 0.15,
+    },
+  },
 };
 
 export function createVisualInstrumentState(instrumentId: VisualInstrumentId): VisualInstrumentState {

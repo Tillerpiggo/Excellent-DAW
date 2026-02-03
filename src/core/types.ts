@@ -46,6 +46,8 @@ export interface Block {
   sourceBlockId?: string;
   sourceTrackId?: string;
   extractMode?: 'timing' | 'pitch' | 'velocity' | 'all';
+  // For audio blocks
+  audioData?: AudioData;
 }
 
 export type TrackTypeId =
@@ -63,9 +65,26 @@ export type TrackTypeId =
   | 'rest'
   | 'swing';
 
-export type InstrumentId = 'synth' | 'keys' | 'pad' | 'bass' | 'drums';
+export type InstrumentId = 'synth' | 'keys' | 'pad' | 'bass' | 'drums' | 'audio';
 
-export type VisualInstrumentId = 'polarFlower';
+// Audio data for audio track blocks
+export interface AudioData {
+  // Reference ID to audio stored in IndexedDB (allows large files)
+  storageId: string;
+  // Original filename
+  fileName: string;
+  // MIME type (audio/wav, audio/mp3, etc.)
+  mimeType: string;
+  // Duration in seconds (cached after decode)
+  duration: number;
+  // Sample rate
+  sampleRate: number;
+  // Pre-computed waveform peaks for visualization (downsampled)
+  // Kept in project JSON for fast rendering without loading full audio
+  waveformPeaks: number[];
+}
+
+export type VisualInstrumentId = 'polarFlower' | 'hexagonDots';
 
 export interface Track {
   id: string;

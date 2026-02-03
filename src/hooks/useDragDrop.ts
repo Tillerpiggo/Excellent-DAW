@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, DragEvent } from 'react';
+import { useCallback, DragEvent, useState } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore, addTrackFromPreset } from '@/stores/projectStore';
 import { PatternPreset } from '@/core/types';
 import { PATTERN_PRESETS } from '@/core/presets';
+import { processAudioFile, audioDurationToBars, isAudioFile } from '@/core/audio';
 
 export function useDragDrop() {
   const {
@@ -17,8 +18,11 @@ export function useDragDrop() {
     dropTargetBar,
   } = useUIStore();
 
-  const { addBlock, moveBlock, deleteBlock } = useProjectStore();
+  const { addBlock, moveBlock, addAudioTrack } = useProjectStore();
   const project = useProjectStore((state) => state.project);
+
+  // Track if we're currently processing an audio file drop
+  const [isProcessingAudio, setIsProcessingAudio] = useState(false);
 
   // Start dragging a preset from the library
   const handlePresetDragStart = useCallback(
@@ -69,10 +73,72 @@ export function useDragDrop() {
     [setDropTarget]
   );
 
+  // Handle audio file drop
+  const handleAudioFileDrop = useCallback(
+    async (file: File, trackId: string | null, bar: number) => {
+      if (isProcessingAudio) return;
+
+      setIsProcessingAudio(true);
+
+      try {
+        // Process the audio file
+        const { audioData } = await processAudioFile(file);
+
+        // Calculate block duration based on audio length
+        const durationBars = audioDurationToBars(
+          audioData.duration,
+          project.bpm,
+          project.beatsPerBar
+        );
+
+        let targetTrackId = trackId;
+
+        // Check if dropping on an existing audio track
+        if (trackId) {
+          const track = project.tracks[trackId];
+          if (track?.instrumentId !== 'audio') {
+            // Not an audio track, create a new one
+            targetTrackId = addAudioTrack(audioData.fileName);
+          }
+        } else {
+          // No track specified, create a new audio track
+          targetTrackId = addAudioTrack(audioData.fileName);
+        }
+
+        // Add the audio block
+        addBlock(targetTrackId!, {
+          startBar: bar,
+          durationBars,
+          loop: false,
+          streams: [],
+          audioData,
+        });
+
+      } catch (error) {
+        console.error('Error processing audio file:', error);
+        // Could add toast notification here
+      } finally {
+        setIsProcessingAudio(false);
+      }
+    },
+    [isProcessingAudio, project.bpm, project.beatsPerBar, project.tracks, addAudioTrack, addBlock]
+  );
+
   // Handle drop on timeline
   const handleTimelineDrop = useCallback(
-    (e: DragEvent, trackId: string, bar: number) => {
+    async (e: DragEvent, trackId: string, bar: number) => {
       e.preventDefault();
+
+      // Check for file drop first
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
+        const file = files[0];
+        if (isAudioFile(file)) {
+          await handleAudioFileDrop(file, trackId, bar);
+          endDrag();
+          return;
+        }
+      }
 
       try {
         const data = JSON.parse(e.dataTransfer.getData('application/json'));
@@ -94,7 +160,7 @@ export function useDragDrop() {
             const isCopy = e.altKey;
 
             if (isCopy) {
-              // Copy block - deep clone streams data
+              // Copy block - deep clone streams data and audio data
               const clonedStreams = block.streams?.map(stream => ({
                 ...stream,
                 events: stream.events.map(event => ({ ...event })),
@@ -105,6 +171,7 @@ export function useDragDrop() {
                 durationBars: block.durationBars,
                 loop: block.loop,
                 streams: clonedStreams,
+                audioData: block.audioData ? { ...block.audioData } : undefined,
               });
             } else if (data.trackId === trackId) {
               // Same track - just update position
@@ -122,7 +189,7 @@ export function useDragDrop() {
 
       endDrag();
     },
-    [addBlock, moveBlock, project.tracks, endDrag]
+    [addBlock, moveBlock, project.tracks, endDrag, handleAudioFileDrop]
   );
 
   // Handle drop on track hierarchy (adds a child track)
@@ -154,6 +221,7 @@ export function useDragDrop() {
     dragState,
     dropTargetTrackId,
     dropTargetBar,
+    isProcessingAudio,
     handlePresetDragStart,
     handleBlockDragStart,
     handleDragOver,
@@ -161,5 +229,6 @@ export function useDragDrop() {
     handleTimelineDrop,
     handleHierarchyDrop,
     handleDragEnd,
+    handleAudioFileDrop,
   };
 }

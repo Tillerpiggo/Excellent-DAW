@@ -18,45 +18,56 @@ export function DrumEditorPanel() {
   const selectedTrack = selectedTrackId ? project.tracks[selectedTrackId] : null;
   const selectedBlock = selectedTrack?.blocks.find(b => b.id === selectedBlockId);
 
-  // Check if the selected block has drum events (actual drum sounds, not rhythm triggers)
+  // Check if track uses drums instrument
+  const isDrumInstrument = selectedTrack?.instrumentId === 'drums';
+
+  // Check if the selected block has drum events (for fallback detection)
   const hasDrumEvents = useMemo(() => {
     if (!selectedBlock || !selectedTrack) return false;
-
-    // Rhythm track type is a modifier that re-triggers parent notes at timing points
-    // It uses pitch events for timing, NOT drum events - don't show drum editor for it
     if (selectedTrack.typeId === 'rhythm') return false;
-
-    // Check for actual drum events in the block
     const allEvents = selectedBlock.streams?.flatMap(s => s.events) || [];
     return allEvents.some(e => e.drum !== undefined);
   }, [selectedBlock, selectedTrack]);
 
-  // Check if block has pitched events (for priority logic)
+  // Check if track uses a pitched instrument (takes priority over drums)
+  const isPitchedInstrument = useMemo(() => {
+    if (!selectedTrack?.instrumentId) return false;
+    return ['synth', 'keys', 'pad', 'bass'].includes(selectedTrack.instrumentId);
+  }, [selectedTrack?.instrumentId]);
+
+  // Check if block has pitched events (for priority logic when no instrument set)
   const hasPitchedEvents = useMemo(() => {
     if (!selectedBlock) return false;
     const allEvents = selectedBlock.streams?.flatMap(s => s.events) || [];
     return allEvents.some(e => e.pitch !== undefined);
   }, [selectedBlock]);
 
-  // Determine if we should show drum editor based on priority logic
-  // - Rhythm tracks: NO drum editor (they use pitch events for timing, not drum sounds)
-  // - Non-rhythm tracks with mixed events: ChordEditor takes priority (handled by ChordEditorPanel)
-  // - Non-rhythm tracks with only drum events: Show drum editor
+  // Determine if we should show drum editor
+  // - Show if track has drums instrument (regardless of events)
+  // - Show if block has drum events AND track doesn't have a pitched instrument
+  // - Don't show for rhythm tracks (they use pitch events for timing)
   const shouldShowDrumEditor = useMemo(() => {
-    if (!selectedTrack || !hasDrumEvents) return false;
+    if (!selectedBlock || !selectedTrack) return false;
+    if (selectedTrack.typeId === 'rhythm') return false;
 
-    // For tracks with drum events, only show drum editor if no pitched events
-    return !hasPitchedEvents;
-  }, [selectedTrack, hasDrumEvents, hasPitchedEvents]);
+    // If track has drums instrument, always show drum editor
+    if (isDrumInstrument) return true;
+
+    // If track has pitched instrument, chord editor takes priority
+    if (isPitchedInstrument) return false;
+
+    // Fallback: show if block has drum events and no pitched events
+    return hasDrumEvents && !hasPitchedEvents;
+  }, [selectedBlock, selectedTrack, isDrumInstrument, isPitchedInstrument, hasDrumEvents, hasPitchedEvents]);
 
   // Auto-show/hide drum editor based on selection
   useEffect(() => {
-    if (selectedBlock && shouldShowDrumEditor) {
+    if (shouldShowDrumEditor) {
       setShowDrumEditor(true);
     } else {
       setShowDrumEditor(false);
     }
-  }, [selectedBlock, shouldShowDrumEditor, setShowDrumEditor]);
+  }, [shouldShowDrumEditor, setShowDrumEditor]);
 
   // Handle applying a preset to the selected block
   const handleApplyPreset = (preset: PatternPreset) => {

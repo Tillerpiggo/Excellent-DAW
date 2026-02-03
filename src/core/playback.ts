@@ -1,7 +1,7 @@
 import * as Tone from 'tone';
-import { Project, InstrumentId } from './types';
+import { Project, InstrumentId, Block } from './types';
 import { resolveProject, ResolvedTrack } from './resolution';
-import { createInstruments, scheduleEvent, disposeInstruments, InstrumentInstances } from './instruments';
+import { createInstruments, scheduleEvent, disposeInstruments, InstrumentInstances, getOrCreateAudioPlayer, clearAudioPlayers } from './instruments';
 import { ChordQuality, generateChordPitches } from './harmony';
 import { getVisualPlaybackEngine, VisualPlaybackEngine } from './visualPlayback';
 
@@ -54,16 +54,17 @@ export class PlaybackEngine {
     // Resolve project to get all playable events
     const resolvedTracks = resolveProject(project);
 
-    // Schedule all events
-    this.scheduleEvents(resolvedTracks, project);
+    // Schedule all events (including audio tracks)
+    await this.scheduleEvents(resolvedTracks, project);
 
-    // Initialize and start visual playback engine
+    // Initialize and start visual playback engine (synced with Tone.js transport)
     this.visualEngine = getVisualPlaybackEngine();
     this.visualEngine.initialize(
       resolvedTracks,
       project.bpm,
       project.beatsPerBar,
-      project.totalBars
+      project.totalBars,
+      () => this.getCurrentBeat()
     );
     this.visualEngine.start();
 
@@ -74,13 +75,22 @@ export class PlaybackEngine {
     this.startBeatTracking(project);
   }
 
-  private scheduleEvents(resolvedTracks: ResolvedTrack[], project: Project): void {
+  private async scheduleEvents(resolvedTracks: ResolvedTrack[], project: Project): Promise<void> {
     if (!this.instruments) return;
 
     const totalBeats = project.totalBars * project.beatsPerBar;
 
+    // Clear any existing audio players from previous playback
+    clearAudioPlayers(this.instruments);
+
     for (const resolved of resolvedTracks) {
       if (!resolved.instrumentId) continue;
+
+      // Handle audio tracks separately
+      if (resolved.instrumentId === 'audio') {
+        await this.scheduleAudioTrack(resolved.trackId, project);
+        continue;
+      }
 
       // Filter events within bounds and convert to Tone.Part format
       const partEvents = resolved.output.events
@@ -113,6 +123,71 @@ export class PlaybackEngine {
     Tone.getTransport().loop = true;
     Tone.getTransport().loopEnd = `${project.totalBars}:0`;
     Tone.getTransport().loopStart = 0;
+  }
+
+  private async scheduleAudioTrack(trackId: string, project: Project): Promise<void> {
+    if (!this.instruments) return;
+
+    const track = project.tracks[trackId];
+    if (!track || track.muted) return;
+
+    for (const block of track.blocks) {
+      if (!block.audioData) continue;
+
+      try {
+        // Get or create the player for this block
+        const player = await getOrCreateAudioPlayer(
+          block.id,
+          block.audioData,
+          this.instruments
+        );
+
+        // Skip if audio couldn't be loaded
+        if (!player) {
+          console.warn(`Skipping audio block ${block.id} - audio not found`);
+          continue;
+        }
+
+        // Calculate timing
+        const startTime = `${block.startBar}:0:0`;
+        const endBar = block.startBar + block.durationBars;
+        const endTime = `${endBar}:0:0`;
+
+        // Configure looping
+        if (block.loop) {
+          player.loop = true;
+          player.loopStart = 0;
+          player.loopEnd = block.audioData.duration;
+        } else {
+          player.loop = false;
+        }
+
+        // Schedule player start
+        const startPart = new Tone.Part((time) => {
+          // Stop first in case it's already playing (from loop)
+          player.stop(time);
+          player.start(time);
+        }, [{ time: startTime }]);
+
+        startPart.start(0);
+        startPart.loop = true;
+        startPart.loopEnd = `${project.totalBars}:0`;
+        this.parts.push(startPart);
+
+        // Schedule player stop at block end
+        const stopPart = new Tone.Part((time) => {
+          player.stop(time);
+        }, [{ time: endTime }]);
+
+        stopPart.start(0);
+        stopPart.loop = true;
+        stopPart.loopEnd = `${project.totalBars}:0`;
+        this.parts.push(stopPart);
+
+      } catch (error) {
+        console.error(`Error scheduling audio block ${block.id}:`, error);
+      }
+    }
   }
 
   private startBeatTracking(project: Project): void {

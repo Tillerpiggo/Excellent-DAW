@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import { TimelineRuler } from '../Timeline/TimelineRuler';
 import { TimelineContent } from './TimelineContent';
 import { TrackLabels } from './TrackLabels';
@@ -8,6 +8,7 @@ import { Playhead } from '../Timeline/Playhead';
 import { ZoomControls } from './ZoomControls';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
+import { usePlayback } from '@/hooks/usePlayback';
 import { flattenTracks } from '@/utils/tree';
 
 export function ArrangementView() {
@@ -19,18 +20,57 @@ export function ArrangementView() {
     trackHeightScale,
     scrollLeft,
     currentBeat,
+    isScrubbing,
     setScrollLeft,
     setScrollTop,
     setPixelsPerBeat,
     setTrackHeightScale,
   } = useUIStore();
+  const { isPlaying } = usePlayback();
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const [viewportWidth, setViewportWidth] = useState(0);
   const flatTracks = flattenTracks(project, collapsedTrackIds);
 
   const totalBeats = project.totalBars * project.beatsPerBar;
   const timelineWidth = totalBeats * pixelsPerBeat;
   const trackLabelWidth = 256;
+
+  // Track viewport width for visibility calculations
+  useEffect(() => {
+    const updateViewportWidth = () => {
+      if (containerRef.current) {
+        setViewportWidth(containerRef.current.clientWidth);
+      }
+    };
+    updateViewportWidth();
+    window.addEventListener('resize', updateViewportWidth);
+    return () => window.removeEventListener('resize', updateViewportWidth);
+  }, []);
+
+  // Auto-scroll to follow playhead during playback
+  useEffect(() => {
+    if (!isPlaying || isScrubbing || !containerRef.current || viewportWidth === 0) return;
+
+    const playheadPixelPosition = currentBeat * pixelsPerBeat;
+    const visibleTimelineWidth = viewportWidth - trackLabelWidth;
+    const margin = visibleTimelineWidth * 0.15; // 15% margin before edge
+
+    // Check if playhead is approaching or past the right edge
+    const rightEdge = scrollLeft + visibleTimelineWidth - margin;
+    if (playheadPixelPosition > rightEdge) {
+      // Scroll to keep playhead at 25% from right edge
+      const newScrollLeft = playheadPixelPosition - visibleTimelineWidth * 0.75;
+      containerRef.current.scrollLeft = Math.max(0, newScrollLeft);
+    }
+
+    // Check if playhead jumped back (loop) and is now before visible area
+    const leftEdge = scrollLeft + margin;
+    if (playheadPixelPosition < scrollLeft) {
+      // Playhead looped back - scroll to show it at the left
+      containerRef.current.scrollLeft = Math.max(0, playheadPixelPosition - margin);
+    }
+  }, [currentBeat, isPlaying, isScrubbing, pixelsPerBeat, scrollLeft, viewportWidth, trackLabelWidth]);
 
   // Handle scroll
   const handleScroll = useCallback(
@@ -76,7 +116,10 @@ export function ArrangementView() {
 
   // Calculate playhead position relative to the visible area
   const playheadPosition = trackLabelWidth + currentBeat * pixelsPerBeat - scrollLeft;
-  const isPlayheadVisible = playheadPosition >= trackLabelWidth && playheadPosition <= trackLabelWidth + timelineWidth;
+  // Use actual viewport width for visibility check (not total timeline width)
+  const isPlayheadVisible = viewportWidth > 0
+    ? playheadPosition >= trackLabelWidth && playheadPosition <= viewportWidth
+    : true; // Default to visible before viewport is measured
 
   return (
     <div className="h-full relative">

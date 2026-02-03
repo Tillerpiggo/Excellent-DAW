@@ -6,6 +6,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useDragDrop } from '@/hooks/useDragDrop';
 import { INSTRUMENT_COLORS, TRACK_TYPE_COLORS, darken, tintWhite } from '@/utils/colors';
+import { WaveformVisualization } from './WaveformVisualization';
 
 type ResizeMode = 'left' | 'right-loop' | 'right-extend' | null;
 
@@ -14,6 +15,7 @@ interface TimelineBlockProps {
   track: Track;
   pixelsPerBeat: number;
   beatsPerBar: number;
+  bpm: number;
 }
 
 // Helper to find track ID for a given block ID
@@ -48,7 +50,10 @@ export function TimelineBlock({
   track,
   pixelsPerBeat,
   beatsPerBar,
+  bpm,
 }: TimelineBlockProps) {
+  // Check if this is an audio block
+  const isAudioBlock = track.instrumentId === 'audio' && block.audioData;
   const { selectedBlockIds, selectBlock } = useUIStore();
   const { updateBlock } = useProjectStore();
   const project = useProjectStore((state) => state.project);
@@ -337,12 +342,24 @@ export function TimelineBlock({
         </div>
       )}
 
-      {/* Visual event representation - piano roll style */}
-      <EventVisualization
-        block={block}
-        beatsPerBar={beatsPerBar}
-        pixelsPerBeat={pixelsPerBeat}
-      />
+      {/* Visual event representation - piano roll for MIDI, waveform for audio */}
+      {isAudioBlock ? (
+        <WaveformVisualization
+          audioData={block.audioData!}
+          pixelsPerBeat={pixelsPerBeat}
+          beatsPerBar={beatsPerBar}
+          blockDurationBars={block.durationBars}
+          loop={block.loop}
+          color={baseColor}
+          bpm={bpm}
+        />
+      ) : (
+        <EventVisualization
+          block={block}
+          beatsPerBar={beatsPerBar}
+          pixelsPerBeat={pixelsPerBeat}
+        />
+      )}
 
       {/* Left resize handle - transparent, cursor only */}
       <div

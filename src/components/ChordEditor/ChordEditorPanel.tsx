@@ -18,7 +18,13 @@ export function ChordEditorPanel() {
   const selectedTrack = selectedTrackId ? project.tracks[selectedTrackId] : null;
   const selectedBlock = selectedTrack?.blocks.find(b => b.id === selectedBlockId);
 
-  // Check if the selected block has pitched events (chords)
+  // Check if track uses a pitched instrument (not drums)
+  const isPitchedInstrument = useMemo(() => {
+    if (!selectedTrack?.instrumentId) return false;
+    return ['synth', 'keys', 'pad', 'bass'].includes(selectedTrack.instrumentId);
+  }, [selectedTrack?.instrumentId]);
+
+  // Check if the selected block has pitched events (for fallback detection)
   const hasPitchedEvents = useMemo(() => {
     if (!selectedBlock) return false;
     const allEvents = selectedBlock.streams?.flatMap(s => s.events) || [];
@@ -34,14 +40,22 @@ export function ChordEditorPanel() {
   // Don't show chord editor for transpose tracks (they have their own editor)
   const isTransposeTrack = selectedTrack?.typeId === 'transpose';
 
+  // Show chord editor if track has a pitched instrument OR has pitched events (and isn't a special type)
+  const shouldShowChordEditor = useMemo(() => {
+    if (!selectedBlock) return false;
+    if (isRhythmTrack || isArpTrack || isTransposeTrack) return false;
+    // Show if track has pitched instrument, OR if block has pitched events (for tracks without instrument set)
+    return isPitchedInstrument || hasPitchedEvents;
+  }, [selectedBlock, isPitchedInstrument, hasPitchedEvents, isRhythmTrack, isArpTrack, isTransposeTrack]);
+
   // Auto-show/hide chord editor based on selection
   useEffect(() => {
-    if (selectedBlock && hasPitchedEvents && !isRhythmTrack && !isArpTrack && !isTransposeTrack) {
+    if (shouldShowChordEditor) {
       setShowChordEditor(true);
     } else {
       setShowChordEditor(false);
     }
-  }, [selectedBlock, hasPitchedEvents, isRhythmTrack, isArpTrack, isTransposeTrack, setShowChordEditor]);
+  }, [shouldShowChordEditor, setShowChordEditor]);
 
   // Handle applying a preset to the selected block
   const handleApplyPreset = (preset: PatternPreset) => {
@@ -53,8 +67,8 @@ export function ChordEditorPanel() {
     });
   };
 
-  // Don't render if no chord block selected or if it's a rhythm/arp/transpose track
-  if (!showChordEditor || !selectedTrack || !selectedBlock || !hasPitchedEvents || isRhythmTrack || isArpTrack || isTransposeTrack) {
+  // Don't render if conditions aren't met
+  if (!showChordEditor || !selectedTrack || !selectedBlock) {
     return null;
   }
 

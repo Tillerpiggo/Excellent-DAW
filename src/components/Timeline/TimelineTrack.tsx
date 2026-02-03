@@ -3,6 +3,7 @@
 import { Track } from '@/core/types';
 import { TimelineBlock } from './TimelineBlock';
 import { useUIStore } from '@/stores/uiStore';
+import { useProjectStore } from '@/stores/projectStore';
 import { useDragDrop } from '@/hooks/useDragDrop';
 
 interface TimelineTrackProps {
@@ -18,6 +19,7 @@ export function TimelineTrack({
   beatsPerBar,
   totalBars,
 }: TimelineTrackProps) {
+  const bpm = useProjectStore((state) => state.project.bpm);
   const { selectedTrackId, selectTrack, dropTargetTrackId, dropTargetBar, dragState, trackHeightScale } =
     useUIStore();
 
@@ -67,6 +69,7 @@ export function TimelineTrack({
           track={track}
           pixelsPerBeat={pixelsPerBeat}
           beatsPerBar={beatsPerBar}
+          bpm={bpm}
         />
       ))}
 

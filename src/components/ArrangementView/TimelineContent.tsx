@@ -1,10 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { TrackNode } from '@/utils/tree';
 import { TimelineTrack } from '../Timeline/TimelineTrack';
 import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { useDragDrop } from '@/hooks/useDragDrop';
+import { isAudioFile } from '@/core/audio';
 
 interface TimelineContentProps {
   flatTracks: TrackNode[];
@@ -33,10 +35,67 @@ export function TimelineContent({
   } = useUIStore();
 
   const project = useProjectStore((state) => state.project);
+  const { handleAudioFileDrop, isProcessingAudio } = useDragDrop();
+
+  // Track if we're dragging an audio file over the timeline
+  const [isDraggingAudioFile, setIsDraggingAudioFile] = useState(false);
+  const dragCounter = useRef(0);
 
   // Track height (scaled from base 64px)
   const trackHeight = Math.round(64 * trackHeightScale);
   const barWidth = beatsPerBar * pixelsPerBeat;
+
+  // File drag handlers for audio drop zone
+  const handleFileDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current++;
+
+    // Check if dragging files
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDraggingAudioFile(true);
+    }
+  }, []);
+
+  const handleFileDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current--;
+
+    // Only clear if we've left all elements
+    if (dragCounter.current === 0) {
+      setIsDraggingAudioFile(false);
+    }
+  }, []);
+
+  const handleFileDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  const handleFileDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current = 0;
+    setIsDraggingAudioFile(false);
+
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    if (!isAudioFile(file)) return;
+
+    // Calculate drop position
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const x = e.clientX - rect.left;
+    const bar = Math.max(0, Math.floor(x / barWidth));
+
+    // Determine which track (if any) was dropped on
+    const y = e.clientY - rect.top;
+    const trackIndex = Math.floor(y / trackHeight);
+    const targetTrack = flatTracks[trackIndex]?.track;
+
+    await handleAudioFileDrop(file, targetTrack?.id || null, bar);
+  }, [barWidth, trackHeight, flatTracks, handleAudioFileDrop]);
 
   // Calculate which blocks are inside the marquee selection
   const getBlocksInMarquee = useCallback(() => {
@@ -154,6 +213,10 @@ export function TimelineContent({
       className={`timeline-content relative overflow-hidden ${marqueeSelection?.isActive ? 'select-none' : ''}`}
       style={{ width: timelineWidth, minHeight: '100%' }}
       onMouseDown={handleMouseDown}
+      onDragEnter={handleFileDragEnter}
+      onDragLeave={handleFileDragLeave}
+      onDragOver={handleFileDragOver}
+      onDrop={handleFileDrop}
     >
       {/* Grid lines */}
       <div className="absolute inset-0 pointer-events-none">
@@ -200,6 +263,23 @@ export function TimelineContent({
             borderRadius: 2,
           }}
         />
+      )}
+
+      {/* Audio file drop zone overlay */}
+      {isDraggingAudioFile && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none"
+          style={{
+            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+            border: '2px dashed rgba(34, 197, 94, 0.6)',
+          }}
+        >
+          <div className="bg-surface/95 px-6 py-3 rounded-lg shadow-lg border border-green-500/30">
+            <span className="text-green-400 font-medium text-lg">
+              {isProcessingAudio ? 'Processing audio...' : 'Drop audio file here'}
+            </span>
+          </div>
+        </div>
       )}
     </div>
   );

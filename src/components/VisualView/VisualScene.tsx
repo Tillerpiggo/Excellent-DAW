@@ -1,11 +1,9 @@
 'use client';
 
-import { useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import * as THREE from 'three';
 import { useVisualStore } from '@/stores/visualStore';
 import { PolarFlower } from './instruments/PolarFlower';
+import { HexagonDots } from './instruments/HexagonDots';
 
 interface VisualSceneProps {
   trackIds: string[];
@@ -30,18 +28,18 @@ export function VisualScene({ trackIds }: VisualSceneProps) {
         autoRotate={false}
       />
 
-      {/* Render visual instruments */}
-      {trackIds.map((trackId, index) => {
+      {/* Render visual instruments - all centered, overlapping */}
+      {trackIds.map((trackId) => {
         const state = trackStates.get(trackId);
         if (!state) return null;
 
-        // Position instruments in a grid if multiple
-        const offset = (index - (trackIds.length - 1) / 2) * 3;
-
         return (
-          <group key={trackId} position={[offset, 0, 0]}>
+          <group key={trackId} position={[0, 0, 0]}>
             {state.instrumentId === 'polarFlower' && (
               <PolarFlower state={state} />
+            )}
+            {state.instrumentId === 'hexagonDots' && (
+              <HexagonDots state={state} />
             )}
           </group>
         );

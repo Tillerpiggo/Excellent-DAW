@@ -13,6 +13,7 @@ interface ProjectState {
 
   // Track operations
   addTrack: (parentId?: string, preset?: typeof PATTERN_PRESETS[0]) => string;
+  addAudioTrack: (name: string) => string;
   updateTrack: (trackId: string, updates: Partial<Track>) => void;
   deleteTrack: (trackId: string) => void;
   moveTrack: (trackId: string, newParentId?: string, index?: number) => void;
@@ -118,6 +119,28 @@ export const useProjectStore = create<ProjectState>()(
       });
 
       return track.id;
+    },
+
+    addAudioTrack: (name: string) => {
+      const trackId = generateId();
+
+      set((state) => {
+        const track: Track = {
+          id: trackId,
+          name: name || 'Audio Track',
+          typeId: 'base',
+          instrumentId: 'audio',
+          muted: false,
+          collapsed: false,
+          blocks: [],
+          childIds: [],
+        };
+
+        state.project.tracks[trackId] = track;
+        state.project.rootTracks.push(trackId);
+      });
+
+      return trackId;
     },
 
     updateTrack: (trackId: string, updates: Partial<Track>) => {

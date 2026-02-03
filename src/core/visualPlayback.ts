@@ -22,15 +22,14 @@ interface ScheduledVisualEvent {
 
 export class VisualPlaybackEngine {
   private animationFrame: number | null = null;
-  private startTime: number = 0;
-  private bpm: number = 120;
   private beatsPerBar: number = 4;
   private totalBeats: number = 16;
   private isPlaying: boolean = false;
   private callbacks: VisualPlaybackCallbacks = {};
   private trackStates: Map<string, VisualInstrumentState> = new Map();
   private scheduledEvents: ScheduledVisualEvent[] = [];
-  private processedEventIndices: Set<number> = new Set();
+  private lastProcessedBeat: number = -1;
+  private getCurrentBeatFn: (() => number) | null = null;
 
   setCallbacks(callbacks: VisualPlaybackCallbacks): void {
     this.callbacks = callbacks;
@@ -40,14 +39,15 @@ export class VisualPlaybackEngine {
     resolvedTracks: ResolvedTrack[],
     bpm: number,
     beatsPerBar: number,
-    totalBars: number
+    totalBars: number,
+    getCurrentBeatFn: () => number
   ): void {
-    this.bpm = bpm;
     this.beatsPerBar = beatsPerBar;
     this.totalBeats = totalBars * beatsPerBar;
+    this.getCurrentBeatFn = getCurrentBeatFn;
     this.trackStates.clear();
     this.scheduledEvents = [];
-    this.processedEventIndices.clear();
+    this.lastProcessedBeat = -1;
 
     // Create state for each track with a visual instrument
     for (const resolved of resolvedTracks) {
@@ -99,8 +99,7 @@ export class VisualPlaybackEngine {
     if (this.isPlaying) return;
 
     this.isPlaying = true;
-    this.startTime = performance.now();
-    this.processedEventIndices.clear();
+    this.lastProcessedBeat = -1;
     this.frameLoop();
   }
 
@@ -123,37 +122,30 @@ export class VisualPlaybackEngine {
   }
 
   private frameLoop = (): void => {
-    if (!this.isPlaying) return;
+    if (!this.isPlaying || !this.getCurrentBeatFn) return;
 
-    const now = performance.now();
-    const elapsedMs = now - this.startTime;
-    const beatsPerMs = this.bpm / 60000;
-    let currentBeat = elapsedMs * beatsPerMs;
+    // Get current beat from Tone.js transport (synced with audio)
+    const currentBeat = this.getCurrentBeatFn();
 
-    // Handle looping
-    if (currentBeat >= this.totalBeats) {
-      const loops = Math.floor(currentBeat / this.totalBeats);
-      this.startTime = now - ((currentBeat % this.totalBeats) / beatsPerMs);
-      currentBeat = currentBeat % this.totalBeats;
-      this.processedEventIndices.clear();
+    // Detect loop reset (beat jumped backwards significantly)
+    if (this.lastProcessedBeat > currentBeat + 1) {
+      this.lastProcessedBeat = -1;
     }
 
-    // Process events in the current frame window
-    const frameWindow = 1 / 30; // ~33ms at 30fps equivalent in beats
-    const windowStart = currentBeat;
-    const windowEnd = currentBeat + (frameWindow * beatsPerMs * 1000);
+    // Process events between lastProcessedBeat and currentBeat
+    for (const event of this.scheduledEvents) {
+      // Skip events we've already processed (before lastProcessedBeat)
+      if (event.time <= this.lastProcessedBeat) continue;
 
-    for (let i = 0; i < this.scheduledEvents.length; i++) {
-      if (this.processedEventIndices.has(i)) continue;
-
-      const event = this.scheduledEvents[i];
-      if (event.time >= windowStart && event.time < windowEnd) {
-        this.processedEventIndices.add(i);
+      // Process events up to current beat
+      if (event.time <= currentBeat) {
         this.triggerNoteOn(event, currentBeat);
-      } else if (event.time >= windowEnd) {
+      } else {
         break; // Events are sorted, no need to check further
       }
     }
+
+    this.lastProcessedBeat = currentBeat;
 
     // Update active notes and decay visual states
     this.updateStates(currentBeat);
