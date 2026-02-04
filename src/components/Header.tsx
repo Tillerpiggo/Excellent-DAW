@@ -8,38 +8,43 @@ import { UndoRedoButtons } from './UndoRedoButtons';
 
 export function Header() {
   const { isPlaying, toggle, setBpm } = usePlayback();
-  const project = useProjectStore((state) => state.project);
+  // Granular selectors - only re-render when specific values change
+  const projectId = useProjectStore((state) => state.project.id);
+  const projectName = useProjectStore((state) => state.project.name);
+  const bpm = useProjectStore((state) => state.project.bpm);
+  const totalBars = useProjectStore((state) => state.project.totalBars);
+  const beatsPerBar = useProjectStore((state) => state.project.beatsPerBar);
   const { setTotalBars, renameProject } = useProjectStore();
   const { currentBeat, toggleLibrary, toggleInspector, showLibrary, showInspector, setCurrentView } = useUIStore();
 
   // Local state for inputs to allow free typing without immediate clamping
-  const [bpmInput, setBpmInput] = useState(String(project.bpm));
-  const [barsInput, setBarsInput] = useState(String(project.totalBars));
+  const [bpmInput, setBpmInput] = useState(String(bpm));
+  const [barsInput, setBarsInput] = useState(String(totalBars));
   const [isEditingName, setIsEditingName] = useState(false);
-  const [editName, setEditName] = useState(project.name);
+  const [editName, setEditName] = useState(projectName);
 
   // Sync local state when project values change externally
   useEffect(() => {
-    setBpmInput(String(project.bpm));
-  }, [project.bpm]);
+    setBpmInput(String(bpm));
+  }, [bpm]);
 
   useEffect(() => {
-    setBarsInput(String(project.totalBars));
-  }, [project.totalBars]);
+    setBarsInput(String(totalBars));
+  }, [totalBars]);
 
   useEffect(() => {
-    setEditName(project.name);
-  }, [project.name]);
+    setEditName(projectName);
+  }, [projectName]);
 
-  const currentBar = Math.floor(currentBeat / project.beatsPerBar) + 1;
-  const beatInBar = Math.floor(currentBeat % project.beatsPerBar) + 1;
+  const currentBar = Math.floor(currentBeat / beatsPerBar) + 1;
+  const beatInBar = Math.floor(currentBeat % beatsPerBar) + 1;
 
   const handleSaveName = () => {
     const trimmed = editName.trim();
-    if (trimmed && trimmed !== project.name) {
-      renameProject(project.id, trimmed);
+    if (trimmed && trimmed !== projectName) {
+      renameProject(projectId, trimmed);
     } else {
-      setEditName(project.name);
+      setEditName(projectName);
     }
     setIsEditingName(false);
   };
@@ -48,7 +53,7 @@ export function Header() {
     if (e.key === 'Enter') {
       handleSaveName();
     } else if (e.key === 'Escape') {
-      setEditName(project.name);
+      setEditName(projectName);
       setIsEditingName(false);
     }
   };
@@ -86,7 +91,7 @@ export function Header() {
             title="Click to rename"
           >
             <span className="text-xl font-bold bg-gradient-to-r from-accent-from to-accent-to bg-clip-text text-transparent">
-              {project.name}
+              {projectName}
             </span>
           </button>
         )}
@@ -156,7 +161,7 @@ export function Header() {
           />
           <input
             type="range"
-            value={project.bpm}
+            value={bpm}
             onChange={(e) => setBpm(parseInt(e.target.value))}
             className="w-24"
             min={20}

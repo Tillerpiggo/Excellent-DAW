@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { TrackNode } from '@/utils/tree';
 import { TimelineTrack } from '../Timeline/TimelineTrack';
 import { useUIStore } from '@/stores/uiStore';
-import { useProjectStore } from '@/stores/projectStore';
 import { useDragDrop } from '@/hooks/useDragDrop';
 import { isAudioFile } from '@/core/audio';
 
@@ -34,7 +33,6 @@ export function TimelineContent({
     trackHeightScale,
   } = useUIStore();
 
-  const project = useProjectStore((state) => state.project);
   const { handleAudioFileDrop, isProcessingAudio } = useDragDrop();
 
   // Track if we're dragging an audio file over the timeline

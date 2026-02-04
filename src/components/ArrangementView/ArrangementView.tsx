@@ -12,7 +12,12 @@ import { usePlayback } from '@/hooks/usePlayback';
 import { flattenTracks } from '@/utils/tree';
 
 export function ArrangementView() {
-  const project = useProjectStore((state) => state.project);
+  // Separate selectors for primitives vs object data
+  const totalBars = useProjectStore((state) => state.project.totalBars);
+  const beatsPerBar = useProjectStore((state) => state.project.beatsPerBar);
+  // tracks subscription still needed for flattenTracks - this is a known remaining bottleneck
+  const tracks = useProjectStore((state) => state.project.tracks);
+  const rootTracks = useProjectStore((state) => state.project.rootTracks);
   const { addTrack } = useProjectStore();
   const {
     collapsedTrackIds,
@@ -30,9 +35,10 @@ export function ArrangementView() {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewportWidth, setViewportWidth] = useState(0);
-  const flatTracks = flattenTracks(project, collapsedTrackIds);
+  // Create minimal project-like object for flattenTracks
+  const flatTracks = flattenTracks({ tracks, rootTracks } as Parameters<typeof flattenTracks>[0], collapsedTrackIds);
 
-  const totalBeats = project.totalBars * project.beatsPerBar;
+  const totalBeats = totalBars * beatsPerBar;
   const timelineWidth = totalBeats * pixelsPerBeat;
   const trackLabelWidth = 256;
 
@@ -133,8 +139,8 @@ export function ArrangementView() {
           {/* Ruler - sticky top */}
           <div className="sticky top-0 z-20 bg-surface border-b border-border h-12">
             <TimelineRuler
-              totalBars={project.totalBars}
-              beatsPerBar={project.beatsPerBar}
+              totalBars={totalBars}
+              beatsPerBar={beatsPerBar}
               pixelsPerBeat={pixelsPerBeat}
             />
           </div>
@@ -148,8 +154,8 @@ export function ArrangementView() {
           <TimelineContent
             flatTracks={flatTracks}
             pixelsPerBeat={pixelsPerBeat}
-            beatsPerBar={project.beatsPerBar}
-            totalBars={project.totalBars}
+            beatsPerBar={beatsPerBar}
+            totalBars={totalBars}
           />
         </div>
       </div>

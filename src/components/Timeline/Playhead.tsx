@@ -17,21 +17,22 @@ export function Playhead({ currentBeat, pixelsPerBeat, scrollLeft }: PlayheadPro
 
   const { isPlaying, seekTo } = usePlayback();
   const { isScrubbing, setIsScrubbing, setCurrentBeat } = useUIStore();
-  const project = useProjectStore((state) => state.project);
+  const totalBars = useProjectStore((state) => state.project.totalBars);
+  const beatsPerBar = useProjectStore((state) => state.project.beatsPerBar);
 
   const isDraggingRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const pixelToBeat = useCallback(
     (pixelX: number) => {
-      const totalBeats = project.totalBars * project.beatsPerBar;
+      const totalBeats = totalBars * beatsPerBar;
       // Add scrollLeft back to convert from screen position to timeline position
       const beat = (pixelX + scrollLeft) / pixelsPerBeat;
       const quantize = 0.25; // 1/16th note
       const quantized = Math.round(beat / quantize) * quantize;
       return Math.max(0, Math.min(totalBeats - quantize, quantized));
     },
-    [pixelsPerBeat, scrollLeft, project.totalBars, project.beatsPerBar]
+    [pixelsPerBeat, scrollLeft, totalBars, beatsPerBar]
   );
 
   const handleMouseDown = useCallback(

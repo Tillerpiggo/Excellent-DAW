@@ -56,7 +56,8 @@ export function TimelineBlock({
   const isAudioBlock = track.instrumentId === 'audio' && block.audioData;
   const { selectedBlockIds, selectBlock } = useUIStore();
   const { updateBlock } = useProjectStore();
-  const project = useProjectStore((state) => state.project);
+  // Only subscribe to tracks (needed for multi-block resize), not entire project
+  const tracks = useProjectStore((state) => state.project.tracks);
   const { handleBlockDragStart, handleDragEnd } = useDragDrop();
 
   const [resizeMode, setResizeMode] = useState<ResizeMode>(null);
@@ -96,9 +97,9 @@ export function TimelineBlock({
   const captureSelectedBlocksInfo = useCallback(() => {
     const info: SelectedBlockInfo[] = [];
     for (const blockId of selectedBlockIds) {
-      const trackId = findTrackForBlock(project.tracks, blockId);
+      const trackId = findTrackForBlock(tracks, blockId);
       if (trackId) {
-        const foundBlock = project.tracks[trackId].blocks.find(b => b.id === blockId);
+        const foundBlock = tracks[trackId].blocks.find(b => b.id === blockId);
         if (foundBlock) {
           info.push({
             blockId,
@@ -111,7 +112,7 @@ export function TimelineBlock({
       }
     }
     selectedBlocksInfo.current = info;
-  }, [selectedBlockIds, project.tracks, beatsPerBar]);
+  }, [selectedBlockIds, tracks, beatsPerBar]);
 
   // Left handle resize start
   const handleLeftResizeStart = useCallback((e: React.MouseEvent) => {
@@ -169,7 +170,7 @@ export function TimelineBlock({
         // Each block applies delta independently, respecting its own minimum
         const newDuration = Math.max(1, info.originalDuration + deltaBars);
         // Only update if actually changed
-        const currentBlock = project.tracks[info.trackId]?.blocks.find(b => b.id === info.blockId);
+        const currentBlock = tracks[info.trackId]?.blocks.find(b => b.id === info.blockId);
         if (currentBlock && newDuration !== currentBlock.durationBars) {
           // Disable loop if shrunk to pattern length or less (no actual looping)
           const shouldLoop = newDuration > info.patternBars;
@@ -190,7 +191,7 @@ export function TimelineBlock({
         // Each block applies delta independently, respecting its own minimum
         const newDuration = Math.max(1, info.originalDuration + deltaBars);
         // Only update if actually changed
-        const currentBlock = project.tracks[info.trackId]?.blocks.find(b => b.id === info.blockId);
+        const currentBlock = tracks[info.trackId]?.blocks.find(b => b.id === info.blockId);
         if (currentBlock && newDuration !== currentBlock.durationBars) {
           updateBlock(info.trackId, info.blockId, {
             durationBars: newDuration,
@@ -198,7 +199,7 @@ export function TimelineBlock({
         }
       }
     }
-  }, [resizeMode, barWidth, patternBars, block.startBar, block.durationBars, block.id, track.id, updateBlock, project.tracks]);
+  }, [resizeMode, barWidth, patternBars, block.startBar, block.durationBars, block.id, track.id, updateBlock, tracks]);
 
   const handleResizeEnd = useCallback(() => {
     setResizeMode(null);
