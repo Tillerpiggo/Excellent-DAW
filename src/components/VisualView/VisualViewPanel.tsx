@@ -1,14 +1,11 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
-import { useUIStore } from '@/stores/uiStore';
+import { useMemo } from 'react';
 import { useProjectStore } from '@/stores/projectStore';
-import { useVisualStore } from '@/stores/visualStore';
 import { useVisualPlayback } from '@/hooks/useVisualPlayback';
 import { VisualView } from './VisualView';
 
 export function VisualViewPanel() {
-  const { showVisualView, setShowVisualView } = useUIStore();
   const { project } = useProjectStore();
 
   // Initialize visual playback hook
@@ -21,17 +18,12 @@ export function VisualViewPanel() {
       .map((track) => track.id);
   }, [project.tracks]);
 
-  // Auto-show visual view when there are tracks with visual instruments
-  useEffect(() => {
-    if (visualTrackIds.length > 0 && !showVisualView) {
-      setShowVisualView(true);
-    } else if (visualTrackIds.length === 0 && showVisualView) {
-      setShowVisualView(false);
-    }
-  }, [visualTrackIds.length, showVisualView, setShowVisualView]);
-
-  if (!showVisualView || visualTrackIds.length === 0) {
-    return null;
+  if (visualTrackIds.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center text-muted">
+        <p className="text-sm">No tracks with visual instruments</p>
+      </div>
+    );
   }
 
   return (

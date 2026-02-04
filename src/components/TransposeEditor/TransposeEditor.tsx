@@ -1,17 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { Block, Track, Event } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
-import { useUIStore } from '@/stores/uiStore';
 import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
 import { QuantizeSelect } from '@/components/shared/QuantizeSelect';
+import { useMidiEditorState } from '@/hooks/useMidiEditorState';
 
 interface TransposeEditorProps {
   block: Block;
   track: Track;
   beatsPerBar: number;
 }
+
+const DEFAULT_QUANTIZE = 4;
 
 // Transpose rows: -12 to +12 semitones (two octaves range)
 // We use pitch = 60 + semitones (so -12 = 48, 0 = 60, +12 = 72)
@@ -73,38 +75,21 @@ function extractTransposeFromBlock(block: Block): MidiNote[] {
 
 export function TransposeEditor({ block, track, beatsPerBar }: TransposeEditorProps) {
   const { updateBlock } = useProjectStore();
-  const { transposeEditorQuantize, setTransposeEditorQuantize } = useUIStore();
 
-  const [notes, setNotes] = useState<MidiNote[]>(() => extractTransposeFromBlock(block));
+  const saveNotes = useCallback((notes: MidiNote[], trackId: string, blockId: string) => {
+    const events = midiNotesToEvents(notes);
+    updateBlock(trackId, blockId, { streams: [{ events }] });
+  }, [updateBlock]);
 
-  // Update notes when block ID changes
-  const blockId = block.id;
-  useEffect(() => {
-    setNotes(extractTransposeFromBlock(block));
-  }, [blockId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { notes, quantize, setQuantize, handleNotesChange, handleClear } = useMidiEditorState({
+    block,
+    track,
+    extractNotes: extractTransposeFromBlock,
+    saveNotes,
+    defaultQuantize: DEFAULT_QUANTIZE,
+  });
 
   const totalBeats = block.durationBars * beatsPerBar;
-
-  // Handle notes change from MidiEditor
-  const handleNotesChange = useCallback((newNotes: MidiNote[]) => {
-    setNotes(newNotes);
-  }, []);
-
-  // Auto-save when notes change
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      const events = midiNotesToEvents(notes);
-      updateBlock(track.id, block.id, {
-        streams: [{ events }],
-      });
-    }, 500);
-    return () => clearTimeout(timeout);
-  }, [notes, track.id, block.id, updateBlock]);
-
-  // Clear all
-  const handleClear = useCallback(() => {
-    setNotes([]);
-  }, []);
 
   return (
     <div className="flex flex-col h-full">
@@ -119,7 +104,7 @@ export function TransposeEditor({ block, track, beatsPerBar }: TransposeEditorPr
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <QuantizeSelect value={transposeEditorQuantize} onChange={setTransposeEditorQuantize} />
+          <QuantizeSelect value={quantize} onChange={setQuantize} />
           <button
             onClick={handleClear}
             className="px-2 py-1 text-xs bg-surface hover:bg-muted border border-border rounded"
@@ -136,7 +121,7 @@ export function TransposeEditor({ block, track, beatsPerBar }: TransposeEditorPr
           rows={TRANSPOSE_ROWS}
           onNotesChange={handleNotesChange}
           totalBeats={totalBeats}
-          quantize={transposeEditorQuantize}
+          quantize={quantize}
           beatsPerBar={beatsPerBar}
         />
       </div>

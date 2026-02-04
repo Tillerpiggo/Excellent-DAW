@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Block, Track, Event } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
-import { useUIStore } from '@/stores/uiStore';
 import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
 import { QuantizeSelect } from '@/components/shared/QuantizeSelect';
 
@@ -15,6 +14,7 @@ interface SwingEditorProps {
 
 // Default swing amount (0-100%)
 const DEFAULT_SWING_AMOUNT = 66;
+const DEFAULT_QUANTIZE = 0.5;
 
 // Swing events use pitch 0 as a control marker
 const SWING_PITCH = 0;
@@ -56,8 +56,7 @@ function notesToEvents(notes: MidiNote[], swingAmount: number): Event[] {
 
 export function SwingEditor({ block, track, beatsPerBar }: SwingEditorProps) {
   const { updateBlock } = useProjectStore();
-  const { swingEditorQuantize, setSwingEditorQuantize } = useUIStore();
-
+  const [quantize, setQuantize] = useState(DEFAULT_QUANTIZE);
   const [notes, setNotes] = useState<MidiNote[]>([]);
   const [swingAmount, setSwingAmount] = useState(DEFAULT_SWING_AMOUNT);
 
@@ -88,9 +87,7 @@ export function SwingEditor({ block, track, beatsPerBar }: SwingEditorProps) {
   useEffect(() => {
     const timeout = setTimeout(() => {
       const events = notesToEvents(notes, swingAmount);
-      updateBlock(track.id, block.id, {
-        streams: [{ events }],
-      });
+      updateBlock(track.id, block.id, { streams: [{ events }] });
     }, 500);
     return () => clearTimeout(timeout);
   }, [notes, swingAmount, track.id, block.id, updateBlock]);
@@ -116,17 +113,17 @@ export function SwingEditor({ block, track, beatsPerBar }: SwingEditorProps) {
   const handleFillAll = useCallback(() => {
     const newNotes: MidiNote[] = [];
     const velocity = Math.round((swingAmount / 100) * 127);
-    for (let i = 0; i < totalBeats; i += swingEditorQuantize) {
+    for (let i = 0; i < totalBeats; i += quantize) {
       newNotes.push({
         id: `swing-${i}-${Date.now()}`,
         pitch: SWING_PITCH,
         time: i,
-        duration: swingEditorQuantize,
+        duration: quantize,
         velocity,
       });
     }
     setNotes(newNotes);
-  }, [totalBeats, swingEditorQuantize, swingAmount]);
+  }, [totalBeats, quantize, swingAmount]);
 
   // Clear all
   const handleClear = useCallback(() => {
@@ -163,7 +160,7 @@ export function SwingEditor({ block, track, beatsPerBar }: SwingEditorProps) {
 
         <div className="w-px h-4 bg-border" />
 
-        <QuantizeSelect value={swingEditorQuantize} onChange={setSwingEditorQuantize} />
+        <QuantizeSelect value={quantize} onChange={setQuantize} />
 
         <button
           onClick={handleFillOffbeats}
@@ -200,7 +197,7 @@ export function SwingEditor({ block, track, beatsPerBar }: SwingEditorProps) {
         onNotesChange={handleNotesChange}
         totalBeats={totalBeats}
         beatsPerBar={beatsPerBar}
-        quantize={swingEditorQuantize}
+        quantize={quantize}
         rowHeight={48}
       />
     </div>

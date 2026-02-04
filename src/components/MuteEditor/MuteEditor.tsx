@@ -1,11 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { Block, Track, Event } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
-import { useUIStore } from '@/stores/uiStore';
 import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
 import { QuantizeSelect } from '@/components/shared/QuantizeSelect';
+import { useMidiEditorState } from '@/hooks/useMidiEditorState';
 
 interface MuteEditorProps {
   block: Block;
@@ -15,6 +15,7 @@ interface MuteEditorProps {
 
 // Single row for mute (pitch 0 as marker)
 const MUTE_PITCH = 0;
+const DEFAULT_QUANTIZE = 0.25;
 
 const MUTE_ROWS: MidiRow[] = [
   { pitch: MUTE_PITCH, label: 'Mute', color: '#64748b' },
@@ -22,7 +23,6 @@ const MUTE_ROWS: MidiRow[] = [
 
 function extractMutesFromBlock(block: Block): MidiNote[] {
   const allEvents = block.streams?.flatMap(s => s.events) || [];
-  // All events in a mute track are mute events
   return allEvents.map((event, index) => ({
     id: `mute-${event.startTimeInBeats}-${index}`,
     pitch: MUTE_PITCH,
@@ -43,44 +43,27 @@ function notesToEvents(notes: MidiNote[]): Event[] {
 
 export function MuteEditor({ block, track, beatsPerBar }: MuteEditorProps) {
   const { updateBlock } = useProjectStore();
-  const { muteEditorQuantize, setMuteEditorQuantize } = useUIStore();
 
-  const [notes, setNotes] = useState<MidiNote[]>(() => extractMutesFromBlock(block));
+  const saveNotes = useCallback((notes: MidiNote[], trackId: string, blockId: string) => {
+    const events = notesToEvents(notes);
+    updateBlock(trackId, blockId, { streams: [{ events }] });
+  }, [updateBlock]);
 
-  // Update notes when block ID changes
-  const blockId = block.id;
-  useEffect(() => {
-    setNotes(extractMutesFromBlock(block));
-  }, [blockId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { notes, quantize, setQuantize, handleNotesChange, handleClear } = useMidiEditorState({
+    block,
+    track,
+    extractNotes: extractMutesFromBlock,
+    saveNotes,
+    defaultQuantize: DEFAULT_QUANTIZE,
+  });
 
   const totalBeats = block.durationBars * beatsPerBar;
-
-  // Handle notes change from MidiEditor
-  const handleNotesChange = useCallback((newNotes: MidiNote[]) => {
-    setNotes(newNotes);
-  }, []);
-
-  // Auto-save when notes change
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      const events = notesToEvents(notes);
-      updateBlock(track.id, block.id, {
-        streams: [{ events }],
-      });
-    }, 500);
-    return () => clearTimeout(timeout);
-  }, [notes, track.id, block.id, updateBlock]);
-
-  // Clear all
-  const handleClear = useCallback(() => {
-    setNotes([]);
-  }, []);
 
   return (
     <div className="flex flex-col h-full" data-editor-panel="mute">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border">
-        <QuantizeSelect value={muteEditorQuantize} onChange={setMuteEditorQuantize} />
+        <QuantizeSelect value={quantize} onChange={setQuantize} />
 
         <button
           onClick={handleClear}
@@ -103,7 +86,7 @@ export function MuteEditor({ block, track, beatsPerBar }: MuteEditorProps) {
         onNotesChange={handleNotesChange}
         totalBeats={totalBeats}
         beatsPerBar={beatsPerBar}
-        quantize={muteEditorQuantize}
+        quantize={quantize}
         rowHeight={48}
       />
     </div>

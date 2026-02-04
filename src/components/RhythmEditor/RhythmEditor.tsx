@@ -1,11 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { Block, Track, Event } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
-import { useUIStore } from '@/stores/uiStore';
 import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
 import { QuantizeSelect } from '@/components/shared/QuantizeSelect';
+import { useMidiEditorState } from '@/hooks/useMidiEditorState';
 
 interface RhythmEditorProps {
   block: Block;
@@ -15,6 +15,7 @@ interface RhythmEditorProps {
 
 // Single row for rhythm (C4 = 60 as reference pitch)
 const RHYTHM_PITCH = 60;
+const DEFAULT_QUANTIZE = 0.25;
 
 const RHYTHM_ROWS: MidiRow[] = [
   { pitch: RHYTHM_PITCH, label: 'Rhythm', color: '#F9A826' },
@@ -22,7 +23,6 @@ const RHYTHM_ROWS: MidiRow[] = [
 
 function extractRhythmFromBlock(block: Block): MidiNote[] {
   const allEvents = block.streams?.flatMap(s => s.events) || [];
-  // Rhythm events have pitch (usually 60 for C4)
   const rhythmEvents = allEvents.filter(e => e.pitch !== undefined);
 
   return rhythmEvents.map((event, index) => ({
@@ -45,59 +45,42 @@ function notesToEvents(notes: MidiNote[]): Event[] {
 
 export function RhythmEditor({ block, track, beatsPerBar }: RhythmEditorProps) {
   const { updateBlock } = useProjectStore();
-  const { rhythmEditorQuantize, setRhythmEditorQuantize } = useUIStore();
 
-  const [notes, setNotes] = useState<MidiNote[]>(() => extractRhythmFromBlock(block));
+  const saveNotes = useCallback((notes: MidiNote[], trackId: string, blockId: string) => {
+    const events = notesToEvents(notes);
+    updateBlock(trackId, blockId, { streams: [{ events }] });
+  }, [updateBlock]);
 
-  // Update notes when block ID changes
-  const blockId = block.id;
-  useEffect(() => {
-    setNotes(extractRhythmFromBlock(block));
-  }, [blockId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { notes, setNotes, quantize, setQuantize, handleNotesChange, handleClear } = useMidiEditorState({
+    block,
+    track,
+    extractNotes: extractRhythmFromBlock,
+    saveNotes,
+    defaultQuantize: DEFAULT_QUANTIZE,
+  });
 
   const totalBeats = block.durationBars * beatsPerBar;
-
-  // Handle notes change from MidiEditor
-  const handleNotesChange = useCallback((newNotes: MidiNote[]) => {
-    setNotes(newNotes);
-  }, []);
-
-  // Auto-save when notes change
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      const events = notesToEvents(notes);
-      updateBlock(track.id, block.id, {
-        streams: [{ events }],
-      });
-    }, 500);
-    return () => clearTimeout(timeout);
-  }, [notes, track.id, block.id, updateBlock]);
 
   // Fill all beats
   const handleFill = useCallback(() => {
     const newNotes: MidiNote[] = [];
-    for (let i = 0; i < totalBeats; i += rhythmEditorQuantize) {
+    for (let i = 0; i < totalBeats; i += quantize) {
       newNotes.push({
         id: `rhythm-${i}-${Date.now()}`,
         pitch: RHYTHM_PITCH,
         time: i,
-        duration: rhythmEditorQuantize,
+        duration: quantize,
         velocity: 100,
       });
     }
     setNotes(newNotes);
-  }, [totalBeats, rhythmEditorQuantize]);
-
-  // Clear all
-  const handleClear = useCallback(() => {
-    setNotes([]);
-  }, []);
+  }, [totalBeats, quantize, setNotes]);
 
   return (
     <div className="flex flex-col h-full" data-editor-panel="rhythm">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border">
-        <QuantizeSelect value={rhythmEditorQuantize} onChange={setRhythmEditorQuantize} />
+        <QuantizeSelect value={quantize} onChange={setQuantize} />
 
         <button
           onClick={handleFill}
@@ -127,7 +110,7 @@ export function RhythmEditor({ block, track, beatsPerBar }: RhythmEditorProps) {
         onNotesChange={handleNotesChange}
         totalBeats={totalBeats}
         beatsPerBar={beatsPerBar}
-        quantize={rhythmEditorQuantize}
+        quantize={quantize}
         rowHeight={48}
       />
     </div>

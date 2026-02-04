@@ -1,11 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { Block, Track } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
-import { useUIStore } from '@/stores/uiStore';
 import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
 import { QuantizeSelect } from '@/components/shared/QuantizeSelect';
+import { useMidiEditorState } from '@/hooks/useMidiEditorState';
 import {
   eventsToArpNotes,
   arpNotesToEvents,
@@ -17,6 +17,8 @@ interface ArpEditorProps {
   track: Track;
   beatsPerBar: number;
 }
+
+const DEFAULT_QUANTIZE = 0.25;
 
 // MidiRow definitions for arp degrees (pitch = degree for simplicity, 1-8)
 const ARP_ROWS: MidiRow[] = [
@@ -62,45 +64,28 @@ function extractArpFromBlock(block: Block): MidiNote[] {
 
 export function ArpEditor({ block, track, beatsPerBar }: ArpEditorProps) {
   const { updateBlock } = useProjectStore();
-  const { arpEditorQuantize, setArpEditorQuantize } = useUIStore();
 
-  const [notes, setNotes] = useState<MidiNote[]>(() => extractArpFromBlock(block));
+  const saveNotes = useCallback((notes: MidiNote[], trackId: string, blockId: string) => {
+    const arpNotes = midiNotesToArpNotes(notes);
+    const events = arpNotesToEvents(arpNotes);
+    updateBlock(trackId, blockId, { streams: [{ events }] });
+  }, [updateBlock]);
 
-  // Update notes when block ID changes (not on every block update)
-  const blockId = block.id;
-  useEffect(() => {
-    setNotes(extractArpFromBlock(block));
-  }, [blockId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { notes, quantize, setQuantize, handleNotesChange, handleClear } = useMidiEditorState({
+    block,
+    track,
+    extractNotes: extractArpFromBlock,
+    saveNotes,
+    defaultQuantize: DEFAULT_QUANTIZE,
+  });
 
   const totalBeats = block.durationBars * beatsPerBar;
-
-  // Handle notes change from MidiEditor
-  const handleNotesChange = useCallback((newNotes: MidiNote[]) => {
-    setNotes(newNotes);
-  }, []);
-
-  // Auto-save when notes change
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      const arpNotes = midiNotesToArpNotes(notes);
-      const events = arpNotesToEvents(arpNotes);
-      updateBlock(track.id, block.id, {
-        streams: [{ events }],
-      });
-    }, 500);
-    return () => clearTimeout(timeout);
-  }, [notes, track.id, block.id, updateBlock]);
-
-  // Clear all
-  const handleClear = useCallback(() => {
-    setNotes([]);
-  }, []);
 
   return (
     <div className="flex flex-col h-full" data-editor-panel="arp">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border">
-        <QuantizeSelect value={arpEditorQuantize} onChange={setArpEditorQuantize} />
+        <QuantizeSelect value={quantize} onChange={setQuantize} />
 
         <button
           onClick={handleClear}
@@ -123,7 +108,7 @@ export function ArpEditor({ block, track, beatsPerBar }: ArpEditorProps) {
         onNotesChange={handleNotesChange}
         totalBeats={totalBeats}
         beatsPerBar={beatsPerBar}
-        quantize={arpEditorQuantize}
+        quantize={quantize}
       />
     </div>
   );

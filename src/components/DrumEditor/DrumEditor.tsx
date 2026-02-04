@@ -1,17 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { Block, Track, Event, DRUM_PITCHES, getDrumType, DrumType } from '@/core/types';
+import { useCallback } from 'react';
+import { Block, Track, Event, DRUM_PITCHES, getDrumType } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
-import { useUIStore } from '@/stores/uiStore';
 import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
 import { QuantizeSelect } from '@/components/shared/QuantizeSelect';
+import { useMidiEditorState } from '@/hooks/useMidiEditorState';
 
 interface DrumEditorProps {
   block: Block;
   track: Track;
   beatsPerBar: number;
 }
+
+const DEFAULT_QUANTIZE = 0.25;
 
 // Define rows using MidiRow format: { pitch, label, color }
 const DRUM_ROWS: MidiRow[] = [
@@ -45,42 +47,27 @@ function notesToEvents(notes: MidiNote[]): Event[] {
 
 export function DrumEditor({ block, track, beatsPerBar }: DrumEditorProps) {
   const { updateBlockDrums } = useProjectStore();
-  const { drumEditorQuantize, setDrumEditorQuantize } = useUIStore();
 
-  const [notes, setNotes] = useState<MidiNote[]>(() => extractDrumsFromBlock(block));
+  const saveNotes = useCallback((notes: MidiNote[], trackId: string, blockId: string) => {
+    const events = notesToEvents(notes);
+    updateBlockDrums(trackId, blockId, events);
+  }, [updateBlockDrums]);
 
-  // Update notes when block ID changes (not on every block update)
-  const blockId = block.id;
-  useEffect(() => {
-    setNotes(extractDrumsFromBlock(block));
-  }, [blockId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { notes, quantize, setQuantize, handleNotesChange, handleClear } = useMidiEditorState({
+    block,
+    track,
+    extractNotes: extractDrumsFromBlock,
+    saveNotes,
+    defaultQuantize: DEFAULT_QUANTIZE,
+  });
 
   const totalBeats = block.durationBars * beatsPerBar;
-
-  // Handle notes change from MidiEditor
-  const handleNotesChange = useCallback((newNotes: MidiNote[]) => {
-    setNotes(newNotes);
-  }, []);
-
-  // Auto-save when notes change
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      const events = notesToEvents(notes);
-      updateBlockDrums(track.id, block.id, events);
-    }, 500);
-    return () => clearTimeout(timeout);
-  }, [notes, track.id, block.id, updateBlockDrums]);
-
-  // Clear all
-  const handleClear = useCallback(() => {
-    setNotes([]);
-  }, []);
 
   return (
     <div className="flex flex-col h-full" data-editor-panel="drum">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border">
-        <QuantizeSelect value={drumEditorQuantize} onChange={setDrumEditorQuantize} />
+        <QuantizeSelect value={quantize} onChange={setQuantize} />
 
         <button
           onClick={handleClear}
@@ -103,7 +90,7 @@ export function DrumEditor({ block, track, beatsPerBar }: DrumEditorProps) {
         onNotesChange={handleNotesChange}
         totalBeats={totalBeats}
         beatsPerBar={beatsPerBar}
-        quantize={drumEditorQuantize}
+        quantize={quantize}
       />
     </div>
   );

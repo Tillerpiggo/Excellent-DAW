@@ -53,22 +53,6 @@ interface UIState {
   // Panel visibility
   showInspector: boolean;
   showLibrary: boolean;
-  showChordEditor: boolean;
-  showDrumEditor: boolean;
-  showArpEditor: boolean;
-  showMuteEditor: boolean;
-  showTransposeEditor: boolean;
-  showRhythmEditor: boolean;
-  showSwingEditor: boolean;
-  showVisualView: boolean;
-
-  // Editor quantize values (in beats)
-  drumEditorQuantize: number;
-  arpEditorQuantize: number;
-  muteEditorQuantize: number;
-  transposeEditorQuantize: number;
-  rhythmEditorQuantize: number;
-  swingEditorQuantize: number;
 
   // Chord picker state
   chordPickerOpen: boolean;
@@ -108,20 +92,6 @@ interface UIState {
 
   toggleInspector: () => void;
   toggleLibrary: () => void;
-  setShowChordEditor: (show: boolean) => void;
-  setShowDrumEditor: (show: boolean) => void;
-  setShowArpEditor: (show: boolean) => void;
-  setShowMuteEditor: (show: boolean) => void;
-  setShowTransposeEditor: (show: boolean) => void;
-  setShowRhythmEditor: (show: boolean) => void;
-  setShowSwingEditor: (show: boolean) => void;
-  setShowVisualView: (show: boolean) => void;
-  setDrumEditorQuantize: (quantize: number) => void;
-  setArpEditorQuantize: (quantize: number) => void;
-  setMuteEditorQuantize: (quantize: number) => void;
-  setTransposeEditorQuantize: (quantize: number) => void;
-  setRhythmEditorQuantize: (quantize: number) => void;
-  setSwingEditorQuantize: (quantize: number) => void;
   openChordPicker: (index: number) => void;
   closeChordPicker: () => void;
 
@@ -133,7 +103,7 @@ interface UIState {
   setCurrentView: (view: 'home' | 'editor') => void;
 }
 
-export const useUIStore = create<UIState>((set, get) => ({
+export const useUIStore = create<UIState>((set) => ({
   // Selection
   selectedTrackId: null,
   selectedBlockIds: new Set(),
@@ -169,22 +139,6 @@ export const useUIStore = create<UIState>((set, get) => ({
   // Panel visibility
   showInspector: true,
   showLibrary: true,
-  showChordEditor: false,
-  showDrumEditor: false,
-  showArpEditor: false,
-  showMuteEditor: false,
-  showTransposeEditor: false,
-  showRhythmEditor: false,
-  showSwingEditor: false,
-  showVisualView: false,
-
-  // Editor quantize values (in beats)
-  drumEditorQuantize: 0.25,
-  arpEditorQuantize: 0.25,
-  muteEditorQuantize: 0.25,
-  transposeEditorQuantize: 4,
-  rhythmEditorQuantize: 0.25,
-  swingEditorQuantize: 0.5,
 
   // Chord picker state
   chordPickerOpen: false,
@@ -337,62 +291,6 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   toggleLibrary: () => {
     set((state) => ({ showLibrary: !state.showLibrary }));
-  },
-
-  setShowChordEditor: (show) => {
-    set({ showChordEditor: show });
-  },
-
-  setShowDrumEditor: (show) => {
-    set({ showDrumEditor: show });
-  },
-
-  setShowArpEditor: (show) => {
-    set({ showArpEditor: show });
-  },
-
-  setShowMuteEditor: (show) => {
-    set({ showMuteEditor: show });
-  },
-
-  setShowTransposeEditor: (show) => {
-    set({ showTransposeEditor: show });
-  },
-
-  setShowRhythmEditor: (show) => {
-    set({ showRhythmEditor: show });
-  },
-
-  setShowSwingEditor: (show) => {
-    set({ showSwingEditor: show });
-  },
-
-  setShowVisualView: (show) => {
-    set({ showVisualView: show });
-  },
-
-  setDrumEditorQuantize: (quantize) => {
-    set({ drumEditorQuantize: quantize });
-  },
-
-  setArpEditorQuantize: (quantize) => {
-    set({ arpEditorQuantize: quantize });
-  },
-
-  setMuteEditorQuantize: (quantize) => {
-    set({ muteEditorQuantize: quantize });
-  },
-
-  setTransposeEditorQuantize: (quantize) => {
-    set({ transposeEditorQuantize: quantize });
-  },
-
-  setRhythmEditorQuantize: (quantize) => {
-    set({ rhythmEditorQuantize: quantize });
-  },
-
-  setSwingEditorQuantize: (quantize) => {
-    set({ swingEditorQuantize: quantize });
   },
 
   openChordPicker: (index) => {
