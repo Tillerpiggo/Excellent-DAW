@@ -6,8 +6,8 @@ import { useUIStore } from '@/stores/uiStore';
 import { initializePersistence } from '@/stores/persistence';
 
 // Dynamic imports to avoid SSR issues with Tone.js
-const PatternComposer = dynamic(
-  () => import('@/components/PatternComposer').then((mod) => mod.PatternComposer),
+const DAWView = dynamic(
+  () => import('@/components/PatternComposer').then((mod) => mod.DAWView),
   { ssr: false }
 );
 
@@ -28,5 +28,5 @@ export default function Home() {
     return <HomePage />;
   }
 
-  return <PatternComposer />;
+  return <DAWView />;
 }

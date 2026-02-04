@@ -35,30 +35,8 @@ export function VisualViewPanel() {
   }
 
   return (
-    <div className="h-full border-t border-border bg-surface flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-surface">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-foreground">Visual View</span>
-          <span className="text-xs text-muted">
-            {visualTrackIds.length} visual instrument{visualTrackIds.length !== 1 ? 's' : ''}
-          </span>
-        </div>
-        <button
-          onClick={() => setShowVisualView(false)}
-          className="text-muted hover:text-foreground transition-colors p-1"
-          title="Close visual view"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
-      {/* Visual content */}
-      <div className="flex-1 overflow-hidden">
-        <VisualView trackIds={visualTrackIds} />
-      </div>
+    <div className="h-full flex flex-col">
+      <VisualView trackIds={visualTrackIds} />
     </div>
   );
 }

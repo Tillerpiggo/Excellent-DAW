@@ -48,6 +48,13 @@ export function ArrangementView() {
     return () => window.removeEventListener('resize', updateViewportWidth);
   }, []);
 
+  // Restore scroll position when layout changes (e.g., bottom panel opens/closes)
+  useEffect(() => {
+    if (containerRef.current && containerRef.current.scrollLeft !== scrollLeft) {
+      containerRef.current.scrollLeft = scrollLeft;
+    }
+  });
+
   // Handle scroll
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {

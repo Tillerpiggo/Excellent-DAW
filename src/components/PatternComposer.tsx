@@ -6,20 +6,12 @@ import { Header } from './Header';
 import { PatternLibrary } from './PatternLibrary/PatternLibrary';
 import { ArrangementView } from './ArrangementView';
 import { Inspector } from './Inspector/Inspector';
-import { ChordEditorPanel } from './ChordEditor';
-import { DrumEditorPanel } from './DrumEditor';
-import { ArpEditorPanel } from './ArpEditor';
-import { MuteEditorPanel } from './MuteEditor';
-import { TransposeEditorPanel } from './TransposeEditor';
-import { RhythmEditorPanel } from './RhythmEditor';
-import { SwingEditorPanel } from './SwingEditor';
-import { VisualViewPanel } from './VisualView';
+import { BlockEditor } from './BlockEditor';
 import { useUIStore } from '@/stores/uiStore';
 import { useKeyboard } from '@/hooks/useKeyboard';
 
-export function PatternComposer() {
-  const { showLibrary, showInspector, showChordEditor, showDrumEditor, showArpEditor, showMuteEditor, showTransposeEditor, showRhythmEditor, showSwingEditor, showVisualView } = useUIStore();
-  const showBottomPanel = showChordEditor || showDrumEditor || showArpEditor || showMuteEditor || showTransposeEditor || showRhythmEditor || showSwingEditor || showVisualView;
+export function DAWView() {
+  const { showLibrary, showInspector } = useUIStore();
 
   // Panel refs for imperative collapse/expand control
   const libraryPanelRef = usePanelRef();
@@ -73,47 +65,20 @@ export function PatternComposer() {
         {/* Main Content Area */}
         <Panel minSize="400px" id="main-content-panel">
           <main className="h-full flex flex-col overflow-hidden">
-            {showBottomPanel ? (
-              <Group orientation="vertical" id="editor-layout-v2">
-                {/* ArrangementView - Unified scrolling for tracks and timeline */}
-                <Panel defaultSize={60} minSize={10} id="main-panel-v2">
-                  <ArrangementView />
-                </Panel>
-
-                {/* Bottom Panel - Chord/Drum Editors */}
-                <Separator className="h-2 bg-border hover:bg-accent-from/50 transition-colors cursor-row-resize flex items-center justify-center group">
-                  <div className="w-12 h-1 rounded-full bg-muted group-hover:bg-accent-from/70 transition-colors" />
-                </Separator>
-                <Panel defaultSize={40} minSize={15} id="editor-panel-v2">
-                  <div className="h-full overflow-hidden">
-                    <ChordEditorPanel />
-                    <DrumEditorPanel />
-                    <ArpEditorPanel />
-                    <MuteEditorPanel />
-                    <TransposeEditorPanel />
-                    <RhythmEditorPanel />
-                    <SwingEditorPanel />
-                    <VisualViewPanel />
-                  </div>
-                </Panel>
-              </Group>
-            ) : (
-              <>
-                {/* Non-resizable layout when no editor is open */}
+            <Group orientation="vertical" id="editor-layout-v2">
+              {/* ArrangementView - Unified scrolling for tracks and timeline */}
+              <Panel defaultSize={60} minSize={10} id="main-panel-v2">
                 <ArrangementView />
-                {/* Hidden editors to allow their useEffects to run */}
-                <div className="hidden">
-                  <ChordEditorPanel />
-                  <DrumEditorPanel />
-                  <ArpEditorPanel />
-                  <MuteEditorPanel />
-                  <TransposeEditorPanel />
-                  <RhythmEditorPanel />
-                  <SwingEditorPanel />
-                  <VisualViewPanel />
-                </div>
-              </>
-            )}
+              </Panel>
+
+              {/* Bottom Panel - Block Editor / Visual View */}
+              <Separator className="h-2 bg-border hover:bg-accent-from/50 transition-colors cursor-row-resize flex items-center justify-center group">
+                <div className="w-12 h-1 rounded-full bg-muted group-hover:bg-accent-from/70 transition-colors" />
+              </Separator>
+              <Panel defaultSize={40} minSize={15} collapsible collapsedSize={0} id="editor-panel-v2">
+                <BlockEditor />
+              </Panel>
+            </Group>
           </main>
         </Panel>
 
