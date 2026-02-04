@@ -154,7 +154,7 @@ export function BlockInspector({ block, track }: BlockInspectorProps) {
               const drumType = getDrumType(event.pitch);
               return (
                 <div key={i} className="text-muted-foreground">
-                  t:{event.time.toFixed(2)}{' '}
+                  t:{event.startTimeInBeats.toFixed(2)}{' '}
                   {drumType ? `d:${drumType}` : `p:${event.pitch}`}{' '}
                   v:{event.velocity}
                 </div>

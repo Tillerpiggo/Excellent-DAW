@@ -85,9 +85,9 @@ export function eventsToArpNotes(events: Event[]): ArpNote[] {
   return pitchedEvents.map((event, index) => {
     const { degree, octaveOffset } = pitchToDegree(event.pitch!);
     return {
-      id: `arp-${event.time}-${degree}-${index}`,
+      id: `arp-${event.startTimeInBeats}-${degree}-${index}`,
       degree,
-      time: event.time,
+      time: event.startTimeInBeats,
       duration: event.duration ?? 0.25,
       velocity: event.velocity ?? 100,
       octaveOffset,
@@ -100,7 +100,7 @@ export function eventsToArpNotes(events: Event[]): ArpNote[] {
  */
 export function arpNotesToEvents(notes: ArpNote[]): Event[] {
   return notes.map(note => ({
-    time: note.time,
+    startTimeInBeats: note.time,
     pitch: degreeToPitch(note.degree, note.octaveOffset),
     duration: note.duration,
     velocity: note.velocity,

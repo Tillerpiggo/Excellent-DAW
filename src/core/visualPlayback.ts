@@ -1,7 +1,7 @@
 // Visual Playback Engine - Frame-based timing for visual instruments
 
-import { VisualInstrumentId } from './types';
-import { VisualEvent, VisualInstrumentState, ActiveNote } from './visualTypes';
+import { VisualInstrumentId, Event } from './types';
+import { VisualEvent, VisualInstrumentState } from './visualTypes';
 import { ResolvedTrack } from './resolution';
 import { createVisualInstrumentState } from './visualInstruments';
 
@@ -14,7 +14,7 @@ export interface VisualPlaybackCallbacks {
 interface ScheduledVisualEvent {
   trackId: string;
   instrumentId: VisualInstrumentId;
-  time: number; // in beats
+  startTimeInBeats: number;
   pitch: number;
   velocity: number;
   duration: number;
@@ -63,7 +63,7 @@ export class VisualPlaybackEngine {
           this.scheduledEvents.push({
             trackId: resolved.trackId,
             instrumentId: resolved.visualInstrumentId,
-            time: event.time,
+            startTimeInBeats: event.startTimeInBeats,
             pitch: event.pitch,
             velocity: event.velocity,
             duration: event.duration,
@@ -72,8 +72,8 @@ export class VisualPlaybackEngine {
       }
     }
 
-    // Sort events by time
-    this.scheduledEvents.sort((a, b) => a.time - b.time);
+    // Sort events by start time
+    this.scheduledEvents.sort((a, b) => a.startTimeInBeats - b.startTimeInBeats);
   }
 
   start(): void {
@@ -113,14 +113,14 @@ export class VisualPlaybackEngine {
     // Find notes that should be active at this beat
     // (notes that started before this beat and haven't ended yet)
     for (const event of this.scheduledEvents) {
-      const noteEnd = event.time + event.duration;
-      if (event.time <= beat && noteEnd > beat) {
+      const noteEnd = event.startTimeInBeats + event.duration;
+      if (event.startTimeInBeats <= beat && noteEnd > beat) {
         const state = this.trackStates.get(event.trackId);
         if (state) {
           state.activeNotes.set(event.pitch, {
+            startTimeInBeats: event.startTimeInBeats,
             pitch: event.pitch,
             velocity: event.velocity,
-            startTime: event.time,
             duration: event.duration,
           });
           state.colorShift = (event.pitch % 12) / 12;
@@ -148,10 +148,10 @@ export class VisualPlaybackEngine {
     // Process events between lastProcessedBeat and currentBeat
     for (const event of this.scheduledEvents) {
       // Skip events we've already processed (before lastProcessedBeat)
-      if (event.time <= this.lastProcessedBeat) continue;
+      if (event.startTimeInBeats <= this.lastProcessedBeat) continue;
 
       // Process events up to current beat
-      if (event.time <= currentBeat) {
+      if (event.startTimeInBeats <= currentBeat) {
         this.triggerNoteOn(event, currentBeat);
       } else {
         break; // Events are sorted, no need to check further
@@ -173,10 +173,10 @@ export class VisualPlaybackEngine {
     const state = this.trackStates.get(event.trackId);
     if (!state) return;
 
-    const activeNote: ActiveNote = {
+    const activeNote: Event = {
+      startTimeInBeats: currentBeat,
       pitch: event.pitch,
       velocity: event.velocity,
-      startTime: currentBeat,
       duration: event.duration,
     };
 
@@ -195,7 +195,7 @@ export class VisualPlaybackEngine {
       // Check for note-offs
       const notesToRemove: number[] = [];
       for (const [pitch, note] of state.activeNotes) {
-        if (currentBeat >= note.startTime + note.duration) {
+        if (currentBeat >= note.startTimeInBeats + note.duration) {
           notesToRemove.push(pitch);
           this.callbacks.onNoteOff?.(trackId, pitch);
         }

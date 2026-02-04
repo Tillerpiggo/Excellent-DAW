@@ -1,7 +1,7 @@
 // Visual Instruments Registry
 
-import { VisualInstrumentId } from './types';
-import { VisualInstrumentDefinition, VisualInstrumentState, ActiveNote } from './visualTypes';
+import { VisualInstrumentId, Event } from './types';
+import { VisualInstrumentDefinition, VisualInstrumentState } from './visualTypes';
 
 export const VISUAL_INSTRUMENTS: Record<VisualInstrumentId, VisualInstrumentDefinition> = {
   silkSymmetry: {
@@ -50,7 +50,7 @@ export function createVisualInstrumentState(
   const defaultParams = VISUAL_INSTRUMENTS[instrumentId].defaultParams;
   return {
     instrumentId,
-    activeNotes: new Map<number, ActiveNote>(),
+    activeNotes: new Map<number, Event>(),
     currentRotation: 0,
     bloom: 0,
     colorShift: 0,

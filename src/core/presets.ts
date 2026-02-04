@@ -5,24 +5,24 @@ import { PatternPreset, Event, PatternCategory, DRUM_PITCHES, DrumType } from '.
 const CONTROL_PITCH = 0;
 
 // Helper to create drum events
-const drum = (time: number, type: DrumType, velocity = 100): Event => ({
-  time,
+const drum = (startTimeInBeats: number, type: DrumType, velocity = 100): Event => ({
+  startTimeInBeats,
   pitch: DRUM_PITCHES[type],
   velocity,
   duration: 0.25,
 });
 
 // Helper to create control/modifier events (swing, gate, mute, scale)
-const ctrl = (time: number, velocity = 100, duration = 0.25): Event => ({
-  time,
+const ctrl = (startTimeInBeats: number, velocity = 100, duration = 0.25): Event => ({
+  startTimeInBeats,
   pitch: CONTROL_PITCH,
   velocity,
   duration,
 });
 
 // Helper to create note events
-const note = (time: number, pitch: number, duration = 0.5, velocity = 100): Event => ({
-  time,
+const note = (startTimeInBeats: number, pitch: number, duration = 0.5, velocity = 100): Event => ({
+  startTimeInBeats,
   pitch,
   velocity,
   duration,

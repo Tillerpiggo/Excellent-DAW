@@ -43,9 +43,9 @@ function extractDrumsFromBlock(block: Block): MidiNote[] {
   return drumEvents.map((event, index) => {
     const drumType = getDrumType(event.pitch)!;
     return {
-      id: `${drumType}-${event.time}-${index}`,
+      id: `${drumType}-${event.startTimeInBeats}-${index}`,
       row: drumType,
-      time: event.time,
+      time: event.startTimeInBeats,
       duration: event.duration,
       velocity: event.velocity,
     };
@@ -54,7 +54,7 @@ function extractDrumsFromBlock(block: Block): MidiNote[] {
 
 function notesToEvents(notes: MidiNote[]): Event[] {
   return notes.map(n => ({
-    time: n.time,
+    startTimeInBeats: n.time,
     pitch: DRUM_PITCHES[n.row as DrumType],
     velocity: n.velocity,
     duration: n.duration,

@@ -37,7 +37,7 @@ export function getDrumType(pitch: number): DrumType | null {
 }
 
 export interface Event {
-  time: number; // in beats
+  startTimeInBeats: number;
   pitch: number; // MIDI note number (drums use 36/38/39/42)
   velocity: number; // 0-127
   duration: number; // in beats

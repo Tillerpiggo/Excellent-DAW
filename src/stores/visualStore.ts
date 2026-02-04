@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { VisualInstrumentState, ActiveNote } from '@/core/visualTypes';
+import { VisualInstrumentState } from '@/core/visualTypes';
 
 interface VisualState {
   // Track states indexed by trackId

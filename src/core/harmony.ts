@@ -81,7 +81,7 @@ export function findHarmonyInOutput(output: Output, atTime?: number): HarmonyInf
 
   // Try to detect chord from events
   const events = atTime !== undefined
-    ? output.events.filter(e => Math.abs(e.time - atTime) < 0.1)
+    ? output.events.filter(e => Math.abs(e.startTimeInBeats - atTime) < 0.1)
     : output.events.slice(0, 10); // Look at first few events
 
   const pitches = events
@@ -412,14 +412,14 @@ export function extractChordsFromBlock(block: Block, beatsPerBar: number): Chord
   for (const event of pitchedEvents) {
     let foundGroup = false;
     for (const [time] of timeGroups) {
-      if (Math.abs(event.time - time) < tolerance) {
+      if (Math.abs(event.startTimeInBeats - time) < tolerance) {
         timeGroups.get(time)!.push(event);
         foundGroup = true;
         break;
       }
     }
     if (!foundGroup) {
-      timeGroups.set(event.time, [event]);
+      timeGroups.set(event.startTimeInBeats, [event]);
     }
   }
 
@@ -477,7 +477,7 @@ export function chordsToEvents(chords: ChordData[]): Event[] {
 
     for (const pitch of pitches) {
       events.push({
-        time: chord.startBeat,
+        startTimeInBeats: chord.startBeat,
         pitch,
         velocity: 80,
         duration: chord.durationBeats,

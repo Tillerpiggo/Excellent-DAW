@@ -222,7 +222,7 @@ export function resolveBlocks(
     if (block.loop) {
       // Get the natural duration of the events
       const maxEventTime = blockEvents.reduce(
-        (max, e) => Math.max(max, e.time + (e.duration || 0)),
+        (max, e) => Math.max(max, e.startTimeInBeats + (e.duration || 0)),
         0
       );
       // Round up to the nearest bar to ensure patterns loop on bar boundaries
@@ -234,11 +234,11 @@ export function resolveBlocks(
       let currentOffset = 0;
       while (currentOffset < blockDurationBeats) {
         for (const event of blockEvents) {
-          const eventTime = blockStartBeat + currentOffset + event.time;
+          const eventTime = blockStartBeat + currentOffset + event.startTimeInBeats;
           if (eventTime < blockStartBeat + blockDurationBeats && eventTime < totalBeats) {
             allEvents.push({
               ...event,
-              time: eventTime,
+              startTimeInBeats: eventTime,
             });
           }
         }
@@ -247,11 +247,11 @@ export function resolveBlocks(
     } else {
       // No looping - just offset events
       for (const event of blockEvents) {
-        const eventTime = blockStartBeat + event.time;
+        const eventTime = blockStartBeat + event.startTimeInBeats;
         if (eventTime < blockStartBeat + blockDurationBeats && eventTime < totalBeats) {
           allEvents.push({
             ...event,
-            time: eventTime,
+            startTimeInBeats: eventTime,
           });
         }
       }
@@ -259,7 +259,7 @@ export function resolveBlocks(
   }
 
   // Sort by time
-  allEvents.sort((a, b) => a.time - b.time);
+  allEvents.sort((a, b) => a.startTimeInBeats - b.startTimeInBeats);
 
   return { events: allEvents };
 }
@@ -300,13 +300,13 @@ export function extractEvents(events: Event[], mode: 'timing' | 'pitch' | 'veloc
   switch (mode) {
     case 'timing':
       // Keep timing, use default pitch (C4) and velocity
-      return events.map(e => ({ time: e.time, pitch: 60, velocity: 100, duration: e.duration }));
+      return events.map(e => ({ startTimeInBeats: e.startTimeInBeats, pitch: 60, velocity: 100, duration: e.duration }));
     case 'pitch':
       // Keep pitch and timing, use default velocity
-      return events.map(e => ({ time: e.time, pitch: e.pitch, velocity: 100, duration: e.duration }));
+      return events.map(e => ({ startTimeInBeats: e.startTimeInBeats, pitch: e.pitch, velocity: 100, duration: e.duration }));
     case 'velocity':
       // Keep velocity and timing, use default pitch (C4)
-      return events.map(e => ({ time: e.time, pitch: 60, velocity: e.velocity, duration: e.duration }));
+      return events.map(e => ({ startTimeInBeats: e.startTimeInBeats, pitch: 60, velocity: e.velocity, duration: e.duration }));
     case 'all':
     default:
       return events;
@@ -351,6 +351,6 @@ export function getEventsInRange(
     .map(rt => ({
       trackId: rt.trackId,
       instrumentId: rt.instrumentId!,
-      events: rt.output.events.filter(e => e.time >= startBeat && e.time < endBeat),
+      events: rt.output.events.filter(e => e.startTimeInBeats >= startBeat && e.startTimeInBeats < endBeat),
     }));
 }

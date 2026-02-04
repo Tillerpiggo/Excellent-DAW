@@ -48,9 +48,9 @@ function extractSwingFromBlock(block: Block): { notes: MidiNote[]; swingAmount: 
   }
 
   const notes = allEvents.map((event, index) => ({
-    id: `swing-${event.time}-${index}`,
+    id: `swing-${event.startTimeInBeats}-${index}`,
     row: 'swing' as SwingRow,
-    time: event.time,
+    time: event.startTimeInBeats,
     duration: event.duration,
     velocity: event.velocity,
   }));
@@ -61,7 +61,7 @@ function extractSwingFromBlock(block: Block): { notes: MidiNote[]; swingAmount: 
 function notesToEvents(notes: MidiNote[], swingAmount: number): Event[] {
   const velocity = Math.round((swingAmount / 100) * 127);
   return notes.map(n => ({
-    time: n.time,
+    startTimeInBeats: n.time,
     pitch: SWING_PITCH,
     velocity,
     duration: n.duration,

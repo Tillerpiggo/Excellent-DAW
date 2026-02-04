@@ -37,9 +37,9 @@ function extractRhythmFromBlock(block: Block): MidiNote[] {
   const rhythmEvents = allEvents.filter(e => e.pitch !== undefined);
 
   return rhythmEvents.map((event, index) => ({
-    id: `rhythm-${event.time}-${index}`,
+    id: `rhythm-${event.startTimeInBeats}-${index}`,
     row: 'rhythm',
-    time: event.time,
+    time: event.startTimeInBeats,
     duration: event.duration ?? 0.25,
     velocity: event.velocity ?? 100,
   }));
@@ -47,7 +47,7 @@ function extractRhythmFromBlock(block: Block): MidiNote[] {
 
 function notesToEvents(notes: MidiNote[]): Event[] {
   return notes.map(n => ({
-    time: n.time,
+    startTimeInBeats: n.time,
     pitch: 60, // C4 as reference pitch for rhythm events
     velocity: n.velocity,
     duration: n.duration,

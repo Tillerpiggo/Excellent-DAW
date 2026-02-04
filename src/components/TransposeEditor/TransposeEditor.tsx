@@ -70,9 +70,9 @@ function eventsToMidiNotes(events: Event[]): MidiNote[] {
   return events
     .filter(e => e.pitch !== undefined)
     .map((e, i) => ({
-      id: `transpose-${i}-${e.time}`,
+      id: `transpose-${i}-${e.startTimeInBeats}`,
       row: String(pitchToSemitones(e.pitch!)),
-      time: e.time,
+      time: e.startTimeInBeats,
       duration: e.duration ?? 1,
       velocity: e.velocity ?? 100,
     }));
@@ -81,7 +81,7 @@ function eventsToMidiNotes(events: Event[]): MidiNote[] {
 // Convert MidiNotes back to events
 function midiNotesToEvents(notes: MidiNote[]): Event[] {
   return notes.map(note => ({
-    time: note.time,
+    startTimeInBeats: note.time,
     pitch: semitonesToPitch(parseInt(note.row, 10)),
     duration: note.duration,
     velocity: note.velocity,

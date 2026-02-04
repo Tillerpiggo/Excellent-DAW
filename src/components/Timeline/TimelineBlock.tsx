@@ -32,7 +32,7 @@ function findTrackForBlock(tracks: Record<string, Track>, blockId: string): stri
 function getPatternBars(block: Block, beatsPerBar: number): number {
   const allEvents = block.streams?.flatMap((s) => s.events) || [];
   const patternLengthBeats = allEvents.length > 0
-    ? Math.max(...allEvents.map((e) => e.time + (e.duration || 0.25)), beatsPerBar)
+    ? Math.max(...allEvents.map((e) => e.startTimeInBeats + (e.duration || 0.25)), beatsPerBar)
     : beatsPerBar;
   return Math.ceil(patternLengthBeats / beatsPerBar);
 }
@@ -84,7 +84,7 @@ export function TimelineBlock({
   // Calculate pattern length for loop iterations
   const allEvents = block.streams?.flatMap((s) => s.events) || [];
   const patternLengthBeats = allEvents.length > 0
-    ? Math.max(...allEvents.map((e) => e.time + (e.duration || 0.25)), beatsPerBar)
+    ? Math.max(...allEvents.map((e) => e.startTimeInBeats + (e.duration || 0.25)), beatsPerBar)
     : beatsPerBar;
   const patternBars = Math.ceil(patternLengthBeats / beatsPerBar);
   const patternBeats = patternBars * beatsPerBar;
@@ -416,7 +416,7 @@ function EventVisualization({
 
   // Calculate the original pattern length (find the end of the last event)
   const patternLengthBeats = Math.max(
-    ...allEvents.map((e) => e.time + (e.duration || 0.25)),
+    ...allEvents.map((e) => e.startTimeInBeats + (e.duration || 0.25)),
     beatsPerBar // At least one bar
   );
   // Round up to nearest bar for clean looping
@@ -446,7 +446,7 @@ function EventVisualization({
   for (let loopIdx = 0; loopIdx < loopCount; loopIdx++) {
     const offsetPx = loopIdx * patternWidthPx;
     for (const event of allEvents) {
-      const eventStartBeat = event.time + loopIdx * patternBeats;
+      const eventStartBeat = event.startTimeInBeats + loopIdx * patternBeats;
       // Only include if the event starts within the block duration
       if (eventStartBeat < blockTotalBeats) {
         eventsToRender.push({ event, offsetPx, loopIndex: loopIdx });
@@ -467,7 +467,7 @@ function EventVisualization({
       {/* Event blocks - positioned using pixels */}
       {eventsToRender.map(({ event, offsetPx, loopIndex }, i) => {
         // Calculate pixel position
-        const eventStartPx = event.time * pixelsPerBeat + offsetPx;
+        const eventStartPx = event.startTimeInBeats * pixelsPerBeat + offsetPx;
         const duration = event.duration || 0.25;
         const eventWidthPx = duration * pixelsPerBeat;
 

@@ -112,7 +112,7 @@ export function HexagonDots({ state }: HexagonDotsProps) {
   useFrame((_, delta) => {
     // Detect new notes and spawn dots
     for (const [pitch, note] of state.activeNotes) {
-      const noteKey = `${pitch}:${note.startTime}`;
+      const noteKey = `${pitch}:${note.startTimeInBeats}`;
       if (!seenNotesRef.current.has(noteKey)) {
         seenNotesRef.current.add(noteKey);
 

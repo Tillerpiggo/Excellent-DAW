@@ -39,9 +39,9 @@ function extractMutesFromBlock(block: Block): MidiNote[] {
   const allEvents = block.streams?.flatMap(s => s.events) || [];
   // All events in a mute track are mute events
   return allEvents.map((event, index) => ({
-    id: `mute-${event.time}-${index}`,
+    id: `mute-${event.startTimeInBeats}-${index}`,
     row: 'mute',
-    time: event.time,
+    time: event.startTimeInBeats,
     duration: event.duration,
     velocity: event.velocity,
   }));
@@ -49,7 +49,7 @@ function extractMutesFromBlock(block: Block): MidiNote[] {
 
 function notesToEvents(notes: MidiNote[]): Event[] {
   return notes.map(n => ({
-    time: n.time,
+    startTimeInBeats: n.time,
     pitch: MUTE_PITCH,
     velocity: n.velocity,
     duration: n.duration,

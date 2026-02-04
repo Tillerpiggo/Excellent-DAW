@@ -5,18 +5,18 @@ function mergeEvents(a: Event[], b: Event[]): Event[] {
   const result = [...a];
   for (const event of b) {
     const existing = result.find(
-      e => e.time === event.time && e.pitch === event.pitch
+      e => e.startTimeInBeats === event.startTimeInBeats && e.pitch === event.pitch
     );
     if (!existing) {
       result.push(event);
     }
   }
-  return result.sort((x, y) => x.time - y.time);
+  return result.sort((x, y) => x.startTimeInBeats - y.startTimeInBeats);
 }
 
 // Helper to find events at matching times
 function findEventsAtTime(events: Event[], time: number, tolerance = 0.01): Event[] {
-  return events.filter(e => Math.abs(e.time - time) < tolerance);
+  return events.filter(e => Math.abs(e.startTimeInBeats - time) < tolerance);
 }
 
 export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
@@ -59,8 +59,8 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
       if (parent.events.length === 0) return self;
 
       // Find the time range covered by self's events (by start time only, not duration)
-      const minTime = Math.min(...self.events.map(e => e.time));
-      const maxTime = Math.max(...self.events.map(e => e.time));
+      const minTime = Math.min(...self.events.map(e => e.startTimeInBeats));
+      const maxTime = Math.max(...self.events.map(e => e.startTimeInBeats));
 
       // Round to bar boundaries
       const beatsPerBar = ctx?.beatsPerBar || 4;
@@ -70,12 +70,12 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
 
       // Keep parent events outside the override range
       const keptParentEvents = parent.events.filter(
-        e => e.time < rangeStart || e.time >= rangeEnd
+        e => e.startTimeInBeats < rangeStart || e.startTimeInBeats >= rangeEnd
       );
 
       // Combine: parent events outside range + self events
       const combined = [...keptParentEvents, ...self.events];
-      combined.sort((a, b) => a.time - b.time);
+      combined.sort((a, b) => a.startTimeInBeats - b.startTimeInBeats);
 
       return {
         events: combined,
@@ -96,7 +96,7 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
       // Check if a time falls within any mute region
       const isMuted = (time: number): boolean => {
         for (const muteEvent of self.events) {
-          const muteStart = muteEvent.time;
+          const muteStart = muteEvent.startTimeInBeats;
           const muteEnd = muteStart + (muteEvent.duration ?? 0.25);
           if (time >= muteStart && time < muteEnd) {
             return true;
@@ -106,7 +106,7 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
       };
 
       // Keep only parent events whose start time is not within a mute region
-      const keptEvents = parent.events.filter(e => !isMuted(e.time));
+      const keptEvents = parent.events.filter(e => !isMuted(e.startTimeInBeats));
 
       return {
         events: keptEvents,
@@ -124,7 +124,7 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
     combine: (parent, self) => {
       const gatedEvents = parent.events.filter(parentEvent => {
         return self.events.some(
-          gateEvent => Math.abs(gateEvent.time - parentEvent.time) < 0.01
+          gateEvent => Math.abs(gateEvent.startTimeInBeats - parentEvent.startTimeInBeats) < 0.01
         );
       });
       return {
@@ -143,7 +143,7 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
       if (self.events.length === 0) return parent;
 
       const shiftedEvents = parent.events.map(parentEvent => {
-        const shifters = findEventsAtTime(self.events, parentEvent.time);
+        const shifters = findEventsAtTime(self.events, parentEvent.startTimeInBeats);
         if (shifters.length === 0) return parentEvent;
 
         // Use the first shifter's pitch as offset (relative to middle C = 60)
@@ -175,7 +175,7 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
       // Uses duration of transpose notes to define regions
       const getTransposeAtTime = (time: number): number | null => {
         for (const transposeEvent of self.events) {
-          const start = transposeEvent.time;
+          const start = transposeEvent.startTimeInBeats;
           const end = start + (transposeEvent.duration ?? 1);
           if (time >= start && time < end) {
             // Pitch relative to C4 (60) = transposition amount in semitones
@@ -186,7 +186,7 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
       };
 
       const transposedEvents = parent.events.map(parentEvent => {
-        const transposeAmount = getTransposeAtTime(parentEvent.time);
+        const transposeAmount = getTransposeAtTime(parentEvent.startTimeInBeats);
         if (transposeAmount === null) return parentEvent;
 
         return {
@@ -213,7 +213,7 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
       if (self.events.length === 0) return parent;
 
       const scaledEvents = parent.events.map(parentEvent => {
-        const scalers = findEventsAtTime(self.events, parentEvent.time);
+        const scalers = findEventsAtTime(self.events, parentEvent.startTimeInBeats);
         if (scalers.length === 0) return parentEvent;
 
         // Use scaler velocity as multiplier (100 = 100% = no change)
@@ -290,35 +290,35 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
       const getEventsAtTime = (time: number): Event[] => {
         // Find events that are active at this time (within their duration)
         const active = parent.events.filter(e => {
-          const end = e.time + e.duration;
-          return e.time <= time && time < end;
+          const end = e.startTimeInBeats + e.duration;
+          return e.startTimeInBeats <= time && time < end;
         });
         if (active.length > 0) return active;
 
         // Fallback: most recent events before this time
-        const before = parent.events.filter(e => e.time <= time);
+        const before = parent.events.filter(e => e.startTimeInBeats <= time);
         if (before.length === 0) {
           // Use first events if nothing before
-          const firstTime = Math.min(...parent.events.map(e => e.time));
-          return parent.events.filter(e => Math.abs(e.time - firstTime) < 0.1);
+          const firstTime = Math.min(...parent.events.map(e => e.startTimeInBeats));
+          return parent.events.filter(e => Math.abs(e.startTimeInBeats - firstTime) < 0.1);
         }
-        const lastTime = Math.max(...before.map(e => e.time));
-        return before.filter(e => Math.abs(e.time - lastTime) < 0.1);
+        const lastTime = Math.max(...before.map(e => e.startTimeInBeats));
+        return before.filter(e => Math.abs(e.startTimeInBeats - lastTime) < 0.1);
       };
 
       const triggered: Event[] = [];
       for (const rhythmEvent of self.events) {
-        for (const parentEvent of getEventsAtTime(rhythmEvent.time)) {
+        for (const parentEvent of getEventsAtTime(rhythmEvent.startTimeInBeats)) {
           // Pitch carries through naturally (works for both melodic and drum events)
           triggered.push({
-            time: rhythmEvent.time,
+            startTimeInBeats: rhythmEvent.startTimeInBeats,
             pitch: parentEvent.pitch,
             velocity: rhythmEvent.velocity ?? parentEvent.velocity,
             duration: rhythmEvent.duration ?? 0.25,
           });
         }
       }
-      return { events: triggered.sort((a, b) => a.time - b.time), harmony: parent.harmony };
+      return { events: triggered.sort((a, b) => a.startTimeInBeats - b.startTimeInBeats), harmony: parent.harmony };
     },
   },
 
@@ -363,8 +363,8 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
         // Find parent notes that overlap with this time
         // A note is active if: noteTime <= time < noteTime + noteDuration
         const activeNotes = parentPitched.filter(e => {
-          const noteEnd = e.time + (e.duration || 0.5);
-          return e.time <= time && time < noteEnd;
+          const noteEnd = e.startTimeInBeats + (e.duration || 0.5);
+          return e.startTimeInBeats <= time && time < noteEnd;
         });
 
         if (activeNotes.length > 0) {
@@ -372,17 +372,17 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
         }
 
         // Fallback: find the most recent chord before this time
-        const beforeNotes = parentPitched.filter(e => e.time <= time);
+        const beforeNotes = parentPitched.filter(e => e.startTimeInBeats <= time);
         if (beforeNotes.length === 0) {
           // Use first chord if nothing before
-          const firstTime = Math.min(...parentPitched.map(e => e.time));
-          const firstChordNotes = parentPitched.filter(e => Math.abs(e.time - firstTime) < 0.1);
+          const firstTime = Math.min(...parentPitched.map(e => e.startTimeInBeats));
+          const firstChordNotes = parentPitched.filter(e => Math.abs(e.startTimeInBeats - firstTime) < 0.1);
           return extractChordTones(firstChordNotes);
         }
 
         // Get the most recent time with notes
-        const lastTime = Math.max(...beforeNotes.map(e => e.time));
-        const lastChordNotes = beforeNotes.filter(e => Math.abs(e.time - lastTime) < 0.1);
+        const lastTime = Math.max(...beforeNotes.map(e => e.startTimeInBeats));
+        const lastChordNotes = beforeNotes.filter(e => Math.abs(e.startTimeInBeats - lastTime) < 0.1);
         return extractChordTones(lastChordNotes);
       };
 
@@ -395,7 +395,7 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
       const mappedEvents = self.events.map(selfEvent => {
         if (selfEvent.pitch === undefined) return selfEvent;
 
-        const chordTones = getChordAtTime(selfEvent.time);
+        const chordTones = getChordAtTime(selfEvent.startTimeInBeats);
         if (chordTones.length === 0) return selfEvent;
 
         // Calculate which chord degree this note represents
@@ -449,7 +449,7 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
       const swingMarkers = new Map<number, number>();
       for (const event of self.events) {
         const swingAmount = (event.velocity ?? 64) / 127;
-        swingMarkers.set(event.time, swingAmount);
+        swingMarkers.set(event.startTimeInBeats, swingAmount);
       }
 
       // Helper to find the nearest swing marker for a given time
@@ -469,7 +469,7 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
 
       // Apply swing to parent events
       const swungEvents = parent.events.map(parentEvent => {
-        const swingAmount = getSwingAmount(parentEvent.time);
+        const swingAmount = getSwingAmount(parentEvent.startTimeInBeats);
         if (swingAmount === null) return parentEvent;
 
         // Calculate delay based on swing amount
@@ -480,12 +480,12 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
 
         return {
           ...parentEvent,
-          time: parentEvent.time + delay,
+          startTimeInBeats: parentEvent.startTimeInBeats + delay,
         };
       });
 
       return {
-        events: swungEvents.sort((a, b) => a.time - b.time),
+        events: swungEvents.sort((a, b) => a.startTimeInBeats - b.startTimeInBeats),
         harmony: parent.harmony,
       };
     },

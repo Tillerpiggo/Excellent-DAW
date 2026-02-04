@@ -94,9 +94,9 @@ export class PlaybackEngine {
 
       // Filter events within bounds and convert to Tone.Part format
       const partEvents = resolved.output.events
-        .filter(event => event.time < totalBeats)
+        .filter(event => event.startTimeInBeats < totalBeats)
         .map(event => ({
-          time: `${Math.floor(event.time / project.beatsPerBar)}:${event.time % project.beatsPerBar}`,
+          time: `${Math.floor(event.startTimeInBeats / project.beatsPerBar)}:${event.startTimeInBeats % project.beatsPerBar}`,
           event,
         }));
 
@@ -369,7 +369,7 @@ export class PlaybackEngine {
 
     for (const pitch of pitches) {
       scheduleEvent(
-        { time: 0, pitch, velocity: 90, duration: 0.5 },
+        { startTimeInBeats: 0, pitch, velocity: 90, duration: 0.5 },
         actualInstrument,
         this.instruments,
         now

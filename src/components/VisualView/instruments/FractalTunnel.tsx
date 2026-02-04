@@ -334,14 +334,14 @@ export function FractalTunnel({ state }: FractalTunnelProps) {
     const beatsPerSecond = bpm / 60;
     const deltaBeat = delta * beatsPerSecond * CONFIG.oscSpeed;
 
-    // Detect new note-on events by comparing pitch+startTime with previous frame
+    // Detect new note-on events by comparing pitch+startTimeInBeats with previous frame
     const currentNoteStarts = new Map<number, number>();
     let newNoteCount = 0;
     for (const [pitch, note] of state.activeNotes) {
-      currentNoteStarts.set(pitch, note.startTime);
+      currentNoteStarts.set(pitch, note.startTimeInBeats);
       const prevStartTime = prevNoteStartsRef.current.get(pitch);
-      // New note if: pitch wasn't active before, OR same pitch but different startTime (re-triggered)
-      if (prevStartTime === undefined || prevStartTime !== note.startTime) {
+      // New note if: pitch wasn't active before, OR same pitch but different startTimeInBeats (re-triggered)
+      if (prevStartTime === undefined || prevStartTime !== note.startTimeInBeats) {
         newNoteCount++;
       }
     }
