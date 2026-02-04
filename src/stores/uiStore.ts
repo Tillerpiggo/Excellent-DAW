@@ -1,10 +1,10 @@
 import { create } from 'zustand';
-import { PatternPreset } from '@/core/types';
+import { Preset } from '@/core/types';
 import { DropPosition } from '@/utils/trackDragValidation';
 
 interface DragState {
   type: 'preset' | 'block' | null;
-  preset?: PatternPreset;
+  preset?: Preset;
   blockId?: string;
   sourceTrackId?: string;
 }
@@ -96,7 +96,7 @@ interface UIState {
   updateMarqueeSelection: (x: number, y: number) => void;
   endMarqueeSelection: () => void;
 
-  startDragPreset: (preset: PatternPreset) => void;
+  startDragPreset: (preset: Preset) => void;
   startDragBlock: (blockId: string, sourceTrackId: string) => void;
   setDropTarget: (trackId: string | null, bar?: number | null) => void;
   endDrag: () => void;

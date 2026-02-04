@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Block, Track, Event } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
-import { MidiEditor, MidiNote } from '@/components/shared/MidiEditor';
+import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
 
 interface SwingEditorProps {
   block: Block;
@@ -12,18 +12,7 @@ interface SwingEditorProps {
   beatsPerBar: number;
 }
 
-type SwingRow = 'swing';
 type QuantizeValue = '16th' | '8th' | 'quarter';
-
-const SWING_ROWS: SwingRow[] = ['swing'];
-
-const SWING_LABELS: Record<SwingRow, string> = {
-  swing: 'Swing',
-};
-
-const SWING_COLORS: Record<SwingRow, string> = {
-  swing: '#f472b6', // Pink (matches swing category)
-};
 
 const QUANTIZE_VALUES: Record<QuantizeValue, number> = {
   '16th': 0.25,
@@ -37,6 +26,10 @@ const DEFAULT_SWING_AMOUNT = 66;
 // Swing events use pitch 0 as a control marker
 const SWING_PITCH = 0;
 
+const SWING_ROWS: MidiRow[] = [
+  { pitch: SWING_PITCH, label: 'Swing', color: '#f472b6' },
+];
+
 function extractSwingFromBlock(block: Block): { notes: MidiNote[]; swingAmount: number } {
   const allEvents = block.streams?.flatMap(s => s.events) || [];
 
@@ -49,7 +42,7 @@ function extractSwingFromBlock(block: Block): { notes: MidiNote[]; swingAmount: 
 
   const notes = allEvents.map((event, index) => ({
     id: `swing-${event.startTimeInBeats}-${index}`,
-    row: 'swing' as SwingRow,
+    pitch: SWING_PITCH,
     time: event.startTimeInBeats,
     duration: event.duration,
     velocity: event.velocity,
@@ -118,7 +111,7 @@ export function SwingEditor({ block, track, beatsPerBar }: SwingEditorProps) {
     for (let i = 0.5; i < totalBeats; i += 1) {
       newNotes.push({
         id: `swing-${i}-${Date.now()}`,
-        row: 'swing',
+        pitch: SWING_PITCH,
         time: i,
         duration: 0.25,
         velocity,
@@ -134,7 +127,7 @@ export function SwingEditor({ block, track, beatsPerBar }: SwingEditorProps) {
     for (let i = 0; i < totalBeats; i += quantize) {
       newNotes.push({
         id: `swing-${i}-${Date.now()}`,
-        row: 'swing',
+        pitch: SWING_PITCH,
         time: i,
         duration: quantize,
         velocity,
@@ -223,8 +216,6 @@ export function SwingEditor({ block, track, beatsPerBar }: SwingEditorProps) {
       {/* Midi editor with single row and larger row height */}
       <MidiEditor
         rows={SWING_ROWS}
-        rowLabels={SWING_LABELS}
-        rowColors={SWING_COLORS}
         notes={notes}
         onNotesChange={handleNotesChange}
         totalBeats={totalBeats}

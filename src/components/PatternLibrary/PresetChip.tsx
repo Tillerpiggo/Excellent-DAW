@@ -1,11 +1,11 @@
 'use client';
 
-import { PatternPreset } from '@/core/types';
+import { Preset } from '@/core/types';
 import { CATEGORY_COLORS, withAlpha } from '@/utils/colors';
 import { useDragDrop } from '@/hooks/useDragDrop';
 
 interface PresetChipProps {
-  preset: PatternPreset;
+  preset: Preset;
 }
 
 export function PresetChip({ preset }: PresetChipProps) {

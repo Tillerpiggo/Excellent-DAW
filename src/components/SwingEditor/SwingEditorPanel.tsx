@@ -5,7 +5,9 @@ import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { SwingEditor } from './SwingEditor';
 import { PresetSelector } from '@/components/shared/PresetSelector';
-import { PatternPreset } from '@/core/types';
+import { Preset } from '@/core/types';
+import { getPresetsByCategory } from '@/core/presets';
+import { CATEGORY_COLORS } from '@/utils/colors';
 
 export function SwingEditorPanel() {
   const { selectedBlockIds, selectedTrackId, showSwingEditor, setShowSwingEditor } = useUIStore();
@@ -36,7 +38,7 @@ export function SwingEditorPanel() {
   }, [shouldShowSwingEditor, setShowSwingEditor]);
 
   // Handle applying a preset to the selected block
-  const handleApplyPreset = (preset: PatternPreset) => {
+  const handleApplyPreset = (preset: Preset) => {
     if (!selectedTrackId || !selectedBlockId) return;
 
     updateBlock(selectedTrackId, selectedBlockId, {
@@ -71,7 +73,7 @@ export function SwingEditorPanel() {
 
       {/* Preset Selector */}
       <div className="py-2 border-b border-border/50 bg-surface/50">
-        <PresetSelector category="swing" onSelectPreset={handleApplyPreset} />
+        <PresetSelector presets={getPresetsByCategory('swing')} onSelectPreset={handleApplyPreset} color={CATEGORY_COLORS.swing} />
       </div>
 
       {/* Editor content */}

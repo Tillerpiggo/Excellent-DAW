@@ -1,18 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Block, Track, Event } from '@/core/types';
+import { Block, Track } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
-import { MidiEditor, MidiNote } from '@/components/shared/MidiEditor';
+import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
 import {
   eventsToArpNotes,
   arpNotesToEvents,
   ArpNote,
-  ARP_ROWS,
-  ArpRow,
-  DEGREE_LABELS,
-  DEGREE_COLORS,
 } from '@/core/arp';
 
 interface ArpEditorProps {
@@ -29,22 +25,34 @@ const QUANTIZE_VALUES: Record<QuantizeValue, number> = {
   'quarter': 1,
 };
 
-// Convert ArpNotes to MidiNotes for the editor
+// MidiRow definitions for arp degrees (pitch = degree for simplicity, 1-8)
+const ARP_ROWS: MidiRow[] = [
+  { pitch: 8, label: 'Oct', color: '#2DD4BF' },
+  { pitch: 7, label: '7th', color: '#5EEAD4' },
+  { pitch: 6, label: '6th', color: '#14B8A6' },
+  { pitch: 5, label: '5th', color: '#0D9488' },
+  { pitch: 4, label: '4th', color: '#5EEAD4' },
+  { pitch: 3, label: '3rd', color: '#14B8A6' },
+  { pitch: 2, label: '2nd', color: '#5EEAD4' },
+  { pitch: 1, label: 'Root', color: '#0F766E' },
+];
+
+// Convert ArpNotes to MidiNotes for the editor (pitch = degree)
 function arpNotesToMidiNotes(arpNotes: ArpNote[]): MidiNote[] {
   return arpNotes.map(note => ({
     id: note.id,
-    row: String(note.degree),
+    pitch: note.degree,
     time: note.time,
     duration: note.duration,
     velocity: note.velocity,
   }));
 }
 
-// Convert MidiNotes back to ArpNotes (all in base octave for simplicity)
+// Convert MidiNotes back to ArpNotes (pitch = degree, all in base octave for simplicity)
 function midiNotesToArpNotes(midiNotes: MidiNote[]): ArpNote[] {
   return midiNotes.map(note => ({
     id: note.id,
-    degree: parseInt(note.row, 10),
+    degree: note.pitch,
     time: note.time,
     duration: note.duration,
     velocity: note.velocity,
@@ -130,9 +138,7 @@ export function ArpEditor({ block, track, beatsPerBar }: ArpEditorProps) {
 
       {/* Piano roll area using MidiEditor */}
       <MidiEditor
-        rows={ARP_ROWS as unknown as ArpRow[]}
-        rowLabels={DEGREE_LABELS as Record<ArpRow, string>}
-        rowColors={DEGREE_COLORS as Record<ArpRow, string>}
+        rows={ARP_ROWS}
         notes={notes}
         onNotesChange={handleNotesChange}
         totalBeats={totalBeats}

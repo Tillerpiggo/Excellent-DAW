@@ -1,4 +1,4 @@
-import { PatternPreset, Event, PatternCategory, DRUM_PITCHES, DrumType } from './types';
+import { Preset, Event, PatternCategory, DRUM_PITCHES, DrumType } from './types';
 
 // Marker pitch for control/modifier events (swing, gate, mute, scale)
 // These events use pitch 0 as they don't produce audio, they modify behavior
@@ -28,7 +28,7 @@ const note = (startTimeInBeats: number, pitch: number, duration = 0.5, velocity 
   duration,
 });
 
-export const PATTERN_PRESETS: PatternPreset[] = [
+export const PATTERN_PRESETS: Preset[] = [
   // ========== DRUMS ==========
   {
     id: 'kick-four',
@@ -910,27 +910,27 @@ export const PATTERN_PRESETS: PatternPreset[] = [
   },
 ];
 
-export function getPreset(id: string): PatternPreset | undefined {
+export function getPreset(id: string): Preset | undefined {
   return PATTERN_PRESETS.find(p => p.id === id);
 }
 
-export function getPresetsByCategory(category: string): PatternPreset[] {
+export function getPresetsByCategory(category: PatternCategory): Preset[] {
   return PATTERN_PRESETS.filter(p => p.category === category);
 }
 
-export function getLoopPresets(): PatternPreset[] {
+export function getLoopPresets(): Preset[] {
   return PATTERN_PRESETS.filter(p => p.presetType === 'loop');
 }
 
-export function getPatternPresets(): PatternPreset[] {
+export function getPresets(): Preset[] {
   return PATTERN_PRESETS.filter(p => p.presetType === 'pattern');
 }
 
-export function getLoopsByCategory(category: PatternCategory): PatternPreset[] {
+export function getLoopsByCategory(category: PatternCategory): Preset[] {
   return PATTERN_PRESETS.filter(p => p.category === category && p.presetType === 'loop');
 }
 
-export function getPatternByCategory(category: PatternCategory): PatternPreset | undefined {
+export function getPatternByCategory(category: PatternCategory): Preset | undefined {
   return PATTERN_PRESETS.find(p => p.category === category && p.presetType === 'pattern');
 }
 

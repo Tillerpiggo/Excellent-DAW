@@ -3,7 +3,7 @@
 import { useCallback, DragEvent, useState } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore, addTrackFromPreset } from '@/stores/projectStore';
-import { PatternPreset } from '@/core/types';
+import { Preset } from '@/core/types';
 import { PATTERN_PRESETS } from '@/core/presets';
 import { processAudioFile, audioDurationToBars, isAudioFile } from '@/core/audio';
 
@@ -26,7 +26,7 @@ export function useDragDrop() {
 
   // Start dragging a preset from the library
   const handlePresetDragStart = useCallback(
-    (e: DragEvent, preset: PatternPreset) => {
+    (e: DragEvent, preset: Preset) => {
       e.dataTransfer.effectAllowed = 'copy';
       e.dataTransfer.setData('application/json', JSON.stringify({ type: 'preset', presetId: preset.id }));
       startDragPreset(preset);

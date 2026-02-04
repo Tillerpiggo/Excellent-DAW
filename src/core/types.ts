@@ -131,7 +131,7 @@ export type PatternCategory = 'drums' | 'chords' | 'bass' | 'arp' | 'modifier' |
 
 export type PresetType = 'loop' | 'pattern';
 
-export interface PatternPreset {
+export interface Preset {
   id: string;
   name: string;
   category: PatternCategory;

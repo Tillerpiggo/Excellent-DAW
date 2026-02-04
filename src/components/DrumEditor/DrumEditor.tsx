@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Block, Track, Event, DRUM_PITCHES, getDrumType, DrumType } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
-import { MidiEditor, MidiNote } from '@/components/shared/MidiEditor';
+import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
 
 interface DrumEditorProps {
   block: Block;
@@ -14,21 +14,13 @@ interface DrumEditorProps {
 
 type QuantizeValue = '16th' | '8th' | 'quarter';
 
-const DRUM_ORDER: DrumType[] = ['hihat', 'clap', 'snare', 'kick'];
-
-const DRUM_LABELS: Record<DrumType, string> = {
-  hihat: 'HiHat',
-  clap: 'Clap',
-  snare: 'Snare',
-  kick: 'Kick',
-};
-
-const DRUM_COLORS: Record<DrumType, string> = {
-  hihat: '#FFD93D',
-  clap: '#6BCB77',
-  snare: '#4D96FF',
-  kick: '#FF6B6B',
-};
+// Define rows using MidiRow format: { pitch, label, color }
+const DRUM_ROWS: MidiRow[] = [
+  { pitch: DRUM_PITCHES.hihat, label: 'HiHat', color: '#FFD93D' },
+  { pitch: DRUM_PITCHES.clap, label: 'Clap', color: '#6BCB77' },
+  { pitch: DRUM_PITCHES.snare, label: 'Snare', color: '#4D96FF' },
+  { pitch: DRUM_PITCHES.kick, label: 'Kick', color: '#FF6B6B' },
+];
 
 const QUANTIZE_VALUES: Record<QuantizeValue, number> = {
   '16th': 0.25,
@@ -40,22 +32,19 @@ function extractDrumsFromBlock(block: Block): MidiNote[] {
   const allEvents = block.streams?.flatMap(s => s.events) || [];
   const drumEvents = allEvents.filter(e => getDrumType(e.pitch) !== null);
 
-  return drumEvents.map((event, index) => {
-    const drumType = getDrumType(event.pitch)!;
-    return {
-      id: `${drumType}-${event.startTimeInBeats}-${index}`,
-      row: drumType,
-      time: event.startTimeInBeats,
-      duration: event.duration,
-      velocity: event.velocity,
-    };
-  });
+  return drumEvents.map((event, index) => ({
+    id: `drum-${event.startTimeInBeats}-${event.pitch}-${index}`,
+    pitch: event.pitch,
+    time: event.startTimeInBeats,
+    duration: event.duration,
+    velocity: event.velocity,
+  }));
 }
 
 function notesToEvents(notes: MidiNote[]): Event[] {
   return notes.map(n => ({
     startTimeInBeats: n.time,
-    pitch: DRUM_PITCHES[n.row as DrumType],
+    pitch: n.pitch,
     velocity: n.velocity,
     duration: n.duration,
   }));
@@ -129,9 +118,7 @@ export function DrumEditor({ block, track, beatsPerBar }: DrumEditorProps) {
 
       {/* Piano roll area using MidiEditor */}
       <MidiEditor
-        rows={DRUM_ORDER}
-        rowLabels={DRUM_LABELS}
-        rowColors={DRUM_COLORS}
+        rows={DRUM_ROWS}
         notes={notes}
         onNotesChange={handleNotesChange}
         totalBeats={totalBeats}

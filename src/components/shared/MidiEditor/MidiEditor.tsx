@@ -4,18 +4,22 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { MidiNoteComponent } from './MidiNoteComponent';
 import { generateId } from '@/utils/id';
 
+export interface MidiRow {
+  pitch: number;
+  label: string;
+  color: string;
+}
+
 export interface MidiNote {
   id: string;
-  row: string;
+  pitch: number;
   time: number;
   duration: number;
   velocity: number;
 }
 
-export interface MidiEditorProps<TRow extends string> {
-  rows: TRow[];
-  rowLabels: Record<TRow, string>;
-  rowColors: Record<TRow, string>;
+export interface MidiEditorProps {
+  rows: MidiRow[];
   notes: MidiNote[];
   onNotesChange: (notes: MidiNote[]) => void;
   totalBeats: number;
@@ -33,10 +37,8 @@ interface MarqueeState {
   currentY: number;
 }
 
-export function MidiEditor<TRow extends string>({
+export function MidiEditor({
   rows,
-  rowLabels,
-  rowColors,
   notes,
   onNotesChange,
   totalBeats,
@@ -44,7 +46,7 @@ export function MidiEditor<TRow extends string>({
   quantize,
   pixelsPerBeat = 40,
   rowHeight = 28,
-}: MidiEditorProps<TRow>) {
+}: MidiEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
@@ -57,6 +59,9 @@ export function MidiEditor<TRow extends string>({
 
   // Marquee selection state
   const [marquee, setMarquee] = useState<MarqueeState | null>(null);
+
+  // Create pitch-to-row index lookup
+  const pitchToRowIndex = new Map(rows.map((row, index) => [row.pitch, index]));
 
   // Select a note (with shift-click support)
   const handleSelectNote = useCallback((noteId: string, addToSelection: boolean) => {
@@ -117,7 +122,7 @@ export function MidiEditor<TRow extends string>({
   }, [notes, onNotesChange, selectedNoteIds]);
 
   // Start drawing a new note on mousedown
-  const handleRowMouseDown = useCallback((row: TRow, e: React.MouseEvent) => {
+  const handleRowMouseDown = useCallback((pitch: number, e: React.MouseEvent) => {
     // Only handle left click on empty space
     if (e.button !== 0) return;
 
@@ -135,9 +140,9 @@ export function MidiEditor<TRow extends string>({
 
       const newNote: MidiNote = {
         id: generateId(),
-        row,
+        pitch,
         time,
-        duration: quantize, // Start with minimum duration
+        duration: quantize,
         velocity: 100,
       };
 
@@ -203,8 +208,8 @@ export function MidiEditor<TRow extends string>({
     const matchingIds: string[] = [];
 
     notes.forEach(note => {
-      const rowIndex = rows.indexOf(note.row as TRow);
-      if (rowIndex === -1) return;
+      const rowIndex = pitchToRowIndex.get(note.pitch);
+      if (rowIndex === undefined) return;
 
       const noteTop = rowIndex * rowHeight;
       const noteBottom = noteTop + rowHeight;
@@ -218,7 +223,7 @@ export function MidiEditor<TRow extends string>({
     });
 
     return matchingIds;
-  }, [marquee, notes, rows, rowHeight, pixelsPerBeat]);
+  }, [marquee, notes, pitchToRowIndex, rowHeight, pixelsPerBeat]);
 
   // Handle marquee start (on grid area)
   const handleGridMouseDown = useCallback((e: React.MouseEvent) => {
@@ -229,7 +234,6 @@ export function MidiEditor<TRow extends string>({
     if ((e.target as HTMLElement).closest('[data-midi-note]')) return;
 
     // Check if this is directly on the grid container (not a row)
-    // We want to allow rows to handle their own mousedown for drawing notes
     const target = e.target as HTMLElement;
     if (target.closest('[data-midi-row]')) return;
 
@@ -295,7 +299,6 @@ export function MidiEditor<TRow extends string>({
   // Handle keyboard events for delete and escape
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Check if the event target is within our editor
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
         return;
@@ -316,7 +319,6 @@ export function MidiEditor<TRow extends string>({
 
   // Deselect on container click (but not grid - grid has its own handler)
   const handleContainerClick = useCallback((e: React.MouseEvent) => {
-    // Only clear if clicking directly on the container background
     if (e.target === e.currentTarget) {
       clearSelection();
     }
@@ -360,11 +362,11 @@ export function MidiEditor<TRow extends string>({
         <div className="w-16 flex-shrink-0 bg-surface border-r border-border">
           {rows.map(row => (
             <div
-              key={row}
+              key={row.pitch}
               className="flex items-center justify-end pr-2 text-xs font-medium text-muted border-b border-border/50"
               style={{ height: rowHeight }}
             >
-              {rowLabels[row]}
+              {row.label}
             </div>
           ))}
         </div>
@@ -381,15 +383,15 @@ export function MidiEditor<TRow extends string>({
 
           {/* Note rows */}
           {rows.map((row) => {
-            const rowNotes = notes.filter(n => n.row === row);
-            const isDrawingThisRow = drawingNote?.row === row;
+            const rowNotes = notes.filter(n => n.pitch === row.pitch);
+            const isDrawingThisRow = drawingNote?.pitch === row.pitch;
             return (
               <div
-                key={row}
+                key={row.pitch}
                 data-midi-row
                 className="relative border-b border-border/50 hover:bg-white/5"
                 style={{ height: rowHeight }}
-                onMouseDown={(e) => handleRowMouseDown(row, e)}
+                onMouseDown={(e) => handleRowMouseDown(row.pitch, e)}
               >
                 {rowNotes.map(note => (
                   <MidiNoteComponent
@@ -398,7 +400,7 @@ export function MidiEditor<TRow extends string>({
                     time={note.time}
                     duration={note.duration}
                     pixelsPerBeat={pixelsPerBeat}
-                    color={rowColors[row]}
+                    color={row.color}
                     isSelected={selectedNoteIds.has(note.id)}
                     onSelect={(addToSelection) => handleSelectNote(note.id, addToSelection)}
                     onUpdate={(updates) => handleUpdateNote(note.id, updates)}
@@ -418,7 +420,7 @@ export function MidiEditor<TRow extends string>({
                     time={drawingNote.time}
                     duration={drawingNote.duration}
                     pixelsPerBeat={pixelsPerBeat}
-                    color={rowColors[row]}
+                    color={row.color}
                     isSelected={true}
                     onSelect={() => {}}
                     onUpdate={() => {}}

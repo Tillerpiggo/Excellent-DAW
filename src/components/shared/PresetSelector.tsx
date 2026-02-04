@@ -1,18 +1,15 @@
 'use client';
 
-import { PatternCategory, PatternPreset } from '@/core/types';
-import { getLoopsByCategory } from '@/core/presets';
-import { CATEGORY_COLORS, withAlpha } from '@/utils/colors';
+import { Preset } from '@/core/types';
+import { withAlpha } from '@/utils/colors';
 
 interface PresetSelectorProps {
-  category: PatternCategory;
-  onSelectPreset: (preset: PatternPreset) => void;
+  presets: Preset[];
+  onSelectPreset: (preset: Preset) => void;
+  color?: string;
 }
 
-export function PresetSelector({ category, onSelectPreset }: PresetSelectorProps) {
-  const presets = getLoopsByCategory(category);
-  const color = CATEGORY_COLORS[category];
-
+export function PresetSelector({ presets, onSelectPreset, color = '#888888' }: PresetSelectorProps) {
   if (presets.length === 0) return null;
 
   return (

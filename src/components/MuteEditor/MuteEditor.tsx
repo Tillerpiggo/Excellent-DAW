@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Block, Track, Event } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
-import { MidiEditor, MidiNote } from '@/components/shared/MidiEditor';
+import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
 
 interface MuteEditorProps {
   block: Block;
@@ -12,18 +12,7 @@ interface MuteEditorProps {
   beatsPerBar: number;
 }
 
-type MuteRow = 'mute';
 type QuantizeValue = '16th' | '8th' | 'quarter' | 'bar';
-
-const MUTE_ROWS: MuteRow[] = ['mute'];
-
-const MUTE_LABELS: Record<MuteRow, string> = {
-  mute: 'Mute',
-};
-
-const MUTE_COLORS: Record<MuteRow, string> = {
-  mute: '#64748b', // Gray (matches mute category)
-};
 
 const QUANTIZE_VALUES: Record<QuantizeValue, number> = {
   '16th': 0.25,
@@ -32,15 +21,19 @@ const QUANTIZE_VALUES: Record<QuantizeValue, number> = {
   'bar': 4,
 };
 
-// Mute events use pitch 0 as a marker (not a real MIDI pitch)
+// Single row for mute (pitch 0 as marker)
 const MUTE_PITCH = 0;
+
+const MUTE_ROWS: MidiRow[] = [
+  { pitch: MUTE_PITCH, label: 'Mute', color: '#64748b' },
+];
 
 function extractMutesFromBlock(block: Block): MidiNote[] {
   const allEvents = block.streams?.flatMap(s => s.events) || [];
   // All events in a mute track are mute events
   return allEvents.map((event, index) => ({
     id: `mute-${event.startTimeInBeats}-${index}`,
-    row: 'mute',
+    pitch: MUTE_PITCH,
     time: event.startTimeInBeats,
     duration: event.duration,
     velocity: event.velocity,
@@ -128,8 +121,6 @@ export function MuteEditor({ block, track, beatsPerBar }: MuteEditorProps) {
       {/* Midi editor with single row and larger row height */}
       <MidiEditor
         rows={MUTE_ROWS}
-        rowLabels={MUTE_LABELS}
-        rowColors={MUTE_COLORS}
         notes={notes}
         onNotesChange={handleNotesChange}
         totalBeats={totalBeats}

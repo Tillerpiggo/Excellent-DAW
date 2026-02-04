@@ -4,8 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Block, Track, Event } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
-import { MidiEditor, MidiNote } from '@/components/shared/MidiEditor';
-import { generateId } from '@/utils/id';
+import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
 
 interface TransposeEditorProps {
   block: Block;
@@ -23,47 +22,34 @@ const QUANTIZE_VALUES: Record<QuantizeValue, number> = {
 };
 
 // Transpose rows: -12 to +12 semitones (two octaves range)
-const TRANSPOSE_ROW_DATA = [
-  { id: '12', label: '+12 (Oct)', color: '#ef4444' },
-  { id: '11', label: '+11', color: '#f97316' },
-  { id: '10', label: '+10', color: '#f97316' },
-  { id: '9', label: '+9', color: '#eab308' },
-  { id: '8', label: '+8', color: '#eab308' },
-  { id: '7', label: '+7 (5th)', color: '#84cc16' },
-  { id: '6', label: '+6', color: '#22c55e' },
-  { id: '5', label: '+5 (4th)', color: '#22c55e' },
-  { id: '4', label: '+4 (M3)', color: '#14b8a6' },
-  { id: '3', label: '+3 (m3)', color: '#14b8a6' },
-  { id: '2', label: '+2', color: '#06b6d4' },
-  { id: '1', label: '+1', color: '#06b6d4' },
-  { id: '0', label: '0', color: '#64748b' },
-  { id: '-1', label: '-1', color: '#8b5cf6' },
-  { id: '-2', label: '-2', color: '#8b5cf6' },
-  { id: '-3', label: '-3 (m3)', color: '#a855f7' },
-  { id: '-4', label: '-4 (M3)', color: '#a855f7' },
-  { id: '-5', label: '-5 (4th)', color: '#d946ef' },
-  { id: '-6', label: '-6', color: '#d946ef' },
-  { id: '-7', label: '-7 (5th)', color: '#ec4899' },
-  { id: '-8', label: '-8', color: '#f43f5e' },
-  { id: '-9', label: '-9', color: '#f43f5e' },
-  { id: '-10', label: '-10', color: '#ef4444' },
-  { id: '-11', label: '-11', color: '#ef4444' },
-  { id: '-12', label: '-12 (Oct)', color: '#dc2626' },
-] as const;
-
-const TRANSPOSE_ROWS = TRANSPOSE_ROW_DATA.map(r => r.id);
-const TRANSPOSE_ROW_LABELS = Object.fromEntries(TRANSPOSE_ROW_DATA.map(r => [r.id, r.label])) as Record<string, string>;
-const TRANSPOSE_ROW_COLORS = Object.fromEntries(TRANSPOSE_ROW_DATA.map(r => [r.id, r.color])) as Record<string, string>;
-
-// Convert semitone offset to MIDI pitch (C4 = 60 is the reference)
-function semitonesToPitch(semitones: number): number {
-  return 60 + semitones;
-}
-
-// Convert MIDI pitch back to semitone offset
-function pitchToSemitones(pitch: number): number {
-  return pitch - 60;
-}
+// We use pitch = 60 + semitones (so -12 = 48, 0 = 60, +12 = 72)
+const TRANSPOSE_ROWS: MidiRow[] = [
+  { pitch: 72, label: '+12 (Oct)', color: '#ef4444' },
+  { pitch: 71, label: '+11', color: '#f97316' },
+  { pitch: 70, label: '+10', color: '#f97316' },
+  { pitch: 69, label: '+9', color: '#eab308' },
+  { pitch: 68, label: '+8', color: '#eab308' },
+  { pitch: 67, label: '+7 (5th)', color: '#84cc16' },
+  { pitch: 66, label: '+6', color: '#22c55e' },
+  { pitch: 65, label: '+5 (4th)', color: '#22c55e' },
+  { pitch: 64, label: '+4 (M3)', color: '#14b8a6' },
+  { pitch: 63, label: '+3 (m3)', color: '#14b8a6' },
+  { pitch: 62, label: '+2', color: '#06b6d4' },
+  { pitch: 61, label: '+1', color: '#06b6d4' },
+  { pitch: 60, label: '0', color: '#64748b' },
+  { pitch: 59, label: '-1', color: '#8b5cf6' },
+  { pitch: 58, label: '-2', color: '#8b5cf6' },
+  { pitch: 57, label: '-3 (m3)', color: '#a855f7' },
+  { pitch: 56, label: '-4 (M3)', color: '#a855f7' },
+  { pitch: 55, label: '-5 (4th)', color: '#d946ef' },
+  { pitch: 54, label: '-6', color: '#d946ef' },
+  { pitch: 53, label: '-7 (5th)', color: '#ec4899' },
+  { pitch: 52, label: '-8', color: '#f43f5e' },
+  { pitch: 51, label: '-9', color: '#f43f5e' },
+  { pitch: 50, label: '-10', color: '#ef4444' },
+  { pitch: 49, label: '-11', color: '#ef4444' },
+  { pitch: 48, label: '-12 (Oct)', color: '#dc2626' },
+];
 
 // Convert transpose events to MidiNotes for the editor
 function eventsToMidiNotes(events: Event[]): MidiNote[] {
@@ -71,7 +57,7 @@ function eventsToMidiNotes(events: Event[]): MidiNote[] {
     .filter(e => e.pitch !== undefined)
     .map((e, i) => ({
       id: `transpose-${i}-${e.startTimeInBeats}`,
-      row: String(pitchToSemitones(e.pitch!)),
+      pitch: e.pitch!,
       time: e.startTimeInBeats,
       duration: e.duration ?? 1,
       velocity: e.velocity ?? 100,
@@ -82,7 +68,7 @@ function eventsToMidiNotes(events: Event[]): MidiNote[] {
 function midiNotesToEvents(notes: MidiNote[]): Event[] {
   return notes.map(note => ({
     startTimeInBeats: note.time,
-    pitch: semitonesToPitch(parseInt(note.row, 10)),
+    pitch: note.pitch,
     duration: note.duration,
     velocity: note.velocity,
   }));
@@ -167,8 +153,6 @@ export function TransposeEditor({ block, track, beatsPerBar }: TransposeEditorPr
         <MidiEditor
           notes={notes}
           rows={TRANSPOSE_ROWS}
-          rowLabels={TRANSPOSE_ROW_LABELS}
-          rowColors={TRANSPOSE_ROW_COLORS}
           onNotesChange={handleNotesChange}
           totalBeats={totalBeats}
           quantize={quantize}

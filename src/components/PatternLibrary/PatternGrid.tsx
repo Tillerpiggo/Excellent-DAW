@@ -1,10 +1,10 @@
 'use client';
 
 import { PresetChip } from './PresetChip';
-import { getPatternPresets } from '@/core/presets';
+import { getPresets } from '@/core/presets';
 
 export function PatternGrid() {
-  const patterns = getPatternPresets();
+  const patterns = getPresets();
 
   return (
     <div className="flex flex-col gap-2">

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Block, Track, Event } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
-import { MidiEditor, MidiNote } from '@/components/shared/MidiEditor';
+import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
 
 interface RhythmEditorProps {
   block: Block;
@@ -12,24 +12,20 @@ interface RhythmEditorProps {
   beatsPerBar: number;
 }
 
-type RhythmRow = 'rhythm';
 type QuantizeValue = '16th' | '8th' | 'quarter';
-
-const RHYTHM_ROWS: RhythmRow[] = ['rhythm'];
-
-const RHYTHM_LABELS: Record<RhythmRow, string> = {
-  rhythm: 'Rhythm',
-};
-
-const RHYTHM_COLORS: Record<RhythmRow, string> = {
-  rhythm: '#F9A826', // Orange (matches rhythm category)
-};
 
 const QUANTIZE_VALUES: Record<QuantizeValue, number> = {
   '16th': 0.25,
   '8th': 0.5,
   'quarter': 1,
 };
+
+// Single row for rhythm (C4 = 60 as reference pitch)
+const RHYTHM_PITCH = 60;
+
+const RHYTHM_ROWS: MidiRow[] = [
+  { pitch: RHYTHM_PITCH, label: 'Rhythm', color: '#F9A826' },
+];
 
 function extractRhythmFromBlock(block: Block): MidiNote[] {
   const allEvents = block.streams?.flatMap(s => s.events) || [];
@@ -38,7 +34,7 @@ function extractRhythmFromBlock(block: Block): MidiNote[] {
 
   return rhythmEvents.map((event, index) => ({
     id: `rhythm-${event.startTimeInBeats}-${index}`,
-    row: 'rhythm',
+    pitch: RHYTHM_PITCH,
     time: event.startTimeInBeats,
     duration: event.duration ?? 0.25,
     velocity: event.velocity ?? 100,
@@ -48,7 +44,7 @@ function extractRhythmFromBlock(block: Block): MidiNote[] {
 function notesToEvents(notes: MidiNote[]): Event[] {
   return notes.map(n => ({
     startTimeInBeats: n.time,
-    pitch: 60, // C4 as reference pitch for rhythm events
+    pitch: RHYTHM_PITCH,
     velocity: n.velocity,
     duration: n.duration,
   }));
@@ -91,7 +87,7 @@ export function RhythmEditor({ block, track, beatsPerBar }: RhythmEditorProps) {
     for (let i = 0; i < totalBeats; i += quantize) {
       newNotes.push({
         id: `rhythm-${i}-${Date.now()}`,
-        row: 'rhythm',
+        pitch: RHYTHM_PITCH,
         time: i,
         duration: quantize,
         velocity: 100,
@@ -147,8 +143,6 @@ export function RhythmEditor({ block, track, beatsPerBar }: RhythmEditorProps) {
       {/* Midi editor with single row and larger row height */}
       <MidiEditor
         rows={RHYTHM_ROWS}
-        rowLabels={RHYTHM_LABELS}
-        rowColors={RHYTHM_COLORS}
         notes={notes}
         onNotesChange={handleNotesChange}
         totalBeats={totalBeats}

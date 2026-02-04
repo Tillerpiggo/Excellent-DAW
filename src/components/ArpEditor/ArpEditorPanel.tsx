@@ -5,7 +5,9 @@ import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { ArpEditor } from './ArpEditor';
 import { PresetSelector } from '@/components/shared/PresetSelector';
-import { PatternPreset } from '@/core/types';
+import { Preset } from '@/core/types';
+import { getPresetsByCategory } from '@/core/presets';
+import { CATEGORY_COLORS } from '@/utils/colors';
 
 export function ArpEditorPanel() {
   const { selectedBlockIds, selectedTrackId, showArpEditor, setShowArpEditor } = useUIStore();
@@ -38,7 +40,7 @@ export function ArpEditorPanel() {
   }, [selectedBlock, hasPitchedEvents, isArpTrack, setShowArpEditor]);
 
   // Handle applying a preset to the selected block
-  const handleApplyPreset = (preset: PatternPreset) => {
+  const handleApplyPreset = (preset: Preset) => {
     if (!selectedTrackId || !selectedBlockId) return;
 
     updateBlock(selectedTrackId, selectedBlockId, {
@@ -73,7 +75,7 @@ export function ArpEditorPanel() {
 
       {/* Preset Selector */}
       <div className="py-2 border-b border-border/50 bg-surface/50">
-        <PresetSelector category="arp" onSelectPreset={handleApplyPreset} />
+        <PresetSelector presets={getPresetsByCategory('arp')} onSelectPreset={handleApplyPreset} color={CATEGORY_COLORS.arp} />
       </div>
 
       {/* Editor content */}

@@ -5,7 +5,9 @@ import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { DrumEditor } from './DrumEditor';
 import { PresetSelector } from '@/components/shared/PresetSelector';
-import { PatternPreset, getDrumType } from '@/core/types';
+import { Preset, getDrumType } from '@/core/types';
+import { getPresetsByCategory } from '@/core/presets';
+import { CATEGORY_COLORS } from '@/utils/colors';
 
 export function DrumEditorPanel() {
   const { selectedBlockIds, selectedTrackId, showDrumEditor, setShowDrumEditor } = useUIStore();
@@ -70,7 +72,7 @@ export function DrumEditorPanel() {
   }, [shouldShowDrumEditor, setShowDrumEditor]);
 
   // Handle applying a preset to the selected block
-  const handleApplyPreset = (preset: PatternPreset) => {
+  const handleApplyPreset = (preset: Preset) => {
     if (!selectedTrackId || !selectedBlockId) return;
 
     updateBlock(selectedTrackId, selectedBlockId, {
@@ -109,7 +111,7 @@ export function DrumEditorPanel() {
 
       {/* Preset Selector */}
       <div className="py-2 border-b border-border/50 bg-surface/50">
-        <PresetSelector category={presetCategory} onSelectPreset={handleApplyPreset} />
+        <PresetSelector presets={getPresetsByCategory(presetCategory)} onSelectPreset={handleApplyPreset} color={CATEGORY_COLORS[presetCategory]} />
       </div>
 
       {/* Editor content */}

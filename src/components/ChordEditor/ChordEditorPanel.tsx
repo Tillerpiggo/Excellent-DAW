@@ -5,7 +5,9 @@ import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { ChordEditor } from './ChordEditor';
 import { PresetSelector } from '@/components/shared/PresetSelector';
-import { PatternPreset } from '@/core/types';
+import { Preset } from '@/core/types';
+import { getPresetsByCategory } from '@/core/presets';
+import { CATEGORY_COLORS } from '@/utils/colors';
 
 export function ChordEditorPanel() {
   const { selectedBlockIds, selectedTrackId, showChordEditor, setShowChordEditor } = useUIStore();
@@ -58,7 +60,7 @@ export function ChordEditorPanel() {
   }, [shouldShowChordEditor, setShowChordEditor]);
 
   // Handle applying a preset to the selected block
-  const handleApplyPreset = (preset: PatternPreset) => {
+  const handleApplyPreset = (preset: Preset) => {
     if (!selectedTrackId || !selectedBlockId) return;
 
     updateBlock(selectedTrackId, selectedBlockId, {
@@ -93,7 +95,7 @@ export function ChordEditorPanel() {
 
       {/* Preset Selector */}
       <div className="py-2 border-b border-border/50 bg-surface/50">
-        <PresetSelector category="chords" onSelectPreset={handleApplyPreset} />
+        <PresetSelector presets={getPresetsByCategory('chords')} onSelectPreset={handleApplyPreset} color={CATEGORY_COLORS.chords} />
       </div>
 
       {/* Editor content */}
