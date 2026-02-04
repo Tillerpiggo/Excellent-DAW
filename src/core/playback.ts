@@ -1,7 +1,7 @@
 import * as Tone from 'tone';
 import { Project, InstrumentId, Block } from './types';
 import { resolveProject, ResolvedTrack } from './resolution';
-import { createInstruments, scheduleEvent, disposeInstruments, InstrumentInstances, getOrCreateAudioPlayer, clearAudioPlayers } from './instruments';
+import { createInstruments, scheduleEvent, disposeInstruments, InstrumentInstances, getOrCreateAudioPlayer, clearAudioPlayers, stopAudioPlayers } from './instruments';
 import { ChordQuality, generateChordPitches } from './harmony';
 import { getVisualPlaybackEngine, VisualPlaybackEngine } from './visualPlayback';
 
@@ -192,19 +192,17 @@ export class PlaybackEngine {
 
   private startBeatTracking(project: Project): void {
     const totalBeats = project.totalBars * project.beatsPerBar;
-    let lastBeat = -1;
 
     const update = () => {
       if (this.state !== 'playing') return;
 
       const position = Tone.getTransport().position;
-      const [bars, beats] = String(position).split(':').map(Number);
-      const currentBeat = (bars || 0) * project.beatsPerBar + (beats || 0);
+      const [bars, beats, sixteenths] = String(position).split(':').map(Number);
+      // Include sixteenths for smooth sub-beat movement
+      const currentBeat = (bars || 0) * project.beatsPerBar + (beats || 0) + (sixteenths || 0) / 4;
 
-      if (Math.floor(currentBeat) !== lastBeat) {
-        lastBeat = Math.floor(currentBeat);
-        this.callbacks.onBeatChange?.(lastBeat % totalBeats);
-      }
+      // Update every frame for smooth playhead movement
+      this.callbacks.onBeatChange?.(currentBeat % totalBeats);
 
       this.animationFrame = requestAnimationFrame(update);
     };
@@ -219,6 +217,11 @@ export class PlaybackEngine {
     // Stop transport
     Tone.getTransport().stop();
     Tone.getTransport().position = 0;
+
+    // Stop all audio players immediately
+    if (this.instruments) {
+      stopAudioPlayers(this.instruments);
+    }
 
     // Dispose all parts
     for (const part of this.parts) {
@@ -246,6 +249,11 @@ export class PlaybackEngine {
     this.state = 'paused';
     this.callbacks.onStateChange?.('paused');
     Tone.getTransport().pause();
+
+    // Stop audio players (they'll be re-triggered on resume via transport)
+    if (this.instruments) {
+      stopAudioPlayers(this.instruments);
+    }
 
     if (this.animationFrame !== null) {
       cancelAnimationFrame(this.animationFrame);
@@ -281,8 +289,63 @@ export class PlaybackEngine {
   seekTo(beat: number, beatsPerBar: number): void {
     const bars = Math.floor(beat / beatsPerBar);
     const beats = beat % beatsPerBar;
+
+    // Stop audio players so they can be re-triggered at the new position
+    if (this.instruments) {
+      stopAudioPlayers(this.instruments);
+    }
+
     Tone.getTransport().position = `${bars}:${beats}:0`;
+
+    // If playing, start any audio blocks that should be active at this position
+    if (this.state === 'playing' && this.project && this.instruments) {
+      this.startAudioAtPosition(beat, beatsPerBar);
+    }
+
+    // Seek visual engine to show correct state at this position
+    if (this.visualEngine) {
+      this.visualEngine.seekTo(beat);
+    }
+
     this.callbacks.onBeatChange?.(beat);
+  }
+
+  private startAudioAtPosition(beat: number, beatsPerBar: number): void {
+    if (!this.project || !this.instruments) return;
+
+    const bpm = this.project.bpm;
+    const secondsPerBeat = 60 / bpm;
+
+    for (const trackId of Object.keys(this.project.tracks)) {
+      const track = this.project.tracks[trackId];
+      if (!track || track.muted || track.instrumentId !== 'audio') continue;
+
+      for (const block of track.blocks) {
+        if (!block.audioData) continue;
+
+        const blockStartBeat = block.startBar * beatsPerBar;
+        const blockEndBeat = (block.startBar + block.durationBars) * beatsPerBar;
+
+        // Check if the seek position is within this block
+        if (beat >= blockStartBeat && beat < blockEndBeat) {
+          const player = this.instruments.audioPlayers.get(block.id);
+          if (!player) continue;
+
+          // Calculate offset into the audio file
+          const beatsIntoBlock = beat - blockStartBeat;
+          const secondsIntoBlock = beatsIntoBlock * secondsPerBeat;
+
+          // Handle looping audio - wrap the offset
+          let audioOffset = secondsIntoBlock;
+          if (block.loop && block.audioData.duration > 0) {
+            audioOffset = secondsIntoBlock % block.audioData.duration;
+          }
+
+          // Start playback from the calculated offset
+          player.start(Tone.now(), audioOffset);
+        }
+      }
+    }
   }
 
   async previewChord(

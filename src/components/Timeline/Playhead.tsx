@@ -85,9 +85,7 @@ export function Playhead({ currentBeat, pixelsPerBeat, scrollLeft }: PlayheadPro
   return (
     <div
       ref={containerRef}
-      className={`absolute top-0 bottom-0 w-0.5 bg-accent-to ${
-        isScrubbing ? '' : 'transition-[left] duration-75'
-      }`}
+      className="absolute top-0 bottom-0 w-0.5 bg-accent-to"
       style={{ left: position, pointerEvents: 'none' }}
     >
       {/* Playhead handle - draggable */}

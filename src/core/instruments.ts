@@ -296,7 +296,24 @@ export function disposeAudioPlayer(blockId: string, instruments: InstrumentInsta
   }
 }
 
-// Clear all audio players
+// Stop all audio players without disposing (for pause/stop - allows resume/seek later)
+export function stopAudioPlayers(instruments: InstrumentInstances): void {
+  for (const player of instruments.audioPlayers.values()) {
+    player.stop();
+  }
+}
+
+// Seek all audio players to a specific position (in seconds)
+export function seekAudioPlayers(instruments: InstrumentInstances, positionSeconds: number): void {
+  for (const player of instruments.audioPlayers.values()) {
+    // Stop first, then we can start from the new position when playback resumes
+    player.stop();
+    // Store the seek position - the player will start from here when triggered
+    // Note: Tone.Player doesn't have a native seek, so we'll need to use offset in start()
+  }
+}
+
+// Clear all audio players (dispose them completely)
 export function clearAudioPlayers(instruments: InstrumentInstances): void {
   for (const player of instruments.audioPlayers.values()) {
     player.stop();

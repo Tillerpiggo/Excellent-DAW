@@ -247,6 +247,10 @@ export function FractalTunnel({ state }: FractalTunnelProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textureRef = useRef<THREE.CanvasTexture | null>(null);
   const elapsedRef = useRef(0);
+  const virtualBeatRef = useRef(0);
+  const hueOffsetRef = useRef(0);
+  // Track pitch -> startTime to detect both new pitches and re-triggered same pitches
+  const prevNoteStartsRef = useRef<Map<number, number>>(new Map());
 
   useEffect(() => {
     const canvas = document.createElement('canvas');
@@ -277,10 +281,28 @@ export function FractalTunnel({ state }: FractalTunnelProps) {
     const elapsed = elapsedRef.current;
 
     const beatsPerSecond = bpm / 60;
-    const beat = elapsed * beatsPerSecond * CONFIG.oscSpeed;
+    const deltaBeat = delta * beatsPerSecond * CONFIG.oscSpeed;
 
-    const hasActiveNotes = state.activeNotes.size > 0;
-    const directionFlip = hasActiveNotes ? -1 : 1;
+    // Detect new note-on events by comparing pitch+startTime with previous frame
+    const currentNoteStarts = new Map<number, number>();
+    let newNoteCount = 0;
+    for (const [pitch, note] of state.activeNotes) {
+      currentNoteStarts.set(pitch, note.startTime);
+      const prevStartTime = prevNoteStartsRef.current.get(pitch);
+      // New note if: pitch wasn't active before, OR same pitch but different startTime (re-triggered)
+      if (prevStartTime === undefined || prevStartTime !== note.startTime) {
+        newNoteCount++;
+      }
+    }
+    // Shift hue for each new note-on
+    if (newNoteCount > 0) {
+      hueOffsetRef.current = (hueOffsetRef.current + 30 * newNoteCount) % 360;
+    }
+    prevNoteStartsRef.current = currentNoteStarts;
+
+    // Accumulate virtual beat
+    virtualBeatRef.current += deltaBeat;
+    const beat = virtualBeatRef.current;
 
     const params: BranchParams = {
       symmetry: CONFIG.symmetry,
@@ -290,14 +312,14 @@ export function FractalTunnel({ state }: FractalTunnelProps) {
       lengthDecay: CONFIG.lengthDecay + Math.sin(beat * Math.PI / 16 + 2) * 0.15,
       spreadAngle: CONFIG.spreadAngle + Math.sin(beat * Math.PI / 8 + 1) * 0.4,
       hueShift: CONFIG.hueShift,
-      baseHue: (CONFIG.baseHue + beat / 64) % 1,
+      baseHue: (CONFIG.baseHue + beat / 64 + hueOffsetRef.current / 360) % 1,
     };
 
     const frontBranches = generateBranches(
-      CONFIG.baseLength, CONFIG.frontFlowerZ, 1, params, directionFlip
+      CONFIG.baseLength, CONFIG.frontFlowerZ, 1, params, 1
     );
     const backBranches = generateBranches(
-      CONFIG.baseLength, CONFIG.backFlowerZ, CONFIG.backFlowerScale, params, directionFlip
+      CONFIG.baseLength, CONFIG.backFlowerZ, CONFIG.backFlowerScale, params, 1
     );
 
     const frontEndpoints = getEndpoints(frontBranches, CONFIG.generations);

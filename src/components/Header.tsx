@@ -32,7 +32,7 @@ export function Header() {
   }, [project.name]);
 
   const currentBar = Math.floor(currentBeat / project.beatsPerBar) + 1;
-  const beatInBar = (currentBeat % project.beatsPerBar) + 1;
+  const beatInBar = Math.floor(currentBeat % project.beatsPerBar) + 1;
 
   const handleSaveName = () => {
     const trimmed = editName.trim();
@@ -121,7 +121,7 @@ export function Header() {
         </button>
 
         {/* Position Display */}
-        <div className="bg-background rounded-lg px-4 py-2 font-mono text-lg min-w-[100px] text-center">
+        <div className="bg-background rounded-lg px-4 py-2 font-mono text-lg w-20 text-center">
           <span className="text-foreground">{currentBar}</span>
           <span className="text-muted-foreground">.</span>
           <span className="text-muted-foreground">{beatInBar}</span>

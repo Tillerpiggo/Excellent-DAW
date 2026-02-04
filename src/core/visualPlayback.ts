@@ -121,6 +121,38 @@ export class VisualPlaybackEngine {
     this.callbacks.onStateUpdate?.(this.trackStates);
   }
 
+  // Seek to a specific beat - recalculates what should be active at that position
+  seekTo(beat: number): void {
+    // Clear all current state
+    for (const [, state] of this.trackStates) {
+      state.activeNotes.clear();
+      state.bloom = 0;
+    }
+
+    // Find notes that should be active at this beat
+    // (notes that started before this beat and haven't ended yet)
+    for (const event of this.scheduledEvents) {
+      const noteEnd = event.time + event.duration;
+      if (event.time <= beat && noteEnd > beat) {
+        const state = this.trackStates.get(event.trackId);
+        if (state) {
+          state.activeNotes.set(event.pitch, {
+            pitch: event.pitch,
+            velocity: event.velocity,
+            startTime: event.time,
+            duration: event.duration,
+          });
+          state.colorShift = (event.pitch % 12) / 12;
+        }
+      }
+    }
+
+    // Update lastProcessedBeat so the frame loop continues from here
+    this.lastProcessedBeat = beat;
+
+    this.callbacks.onStateUpdate?.(this.trackStates);
+  }
+
   private frameLoop = (): void => {
     if (!this.isPlaying || !this.getCurrentBeatFn) return;
 
