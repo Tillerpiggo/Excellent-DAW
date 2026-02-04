@@ -2,7 +2,7 @@
 
 import { TrackRow } from './TrackRow';
 import { DndTrackContext } from './DndTrackContext';
-import { useProjectStore, addTrackFromPreset } from '@/stores/projectStore';
+import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useDragDrop } from '@/hooks/useDragDrop';
 import { flattenTracks } from '@/utils/tree';

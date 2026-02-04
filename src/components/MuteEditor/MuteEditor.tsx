@@ -5,21 +5,13 @@ import { Block, Track, Event } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
+import { QuantizeSelect } from '@/components/shared/QuantizeSelect';
 
 interface MuteEditorProps {
   block: Block;
   track: Track;
   beatsPerBar: number;
 }
-
-type QuantizeValue = '16th' | '8th' | 'quarter' | 'bar';
-
-const QUANTIZE_VALUES: Record<QuantizeValue, number> = {
-  '16th': 0.25,
-  '8th': 0.5,
-  'quarter': 1,
-  'bar': 4,
-};
 
 // Single row for mute (pitch 0 as marker)
 const MUTE_PITCH = 0;
@@ -62,7 +54,6 @@ export function MuteEditor({ block, track, beatsPerBar }: MuteEditorProps) {
   }, [blockId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalBeats = block.durationBars * beatsPerBar;
-  const quantize = QUANTIZE_VALUES[muteEditorQuantize];
 
   // Handle notes change from MidiEditor
   const handleNotesChange = useCallback((newNotes: MidiNote[]) => {
@@ -89,20 +80,7 @@ export function MuteEditor({ block, track, beatsPerBar }: MuteEditorProps) {
     <div className="flex flex-col h-full" data-editor-panel="mute">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border">
-        {/* Quantize selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted">Grid:</span>
-          <select
-            value={muteEditorQuantize}
-            onChange={(e) => setMuteEditorQuantize(e.target.value as QuantizeValue)}
-            className="px-2 py-1 bg-background border border-border rounded text-sm text-foreground"
-          >
-            <option value="bar">Bar</option>
-            <option value="quarter">Beat</option>
-            <option value="8th">1/8</option>
-            <option value="16th">1/16</option>
-          </select>
-        </div>
+        <QuantizeSelect value={muteEditorQuantize} onChange={setMuteEditorQuantize} />
 
         <button
           onClick={handleClear}
@@ -125,7 +103,7 @@ export function MuteEditor({ block, track, beatsPerBar }: MuteEditorProps) {
         onNotesChange={handleNotesChange}
         totalBeats={totalBeats}
         beatsPerBar={beatsPerBar}
-        quantize={quantize}
+        quantize={muteEditorQuantize}
         rowHeight={48}
       />
     </div>

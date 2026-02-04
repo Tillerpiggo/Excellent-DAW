@@ -15,6 +15,117 @@ interface ModifierResolution {
   instrumentedResults: ResolvedTrack[];
 }
 
+interface CategorizedChildren {
+  modifiers: Track[];
+  regular: Track[];
+}
+
+/**
+ * Separates a track's children into modifier tracks and regular tracks.
+ * Modifier tracks (without instruments) affect the parent's output.
+ * Regular tracks process independently and inherit the parent's output.
+ */
+function categorizeChildren(track: Track, project: Project): CategorizedChildren {
+  const modifiers: Track[] = [];
+  const regular: Track[] = [];
+
+  for (const childId of track.childIds) {
+    const childTrack = project.tracks[childId];
+    if (!childTrack || childTrack.muted) continue;
+
+    const childType = getTrackType(childTrack.typeId);
+    if (childType.category === 'modifier' && !childTrack.instrumentId) {
+      modifiers.push(childTrack);
+    } else {
+      regular.push(childTrack);
+    }
+  }
+
+  return { modifiers, regular };
+}
+
+interface ApplyModifiersResult {
+  output: Output;
+  results: ResolvedTrack[];
+  context: ProcessContext;
+}
+
+/**
+ * Applies modifier children to a track's output.
+ * Each modifier transforms the output, and any instrumented results from
+ * modifier subtrees are collected.
+ */
+function applyModifiers(
+  selfOutput: Output,
+  modifierChildren: Track[],
+  project: Project,
+  context: ProcessContext,
+  parentOutput: Output | undefined
+): ApplyModifiersResult {
+  const results: ResolvedTrack[] = [];
+  let output = selfOutput;
+  let modifierContext = buildContext(context, parentOutput, output);
+
+  for (const modifierTrack of modifierChildren) {
+    const modifierResolution = resolveModifierOutput(modifierTrack, project, modifierContext, output);
+    const modifierType = getTrackType(modifierTrack.typeId);
+
+    output = modifierType.combine(output, modifierResolution.pattern, modifierContext);
+    results.push(...modifierResolution.instrumentedResults);
+    modifierContext = buildContext(context, parentOutput, output);
+  }
+
+  return { output, results, context: modifierContext };
+}
+
+/**
+ * Builds the resolved track outputs for a track.
+ * Handles audio tracks, visual instruments, and visual inheritance.
+ */
+function buildTrackOutputs(
+  track: Track,
+  selfOutput: Output,
+  combinedOutput: Output,
+  inheritedVisualInstrumentId: VisualInstrumentId | undefined
+): ResolvedTrack[] {
+  const results: ResolvedTrack[] = [];
+
+  const isAudioTrack = track.instrumentId === 'audio';
+  const hasAudioBlocks = isAudioTrack && track.blocks.some(b => b.audioData);
+  const hasAudioInstrument = track.instrumentId && combinedOutput.events.length > 0;
+  const hasVisualInstrument = track.visualInstrumentId && combinedOutput.events.length > 0;
+
+  const hasVisualParams = track.visualParams && Object.keys(track.visualParams).length > 0;
+  const hasInheritedVisualOutput = !track.visualInstrumentId &&
+    hasVisualParams &&
+    inheritedVisualInstrumentId &&
+    selfOutput.events.length > 0;
+
+  // Main output (audio and/or own visual)
+  if (hasAudioBlocks || hasAudioInstrument || hasVisualInstrument) {
+    results.push({
+      trackId: track.id,
+      instrumentId: track.instrumentId,
+      visualInstrumentId: track.visualInstrumentId,
+      visualParams: track.visualParams,
+      output: combinedOutput,
+    });
+  }
+
+  // Inherited visual output (visual-only, using selfOutput)
+  if (hasInheritedVisualOutput) {
+    results.push({
+      trackId: track.id,
+      instrumentId: undefined,
+      visualInstrumentId: inheritedVisualInstrumentId,
+      visualParams: track.visualParams,
+      output: selfOutput,
+    });
+  }
+
+  return results;
+}
+
 function resolveModifierOutput(
   modifierTrack: Track,
   project: Project,
@@ -101,101 +212,30 @@ export function resolveTrack(
   // Step 1: Resolve this track's blocks
   let selfOutput = resolveBlocks(track.blocks, project, context);
 
-  // Step 2: Separate children
-  const modifierChildren: Track[] = [];
-  const regularChildren: Track[] = [];
+  // Step 2: Separate children into modifiers and regular tracks
+  const { modifiers, regular } = categorizeChildren(track, project);
 
-  for (const childId of track.childIds) {
-    const childTrack = project.tracks[childId];
-    if (!childTrack || childTrack.muted) continue;
-    const childType = getTrackType(childTrack.typeId);
-    if (childType.category === 'modifier' && !childTrack.instrumentId) {
-      modifierChildren.push(childTrack);
-    } else {
-      regularChildren.push(childTrack);
-    }
-  }
+  // Step 3: Apply modifier children to selfOutput
+  const modifierResult = applyModifiers(selfOutput, modifiers, project, context, parentOutput);
+  selfOutput = modifierResult.output;
+  results.push(...modifierResult.results);
 
-  // Step 3: Apply modifier children to selfOutput BEFORE combining
-  let modifierContext = buildContext(context, parentOutput, selfOutput);
-
-  for (const modifierTrack of modifierChildren) {
-    const modifierOutput = resolveModifierOutput(modifierTrack, project, modifierContext, selfOutput);
-    const modifierType = getTrackType(modifierTrack.typeId);
-
-    selfOutput = modifierType.combine(selfOutput, modifierOutput.pattern, modifierContext);
-    results.push(...modifierOutput.instrumentedResults);
-    modifierContext = buildContext(context, parentOutput, selfOutput);
-  }
-
-  // Step 4: Now combine modified self with parent
+  // Step 4: Combine modified self with parent
   const trackType = getTrackType(track.typeId);
   const enrichedContext = buildContext(context, parentOutput, selfOutput);
-
-  let combinedOutput = trackType.combine(
+  const combinedOutput = trackType.combine(
     parentOutput || { events: [] },
     selfOutput,
     enrichedContext
   );
 
-  // Step 5: Push this track's output
-  // Include track if it has an audio instrument OR a visual instrument
-  // Audio tracks are special - they have audioData in blocks, not MIDI events
-  const isAudioTrack = track.instrumentId === 'audio';
-  const hasAudioBlocks = isAudioTrack && track.blocks.some(b => b.audioData);
-  const hasAudioInstrument = track.instrumentId && combinedOutput.events.length > 0;
-  const hasVisualInstrument = track.visualInstrumentId && combinedOutput.events.length > 0;
+  // Step 5: Build this track's resolved outputs
+  const trackOutputs = buildTrackOutputs(track, selfOutput, combinedOutput, inheritedVisualInstrumentId);
+  results.push(...trackOutputs);
 
-  // Determine the visual instrument ID (own or inherited)
-  const effectiveVisualInstrumentId = track.visualInstrumentId || inheritedVisualInstrumentId;
-
-  // Check if this track should have visual output via inheritance
-  // (has visualParams with actual content, no own visualInstrumentId, but can inherit one, and has its own events)
-  const hasVisualParams = track.visualParams && Object.keys(track.visualParams).length > 0;
-  const hasInheritedVisualOutput = !track.visualInstrumentId &&
-    hasVisualParams &&
-    inheritedVisualInstrumentId &&
-    selfOutput.events.length > 0;
-
-  // Debug: log inheritance check for any track with visualParams
-  if (hasVisualParams && !track.visualInstrumentId) {
-    console.log('[Resolution] Inheritance check for', track.id, ':', {
-      hasVisualParams,
-      inheritedVisualInstrumentId,
-      selfEventsCount: selfOutput.events.length,
-      willInherit: hasInheritedVisualOutput,
-      visualParams: track.visualParams
-    });
-  }
-
-  if (hasAudioBlocks || hasAudioInstrument || hasVisualInstrument) {
-    if (track.visualInstrumentId) {
-      console.log('[Resolution] Track', track.id, 'has own visual, visualParams:', track.visualParams);
-    }
-    results.push({
-      trackId: track.id,
-      instrumentId: track.instrumentId,
-      visualInstrumentId: track.visualInstrumentId,
-      visualParams: track.visualParams,
-      output: combinedOutput,
-    });
-  }
-
-  // If track inherits visual instrument via visualParams, create a visual-only output
-  if (hasInheritedVisualOutput) {
-    console.log('[Resolution] Track', track.id, 'INHERITS visual, visualParams:', track.visualParams);
-    results.push({
-      trackId: track.id,
-      instrumentId: undefined, // No audio output
-      visualInstrumentId: inheritedVisualInstrumentId,
-      visualParams: track.visualParams,
-      output: selfOutput, // Only this track's events, not combined
-    });
-  }
-
-  // Step 6: Process regular children, passing down visual instrument for inheritance
+  // Step 6: Process regular children recursively
   const visualToInherit = track.visualInstrumentId || inheritedVisualInstrumentId;
-  for (const childTrack of regularChildren) {
+  for (const childTrack of regular) {
     const childResults = resolveTrack(childTrack, project, enrichedContext, combinedOutput, visualToInherit);
     results.push(...childResults);
   }

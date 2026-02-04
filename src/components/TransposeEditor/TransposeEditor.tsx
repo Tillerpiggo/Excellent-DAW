@@ -5,21 +5,13 @@ import { Block, Track, Event } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
+import { QuantizeSelect } from '@/components/shared/QuantizeSelect';
 
 interface TransposeEditorProps {
   block: Block;
   track: Track;
   beatsPerBar: number;
 }
-
-type QuantizeValue = '16th' | '8th' | 'quarter' | 'bar';
-
-const QUANTIZE_VALUES: Record<QuantizeValue, number> = {
-  '16th': 0.25,
-  '8th': 0.5,
-  'quarter': 1,
-  'bar': 4,
-};
 
 // Transpose rows: -12 to +12 semitones (two octaves range)
 // We use pitch = 60 + semitones (so -12 = 48, 0 = 60, +12 = 72)
@@ -92,7 +84,6 @@ export function TransposeEditor({ block, track, beatsPerBar }: TransposeEditorPr
   }, [blockId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalBeats = block.durationBars * beatsPerBar;
-  const quantize = QUANTIZE_VALUES[transposeEditorQuantize];
 
   // Handle notes change from MidiEditor
   const handleNotesChange = useCallback((newNotes: MidiNote[]) => {
@@ -128,17 +119,7 @@ export function TransposeEditor({ block, track, beatsPerBar }: TransposeEditorPr
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs text-muted-foreground">Grid:</label>
-          <select
-            value={transposeEditorQuantize}
-            onChange={(e) => setTransposeEditorQuantize(e.target.value as QuantizeValue)}
-            className="px-2 py-1 bg-background border border-border rounded text-sm text-foreground"
-          >
-            <option value="bar">Bar</option>
-            <option value="quarter">1/4</option>
-            <option value="8th">1/8</option>
-            <option value="16th">1/16</option>
-          </select>
+          <QuantizeSelect value={transposeEditorQuantize} onChange={setTransposeEditorQuantize} />
           <button
             onClick={handleClear}
             className="px-2 py-1 text-xs bg-surface hover:bg-muted border border-border rounded"
@@ -155,7 +136,7 @@ export function TransposeEditor({ block, track, beatsPerBar }: TransposeEditorPr
           rows={TRANSPOSE_ROWS}
           onNotesChange={handleNotesChange}
           totalBeats={totalBeats}
-          quantize={quantize}
+          quantize={transposeEditorQuantize}
           beatsPerBar={beatsPerBar}
         />
       </div>

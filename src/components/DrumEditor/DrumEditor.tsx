@@ -5,14 +5,13 @@ import { Block, Track, Event, DRUM_PITCHES, getDrumType, DrumType } from '@/core
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
+import { QuantizeSelect } from '@/components/shared/QuantizeSelect';
 
 interface DrumEditorProps {
   block: Block;
   track: Track;
   beatsPerBar: number;
 }
-
-type QuantizeValue = '16th' | '8th' | 'quarter';
 
 // Define rows using MidiRow format: { pitch, label, color }
 const DRUM_ROWS: MidiRow[] = [
@@ -21,12 +20,6 @@ const DRUM_ROWS: MidiRow[] = [
   { pitch: DRUM_PITCHES.snare, label: 'Snare', color: '#4D96FF' },
   { pitch: DRUM_PITCHES.kick, label: 'Kick', color: '#FF6B6B' },
 ];
-
-const QUANTIZE_VALUES: Record<QuantizeValue, number> = {
-  '16th': 0.25,
-  '8th': 0.5,
-  'quarter': 1,
-};
 
 function extractDrumsFromBlock(block: Block): MidiNote[] {
   const allEvents = block.streams?.flatMap(s => s.events) || [];
@@ -63,7 +56,6 @@ export function DrumEditor({ block, track, beatsPerBar }: DrumEditorProps) {
   }, [blockId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalBeats = block.durationBars * beatsPerBar;
-  const quantize = QUANTIZE_VALUES[drumEditorQuantize];
 
   // Handle notes change from MidiEditor
   const handleNotesChange = useCallback((newNotes: MidiNote[]) => {
@@ -88,19 +80,7 @@ export function DrumEditor({ block, track, beatsPerBar }: DrumEditorProps) {
     <div className="flex flex-col h-full" data-editor-panel="drum">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border">
-        {/* Quantize selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted">Grid:</span>
-          <select
-            value={drumEditorQuantize}
-            onChange={(e) => setDrumEditorQuantize(e.target.value as QuantizeValue)}
-            className="px-2 py-1 bg-background border border-border rounded text-sm text-foreground"
-          >
-            <option value="16th">1/16</option>
-            <option value="8th">1/8</option>
-            <option value="quarter">1/4</option>
-          </select>
-        </div>
+        <QuantizeSelect value={drumEditorQuantize} onChange={setDrumEditorQuantize} />
 
         <button
           onClick={handleClear}
@@ -123,7 +103,7 @@ export function DrumEditor({ block, track, beatsPerBar }: DrumEditorProps) {
         onNotesChange={handleNotesChange}
         totalBeats={totalBeats}
         beatsPerBar={beatsPerBar}
-        quantize={quantize}
+        quantize={drumEditorQuantize}
       />
     </div>
   );

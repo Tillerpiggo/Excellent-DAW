@@ -5,6 +5,7 @@ import { Block, Track } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
+import { QuantizeSelect } from '@/components/shared/QuantizeSelect';
 import {
   eventsToArpNotes,
   arpNotesToEvents,
@@ -16,14 +17,6 @@ interface ArpEditorProps {
   track: Track;
   beatsPerBar: number;
 }
-
-type QuantizeValue = '16th' | '8th' | 'quarter';
-
-const QUANTIZE_VALUES: Record<QuantizeValue, number> = {
-  '16th': 0.25,
-  '8th': 0.5,
-  'quarter': 1,
-};
 
 // MidiRow definitions for arp degrees (pitch = degree for simplicity, 1-8)
 const ARP_ROWS: MidiRow[] = [
@@ -80,7 +73,6 @@ export function ArpEditor({ block, track, beatsPerBar }: ArpEditorProps) {
   }, [blockId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalBeats = block.durationBars * beatsPerBar;
-  const quantize = QUANTIZE_VALUES[arpEditorQuantize];
 
   // Handle notes change from MidiEditor
   const handleNotesChange = useCallback((newNotes: MidiNote[]) => {
@@ -108,19 +100,7 @@ export function ArpEditor({ block, track, beatsPerBar }: ArpEditorProps) {
     <div className="flex flex-col h-full" data-editor-panel="arp">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border">
-        {/* Quantize selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted">Grid:</span>
-          <select
-            value={arpEditorQuantize}
-            onChange={(e) => setArpEditorQuantize(e.target.value as QuantizeValue)}
-            className="px-2 py-1 bg-background border border-border rounded text-sm text-foreground"
-          >
-            <option value="16th">1/16</option>
-            <option value="8th">1/8</option>
-            <option value="quarter">1/4</option>
-          </select>
-        </div>
+        <QuantizeSelect value={arpEditorQuantize} onChange={setArpEditorQuantize} />
 
         <button
           onClick={handleClear}
@@ -143,7 +123,7 @@ export function ArpEditor({ block, track, beatsPerBar }: ArpEditorProps) {
         onNotesChange={handleNotesChange}
         totalBeats={totalBeats}
         beatsPerBar={beatsPerBar}
-        quantize={quantize}
+        quantize={arpEditorQuantize}
       />
     </div>
   );

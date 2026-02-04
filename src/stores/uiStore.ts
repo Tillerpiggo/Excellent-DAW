@@ -62,23 +62,13 @@ interface UIState {
   showSwingEditor: boolean;
   showVisualView: boolean;
 
-  // Drum editor state
-  drumEditorQuantize: '16th' | '8th' | 'quarter';
-
-  // Arp editor state
-  arpEditorQuantize: '16th' | '8th' | 'quarter';
-
-  // Mute editor state
-  muteEditorQuantize: '16th' | '8th' | 'quarter' | 'bar';
-
-  // Transpose editor state
-  transposeEditorQuantize: '16th' | '8th' | 'quarter' | 'bar';
-
-  // Rhythm editor state
-  rhythmEditorQuantize: '16th' | '8th' | 'quarter';
-
-  // Swing editor state
-  swingEditorQuantize: '16th' | '8th' | 'quarter';
+  // Editor quantize values (in beats)
+  drumEditorQuantize: number;
+  arpEditorQuantize: number;
+  muteEditorQuantize: number;
+  transposeEditorQuantize: number;
+  rhythmEditorQuantize: number;
+  swingEditorQuantize: number;
 
   // Chord picker state
   chordPickerOpen: boolean;
@@ -126,12 +116,12 @@ interface UIState {
   setShowRhythmEditor: (show: boolean) => void;
   setShowSwingEditor: (show: boolean) => void;
   setShowVisualView: (show: boolean) => void;
-  setDrumEditorQuantize: (quantize: '16th' | '8th' | 'quarter') => void;
-  setArpEditorQuantize: (quantize: '16th' | '8th' | 'quarter') => void;
-  setMuteEditorQuantize: (quantize: '16th' | '8th' | 'quarter' | 'bar') => void;
-  setTransposeEditorQuantize: (quantize: '16th' | '8th' | 'quarter' | 'bar') => void;
-  setRhythmEditorQuantize: (quantize: '16th' | '8th' | 'quarter') => void;
-  setSwingEditorQuantize: (quantize: '16th' | '8th' | 'quarter') => void;
+  setDrumEditorQuantize: (quantize: number) => void;
+  setArpEditorQuantize: (quantize: number) => void;
+  setMuteEditorQuantize: (quantize: number) => void;
+  setTransposeEditorQuantize: (quantize: number) => void;
+  setRhythmEditorQuantize: (quantize: number) => void;
+  setSwingEditorQuantize: (quantize: number) => void;
   openChordPicker: (index: number) => void;
   closeChordPicker: () => void;
 
@@ -188,23 +178,13 @@ export const useUIStore = create<UIState>((set, get) => ({
   showSwingEditor: false,
   showVisualView: false,
 
-  // Drum editor state
-  drumEditorQuantize: '16th',
-
-  // Arp editor state
-  arpEditorQuantize: '16th',
-
-  // Mute editor state
-  muteEditorQuantize: '16th',
-
-  // Transpose editor state
-  transposeEditorQuantize: 'bar',
-
-  // Rhythm editor state
-  rhythmEditorQuantize: '16th',
-
-  // Swing editor state
-  swingEditorQuantize: '8th',
+  // Editor quantize values (in beats)
+  drumEditorQuantize: 0.25,
+  arpEditorQuantize: 0.25,
+  muteEditorQuantize: 0.25,
+  transposeEditorQuantize: 4,
+  rhythmEditorQuantize: 0.25,
+  swingEditorQuantize: 0.5,
 
   // Chord picker state
   chordPickerOpen: false,

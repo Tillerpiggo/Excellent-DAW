@@ -5,20 +5,13 @@ import { Block, Track, Event } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
+import { QuantizeSelect } from '@/components/shared/QuantizeSelect';
 
 interface SwingEditorProps {
   block: Block;
   track: Track;
   beatsPerBar: number;
 }
-
-type QuantizeValue = '16th' | '8th' | 'quarter';
-
-const QUANTIZE_VALUES: Record<QuantizeValue, number> = {
-  '16th': 0.25,
-  '8th': 0.5,
-  'quarter': 1,
-};
 
 // Default swing amount (0-100%)
 const DEFAULT_SWING_AMOUNT = 66;
@@ -77,7 +70,6 @@ export function SwingEditor({ block, track, beatsPerBar }: SwingEditorProps) {
   }, [blockId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalBeats = block.durationBars * beatsPerBar;
-  const quantize = QUANTIZE_VALUES[swingEditorQuantize];
 
   // Handle notes change from MidiEditor
   const handleNotesChange = useCallback((newNotes: MidiNote[]) => {
@@ -124,17 +116,17 @@ export function SwingEditor({ block, track, beatsPerBar }: SwingEditorProps) {
   const handleFillAll = useCallback(() => {
     const newNotes: MidiNote[] = [];
     const velocity = Math.round((swingAmount / 100) * 127);
-    for (let i = 0; i < totalBeats; i += quantize) {
+    for (let i = 0; i < totalBeats; i += swingEditorQuantize) {
       newNotes.push({
         id: `swing-${i}-${Date.now()}`,
         pitch: SWING_PITCH,
         time: i,
-        duration: quantize,
+        duration: swingEditorQuantize,
         velocity,
       });
     }
     setNotes(newNotes);
-  }, [totalBeats, quantize, swingAmount]);
+  }, [totalBeats, swingEditorQuantize, swingAmount]);
 
   // Clear all
   const handleClear = useCallback(() => {
@@ -171,19 +163,7 @@ export function SwingEditor({ block, track, beatsPerBar }: SwingEditorProps) {
 
         <div className="w-px h-4 bg-border" />
 
-        {/* Quantize selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted">Grid:</span>
-          <select
-            value={swingEditorQuantize}
-            onChange={(e) => setSwingEditorQuantize(e.target.value as QuantizeValue)}
-            className="px-2 py-1 bg-background border border-border rounded text-sm text-foreground"
-          >
-            <option value="quarter">Beat</option>
-            <option value="8th">1/8</option>
-            <option value="16th">1/16</option>
-          </select>
-        </div>
+        <QuantizeSelect value={swingEditorQuantize} onChange={setSwingEditorQuantize} />
 
         <button
           onClick={handleFillOffbeats}
@@ -220,7 +200,7 @@ export function SwingEditor({ block, track, beatsPerBar }: SwingEditorProps) {
         onNotesChange={handleNotesChange}
         totalBeats={totalBeats}
         beatsPerBar={beatsPerBar}
-        quantize={quantize}
+        quantize={swingEditorQuantize}
         rowHeight={48}
       />
     </div>

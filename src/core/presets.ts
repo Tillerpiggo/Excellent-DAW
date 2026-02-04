@@ -910,17 +910,18 @@ export const PATTERN_PRESETS: Preset[] = [
   },
 ];
 
-export function getPreset(id: string): Preset | undefined {
-  return PATTERN_PRESETS.find(p => p.id === id);
-}
-
-export function getPresetsByCategory(category: PatternCategory): Preset[] {
-  return PATTERN_PRESETS.filter(p => p.category === category);
-}
-
-export function getLoopPresets(): Preset[] {
-  return PATTERN_PRESETS.filter(p => p.presetType === 'loop');
-}
+// Static preset lookups by category
+export const CATEGORY_PRESETS: Record<PatternCategory, Preset[]> = {
+  drums: PATTERN_PRESETS.filter(p => p.category === 'drums'),
+  chords: PATTERN_PRESETS.filter(p => p.category === 'chords'),
+  bass: PATTERN_PRESETS.filter(p => p.category === 'bass'),
+  arp: PATTERN_PRESETS.filter(p => p.category === 'arp'),
+  modifier: PATTERN_PRESETS.filter(p => p.category === 'modifier'),
+  rhythm: PATTERN_PRESETS.filter(p => p.category === 'rhythm'),
+  mute: PATTERN_PRESETS.filter(p => p.category === 'mute'),
+  rest: PATTERN_PRESETS.filter(p => p.category === 'rest'),
+  swing: PATTERN_PRESETS.filter(p => p.category === 'swing'),
+};
 
 export function getPresets(): Preset[] {
   return PATTERN_PRESETS.filter(p => p.presetType === 'pattern');
@@ -928,10 +929,6 @@ export function getPresets(): Preset[] {
 
 export function getLoopsByCategory(category: PatternCategory): Preset[] {
   return PATTERN_PRESETS.filter(p => p.category === category && p.presetType === 'loop');
-}
-
-export function getPatternByCategory(category: PatternCategory): Preset | undefined {
-  return PATTERN_PRESETS.find(p => p.category === category && p.presetType === 'pattern');
 }
 
 export const PRESET_CATEGORIES = ['drums', 'chords', 'bass', 'arp', 'modifier', 'rhythm', 'mute', 'rest', 'swing'] as const;
