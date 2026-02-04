@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { MidiNoteComponent } from './MidiNoteComponent';
 import { generateId } from '@/utils/id';
 
 export interface MidiRow {
@@ -29,12 +28,15 @@ export interface MidiEditorProps {
   rowHeight?: number;
 }
 
-interface MarqueeState {
-  isActive: boolean;
+interface DragState {
+  type: 'none' | 'drawing' | 'moving' | 'marquee';
   startX: number;
   startY: number;
   currentX: number;
   currentY: number;
+  noteId?: string;
+  originalTime?: number;
+  pitch?: number;
 }
 
 export function MidiEditor({
@@ -48,255 +50,363 @@ export function MidiEditor({
   rowHeight = 28,
 }: MidiEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const gridRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
-
-  // Drawing state for click-and-drag note creation
-  const [isDrawing, setIsDrawing] = useState(false);
+  const [dragState, setDragState] = useState<DragState>({ type: 'none', startX: 0, startY: 0, currentX: 0, currentY: 0 });
   const [drawingNote, setDrawingNote] = useState<MidiNote | null>(null);
-  const drawStartX = useRef(0);
-
-  // Marquee selection state
-  const [marquee, setMarquee] = useState<MarqueeState | null>(null);
 
   // Create pitch-to-row index lookup
-  const pitchToRowIndex = new Map(rows.map((row, index) => [row.pitch, index]));
+  const pitchToRowIndex = useCallback((pitch: number) => {
+    return rows.findIndex(r => r.pitch === pitch);
+  }, [rows]);
 
-  // Select a note (with shift-click support)
-  const handleSelectNote = useCallback((noteId: string, addToSelection: boolean) => {
-    setSelectedNoteIds(prev => {
-      if (addToSelection) {
-        const newSet = new Set(prev);
-        if (newSet.has(noteId)) {
-          newSet.delete(noteId);
-        } else {
-          newSet.add(noteId);
-        }
-        return newSet;
+  // Canvas dimensions
+  const labelWidth = 64;
+  const canvasWidth = totalBeats * pixelsPerBeat + labelWidth + 20;
+  const canvasHeight = rows.length * rowHeight;
+
+  // Get device pixel ratio for sharp rendering
+  const getPixelRatio = () => typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+
+  // Hit test: find note at canvas coordinates
+  const hitTestNote = useCallback((canvasX: number, canvasY: number): MidiNote | null => {
+    const gridX = canvasX - labelWidth;
+    if (gridX < 0) return null;
+
+    const rowIndex = Math.floor(canvasY / rowHeight);
+    if (rowIndex < 0 || rowIndex >= rows.length) return null;
+
+    const pitch = rows[rowIndex].pitch;
+    const beat = gridX / pixelsPerBeat;
+
+    // Find note at this position (check in reverse so topmost note wins)
+    for (let i = notes.length - 1; i >= 0; i--) {
+      const note = notes[i];
+      if (note.pitch === pitch && beat >= note.time && beat < note.time + note.duration) {
+        return note;
       }
-      return new Set([noteId]);
+    }
+    return null;
+  }, [notes, rows, rowHeight, pixelsPerBeat, labelWidth]);
+
+  // Draw the entire canvas
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = getPixelRatio();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // Clear
+    ctx.fillStyle = '#1a1a1a'; // bg-background
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    // Draw labels column background
+    ctx.fillStyle = '#242424'; // bg-surface
+    ctx.fillRect(0, 0, labelWidth, canvasHeight);
+
+    // Draw row labels
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#888';
+
+    rows.forEach((row, i) => {
+      const y = i * rowHeight;
+      // Row label
+      ctx.fillText(row.label, labelWidth - 8, y + rowHeight / 2);
+      // Row divider
+      ctx.fillStyle = 'rgba(255,255,255,0.05)';
+      ctx.fillRect(labelWidth, y + rowHeight - 1, canvasWidth - labelWidth, 1);
+      ctx.fillStyle = '#888';
     });
-  }, []);
 
-  // Clear selection
-  const clearSelection = useCallback(() => {
-    setSelectedNoteIds(new Set());
-  }, []);
+    // Draw beat lines
+    for (let beat = 0; beat <= totalBeats; beat += quantize) {
+      const x = labelWidth + beat * pixelsPerBeat;
+      const isBar = beat % beatsPerBar === 0;
+      const isBeat = beat % 1 === 0;
 
-  // Update a note
-  const handleUpdateNote = useCallback((noteId: string, updates: { time?: number; duration?: number }) => {
-    onNotesChange(notes.map(n =>
-      n.id === noteId ? { ...n, ...updates } : n
-    ));
-  }, [notes, onNotesChange]);
+      ctx.fillStyle = isBar ? 'rgba(255,255,255,0.15)' : isBeat ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)';
+      ctx.fillRect(x, 0, isBar ? 2 : 1, canvasHeight);
+    }
 
-  // Update multiple selected notes (for dragging)
-  const handleUpdateSelectedNotes = useCallback((deltaTime: number) => {
-    if (selectedNoteIds.size === 0) return;
+    // Draw notes
+    const allNotes = drawingNote ? [...notes, drawingNote] : notes;
 
-    onNotesChange(notes.map(n => {
-      if (selectedNoteIds.has(n.id)) {
-        const newTime = Math.max(0, Math.min(totalBeats - n.duration, n.time + deltaTime));
-        return { ...n, time: newTime };
+    for (const note of allNotes) {
+      const rowIndex = pitchToRowIndex(note.pitch);
+      if (rowIndex === -1) continue;
+
+      const row = rows[rowIndex];
+      const x = labelWidth + note.time * pixelsPerBeat;
+      const y = rowIndex * rowHeight + 2;
+      const w = Math.max(note.duration * pixelsPerBeat, 8);
+      const h = rowHeight - 4;
+
+      const isSelected = selectedNoteIds.has(note.id);
+
+      // Note fill
+      ctx.fillStyle = isSelected ? lightenColor(row.color, 0.3) : row.color;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, 3);
+      ctx.fill();
+
+      // Selection ring
+      if (isSelected) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Glow effect
+        ctx.shadowColor = row.color;
+        ctx.shadowBlur = 8;
+        ctx.fill();
+        ctx.shadowBlur = 0;
       }
-      return n;
-    }));
-  }, [notes, onNotesChange, selectedNoteIds, totalBeats]);
 
-  // Delete a note
-  const handleDeleteNote = useCallback((noteId: string) => {
-    onNotesChange(notes.filter(n => n.id !== noteId));
-    setSelectedNoteIds(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(noteId);
-      return newSet;
-    });
-  }, [notes, onNotesChange]);
-
-  // Delete all selected notes
-  const handleDeleteSelectedNotes = useCallback(() => {
-    if (selectedNoteIds.size === 0) return;
-    onNotesChange(notes.filter(n => !selectedNoteIds.has(n.id)));
-    setSelectedNoteIds(new Set());
-  }, [notes, onNotesChange, selectedNoteIds]);
-
-  // Start drawing a new note on mousedown
-  const handleRowMouseDown = useCallback((pitch: number, e: React.MouseEvent) => {
-    // Only handle left click on empty space
-    if (e.button !== 0) return;
-
-    // Don't start drawing if clicking on an existing note
-    if ((e.target as HTMLElement).closest('[data-midi-note]')) return;
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const rawTime = x / pixelsPerBeat;
-    const time = Math.round(rawTime / quantize) * quantize;
-
-    if (time >= 0 && time < totalBeats) {
-      e.preventDefault();
-      drawStartX.current = e.clientX;
-
-      const newNote: MidiNote = {
-        id: generateId(),
-        pitch,
-        time,
-        duration: quantize,
-        velocity: 100,
-      };
-
-      setDrawingNote(newNote);
-      setIsDrawing(true);
-      // Clear selection when drawing a new note (unless shift)
-      if (!e.shiftKey) {
-        setSelectedNoteIds(new Set([newNote.id]));
-      } else {
-        setSelectedNoteIds(prev => new Set([...prev, newNote.id]));
+      // Note shadow (subtle)
+      if (!isSelected) {
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.beginPath();
+        ctx.roundRect(x + 1, y + 1, w, h, 3);
+        ctx.fill();
+        // Redraw note on top
+        ctx.fillStyle = row.color;
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, 3);
+        ctx.fill();
       }
     }
-  }, [pixelsPerBeat, quantize, totalBeats]);
 
-  // Update drawing note duration on mouse move
-  const handleDrawingMouseMove = useCallback((e: MouseEvent) => {
-    if (!isDrawing || !drawingNote) return;
+    // Draw marquee selection
+    if (dragState.type === 'marquee') {
+      const x1 = Math.min(dragState.startX, dragState.currentX);
+      const y1 = Math.min(dragState.startY, dragState.currentY);
+      const w = Math.abs(dragState.currentX - dragState.startX);
+      const h = Math.abs(dragState.currentY - dragState.startY);
 
-    const deltaX = e.clientX - drawStartX.current;
-    const deltaDuration = deltaX / pixelsPerBeat;
-
-    // Calculate new duration, snap to grid, minimum 1 grid unit
-    let newDuration = Math.round((quantize + deltaDuration) / quantize) * quantize;
-    newDuration = Math.max(quantize, Math.min(totalBeats - drawingNote.time, newDuration));
-
-    if (newDuration !== drawingNote.duration) {
-      setDrawingNote(prev => prev ? { ...prev, duration: newDuration } : null);
+      if (w > 2 && h > 2) {
+        ctx.fillStyle = 'rgba(59, 130, 246, 0.15)';
+        ctx.strokeStyle = 'rgba(59, 130, 246, 0.6)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(x1, y1, w, h, 2);
+        ctx.fill();
+        ctx.stroke();
+      }
     }
-  }, [isDrawing, drawingNote, pixelsPerBeat, quantize, totalBeats]);
+  }, [
+    canvasWidth, canvasHeight, rows, rowHeight, notes, drawingNote,
+    totalBeats, beatsPerBar, quantize, pixelsPerBeat, labelWidth,
+    selectedNoteIds, pitchToRowIndex, dragState
+  ]);
 
-  // Finish drawing on mouse up
-  const handleDrawingMouseUp = useCallback(() => {
-    if (isDrawing && drawingNote) {
-      // Add the completed note to the list
-      onNotesChange([...notes, drawingNote]);
-    }
-    setIsDrawing(false);
-    setDrawingNote(null);
-  }, [isDrawing, drawingNote, notes, onNotesChange]);
-
-  // Add/remove drawing event listeners
+  // Redraw on state changes
   useEffect(() => {
-    if (isDrawing) {
-      document.addEventListener('mousemove', handleDrawingMouseMove);
-      document.addEventListener('mouseup', handleDrawingMouseUp);
-      return () => {
-        document.removeEventListener('mousemove', handleDrawingMouseMove);
-        document.removeEventListener('mouseup', handleDrawingMouseUp);
-      };
-    }
-  }, [isDrawing, handleDrawingMouseMove, handleDrawingMouseUp]);
+    draw();
+  }, [draw]);
 
-  // Get notes within marquee selection
-  const getNotesInMarquee = useCallback(() => {
-    if (!marquee || !gridRef.current) return [];
+  // Handle canvas resize
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
-    const { startX, startY, currentX, currentY } = marquee;
-    const minX = Math.min(startX, currentX);
-    const maxX = Math.max(startX, currentX);
-    const minY = Math.min(startY, currentY);
-    const maxY = Math.max(startY, currentY);
+    const dpr = getPixelRatio();
+    canvas.width = canvasWidth * dpr;
+    canvas.height = canvasHeight * dpr;
+    canvas.style.width = `${canvasWidth}px`;
+    canvas.style.height = `${canvasHeight}px`;
+
+    draw();
+  }, [canvasWidth, canvasHeight, draw]);
+
+  // Convert mouse event to canvas coordinates
+  const getCanvasCoords = useCallback((e: React.MouseEvent | MouseEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    };
+  }, []);
+
+  // Get notes within marquee
+  const getNotesInMarquee = useCallback((x1: number, y1: number, x2: number, y2: number): string[] => {
+    const minX = Math.min(x1, x2) - labelWidth;
+    const maxX = Math.max(x1, x2) - labelWidth;
+    const minY = Math.min(y1, y2);
+    const maxY = Math.max(y1, y2);
 
     const matchingIds: string[] = [];
 
-    notes.forEach(note => {
-      const rowIndex = pitchToRowIndex.get(note.pitch);
-      if (rowIndex === undefined) return;
+    for (const note of notes) {
+      const rowIndex = pitchToRowIndex(note.pitch);
+      if (rowIndex === -1) continue;
 
       const noteTop = rowIndex * rowHeight;
       const noteBottom = noteTop + rowHeight;
       const noteLeft = note.time * pixelsPerBeat;
       const noteRight = noteLeft + note.duration * pixelsPerBeat;
 
-      // Check if marquee intersects this note
       if (maxX >= noteLeft && minX <= noteRight && maxY >= noteTop && minY <= noteBottom) {
         matchingIds.push(note.id);
       }
-    });
+    }
 
     return matchingIds;
-  }, [marquee, notes, pitchToRowIndex, rowHeight, pixelsPerBeat]);
+  }, [notes, pitchToRowIndex, rowHeight, pixelsPerBeat, labelWidth]);
 
-  // Handle marquee start (on grid area)
-  const handleGridMouseDown = useCallback((e: React.MouseEvent) => {
-    // Only left click
+  // Mouse down handler
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
 
-    // Don't start marquee if clicking on a note or if we're in a row handler
-    if ((e.target as HTMLElement).closest('[data-midi-note]')) return;
+    const { x, y } = getCanvasCoords(e);
+    const hitNote = hitTestNote(x, y);
 
-    // Check if this is directly on the grid container (not a row)
-    const target = e.target as HTMLElement;
-    if (target.closest('[data-midi-row]')) return;
+    if (hitNote) {
+      // Clicked on a note - select and prepare to drag
+      e.preventDefault();
+      if (e.shiftKey) {
+        setSelectedNoteIds(prev => {
+          const next = new Set(prev);
+          if (next.has(hitNote.id)) next.delete(hitNote.id);
+          else next.add(hitNote.id);
+          return next;
+        });
+      } else if (!selectedNoteIds.has(hitNote.id)) {
+        setSelectedNoteIds(new Set([hitNote.id]));
+      }
+      setDragState({
+        type: 'moving',
+        startX: x,
+        startY: y,
+        currentX: x,
+        currentY: y,
+        noteId: hitNote.id,
+        originalTime: hitNote.time,
+      });
+    } else if (x > labelWidth) {
+      // Clicked on grid
+      const gridX = x - labelWidth;
+      const rowIndex = Math.floor(y / rowHeight);
 
-    e.preventDefault();
+      if (rowIndex >= 0 && rowIndex < rows.length) {
+        // Start drawing a new note
+        e.preventDefault();
+        const pitch = rows[rowIndex].pitch;
+        const rawTime = gridX / pixelsPerBeat;
+        const time = Math.round(rawTime / quantize) * quantize;
 
-    const rect = gridRef.current?.getBoundingClientRect();
-    if (!rect) return;
+        if (time >= 0 && time < totalBeats) {
+          const newNote: MidiNote = {
+            id: generateId(),
+            pitch,
+            time,
+            duration: quantize,
+            velocity: 100,
+          };
 
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+          setDrawingNote(newNote);
+          if (!e.shiftKey) {
+            setSelectedNoteIds(new Set([newNote.id]));
+          } else {
+            setSelectedNoteIds(prev => new Set([...prev, newNote.id]));
+          }
 
-    // Clear selection unless shift is held
-    if (!e.shiftKey) {
-      clearSelection();
+          setDragState({
+            type: 'drawing',
+            startX: x,
+            startY: y,
+            currentX: x,
+            currentY: y,
+            pitch,
+          });
+        }
+      } else {
+        // Start marquee
+        e.preventDefault();
+        if (!e.shiftKey) setSelectedNoteIds(new Set());
+        setDragState({
+          type: 'marquee',
+          startX: x,
+          startY: y,
+          currentX: x,
+          currentY: y,
+        });
+      }
+    }
+  }, [getCanvasCoords, hitTestNote, selectedNoteIds, rows, rowHeight, quantize, totalBeats, pixelsPerBeat, labelWidth]);
+
+  // Mouse move handler
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (dragState.type === 'none') return;
+
+    const { x, y } = getCanvasCoords(e);
+
+    if (dragState.type === 'drawing' && drawingNote) {
+      const deltaX = x - dragState.startX;
+      const deltaDuration = deltaX / pixelsPerBeat;
+      let newDuration = Math.round((quantize + deltaDuration) / quantize) * quantize;
+      newDuration = Math.max(quantize, Math.min(totalBeats - drawingNote.time, newDuration));
+
+      if (newDuration !== drawingNote.duration) {
+        setDrawingNote(prev => prev ? { ...prev, duration: newDuration } : null);
+      }
+    } else if (dragState.type === 'moving' && dragState.originalTime !== undefined) {
+      const deltaX = x - dragState.startX;
+      const deltaBeats = deltaX / pixelsPerBeat;
+      const snappedDelta = Math.round(deltaBeats / quantize) * quantize;
+
+      // Move all selected notes
+      if (snappedDelta !== 0) {
+        onNotesChange(notes.map(n => {
+          if (selectedNoteIds.has(n.id)) {
+            const baseTime = n.id === dragState.noteId ? dragState.originalTime! : n.time;
+            const newTime = Math.max(0, Math.min(totalBeats - n.duration, baseTime + snappedDelta));
+            return { ...n, time: newTime };
+          }
+          return n;
+        }));
+      }
+    } else if (dragState.type === 'marquee') {
+      setDragState(prev => ({ ...prev, currentX: x, currentY: y }));
+    }
+  }, [dragState, drawingNote, getCanvasCoords, pixelsPerBeat, quantize, totalBeats, notes, selectedNoteIds, onNotesChange]);
+
+  // Mouse up handler
+  const handleMouseUp = useCallback(() => {
+    if (dragState.type === 'drawing' && drawingNote) {
+      onNotesChange([...notes, drawingNote]);
+      setDrawingNote(null);
+    } else if (dragState.type === 'marquee') {
+      const ids = getNotesInMarquee(dragState.startX, dragState.startY, dragState.currentX, dragState.currentY);
+      if (ids.length > 0) {
+        setSelectedNoteIds(new Set(ids));
+      }
     }
 
-    setMarquee({
-      isActive: true,
-      startX: x,
-      startY: y,
-      currentX: x,
-      currentY: y,
-    });
-  }, [clearSelection]);
+    setDragState({ type: 'none', startX: 0, startY: 0, currentX: 0, currentY: 0 });
+  }, [dragState, drawingNote, notes, onNotesChange, getNotesInMarquee]);
 
-  // Handle marquee move
-  const handleMarqueeMouseMove = useCallback((e: MouseEvent) => {
-    if (!marquee?.isActive) return;
-
-    const rect = gridRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    setMarquee(prev => prev ? { ...prev, currentX: x, currentY: y } : null);
-  }, [marquee?.isActive]);
-
-  // Handle marquee end
-  const handleMarqueeMouseUp = useCallback(() => {
-    if (!marquee?.isActive) return;
-
-    const noteIds = getNotesInMarquee();
-    if (noteIds.length > 0) {
-      setSelectedNoteIds(new Set(noteIds));
-    }
-
-    setMarquee(null);
-  }, [marquee?.isActive, getNotesInMarquee]);
-
-  // Marquee event listeners
+  // Global mouse event listeners for drag operations
   useEffect(() => {
-    if (marquee?.isActive) {
-      document.addEventListener('mousemove', handleMarqueeMouseMove);
-      document.addEventListener('mouseup', handleMarqueeMouseUp);
+    if (dragState.type !== 'none') {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
       return () => {
-        document.removeEventListener('mousemove', handleMarqueeMouseMove);
-        document.removeEventListener('mouseup', handleMarqueeMouseUp);
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
       };
     }
-  }, [marquee?.isActive, handleMarqueeMouseMove, handleMarqueeMouseUp]);
+  }, [dragState.type, handleMouseMove, handleMouseUp]);
 
-  // Handle keyboard events for delete and escape
+  // Keyboard handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -307,152 +417,36 @@ export function MidiEditor({
       if (selectedNoteIds.size > 0 && (e.key === 'Delete' || e.key === 'Backspace')) {
         e.preventDefault();
         e.stopImmediatePropagation();
-        handleDeleteSelectedNotes();
+        onNotesChange(notes.filter(n => !selectedNoteIds.has(n.id)));
+        setSelectedNoteIds(new Set());
       } else if (e.key === 'Escape') {
-        clearSelection();
+        setSelectedNoteIds(new Set());
       }
     };
 
     document.addEventListener('keydown', handleKeyDown, true);
     return () => document.removeEventListener('keydown', handleKeyDown, true);
-  }, [selectedNoteIds, handleDeleteSelectedNotes, clearSelection]);
-
-  // Deselect on container click (but not grid - grid has its own handler)
-  const handleContainerClick = useCallback((e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      clearSelection();
-    }
-  }, [clearSelection]);
-
-  // Draw beat lines
-  const beatLines = [];
-  for (let beat = 0; beat <= totalBeats; beat += quantize) {
-    const isBar = beat % beatsPerBar === 0;
-    const isBeat = beat % 1 === 0;
-    beatLines.push(
-      <div
-        key={beat}
-        className={`absolute top-0 bottom-0 ${
-          isBar ? 'bg-border' : isBeat ? 'bg-border/50' : 'bg-border/20'
-        }`}
-        style={{
-          left: beat * pixelsPerBeat,
-          width: isBar ? 2 : 1,
-        }}
-      />
-    );
-  }
-
-  // Calculate marquee rectangle
-  const marqueeRect = marquee ? {
-    left: Math.min(marquee.startX, marquee.currentX),
-    top: Math.min(marquee.startY, marquee.currentY),
-    width: Math.abs(marquee.currentX - marquee.startX),
-    height: Math.abs(marquee.currentY - marquee.startY),
-  } : null;
+  }, [selectedNoteIds, notes, onNotesChange]);
 
   return (
     <div
       ref={containerRef}
-      className={`flex-1 overflow-auto bg-background ${marquee?.isActive ? 'select-none' : ''}`}
-      onClick={handleContainerClick}
+      className={`flex-1 overflow-auto bg-background ${dragState.type !== 'none' ? 'select-none' : ''}`}
     >
-      <div className="flex">
-        {/* Labels column */}
-        <div className="w-16 flex-shrink-0 bg-surface border-r border-border">
-          {rows.map(row => (
-            <div
-              key={row.pitch}
-              className="flex items-center justify-end pr-2 text-xs font-medium text-muted border-b border-border/50"
-              style={{ height: rowHeight }}
-            >
-              {row.label}
-            </div>
-          ))}
-        </div>
-
-        {/* Grid area */}
-        <div
-          ref={gridRef}
-          className="relative"
-          style={{ width: totalBeats * pixelsPerBeat + 20 }}
-          onMouseDown={handleGridMouseDown}
-        >
-          {/* Beat lines */}
-          {beatLines}
-
-          {/* Note rows */}
-          {rows.map((row) => {
-            const rowNotes = notes.filter(n => n.pitch === row.pitch);
-            const isDrawingThisRow = drawingNote?.pitch === row.pitch;
-            return (
-              <div
-                key={row.pitch}
-                data-midi-row
-                className="relative border-b border-border/50 hover:bg-white/5"
-                style={{ height: rowHeight }}
-                onMouseDown={(e) => handleRowMouseDown(row.pitch, e)}
-              >
-                {rowNotes.map(note => (
-                  <MidiNoteComponent
-                    key={note.id}
-                    id={note.id}
-                    time={note.time}
-                    duration={note.duration}
-                    pixelsPerBeat={pixelsPerBeat}
-                    color={row.color}
-                    isSelected={selectedNoteIds.has(note.id)}
-                    onSelect={(addToSelection) => handleSelectNote(note.id, addToSelection)}
-                    onUpdate={(updates) => handleUpdateNote(note.id, updates)}
-                    onDelete={() => handleDeleteNote(note.id)}
-                    minTime={0}
-                    maxTime={totalBeats}
-                    quantize={quantize}
-                    selectedCount={selectedNoteIds.size}
-                    onUpdateSelected={handleUpdateSelectedNotes}
-                  />
-                ))}
-                {/* Drawing preview */}
-                {isDrawingThisRow && drawingNote && (
-                  <MidiNoteComponent
-                    key="drawing"
-                    id={drawingNote.id}
-                    time={drawingNote.time}
-                    duration={drawingNote.duration}
-                    pixelsPerBeat={pixelsPerBeat}
-                    color={row.color}
-                    isSelected={true}
-                    onSelect={() => {}}
-                    onUpdate={() => {}}
-                    onDelete={() => {}}
-                    minTime={0}
-                    maxTime={totalBeats}
-                    quantize={quantize}
-                    selectedCount={1}
-                    onUpdateSelected={() => {}}
-                  />
-                )}
-              </div>
-            );
-          })}
-
-          {/* Marquee selection box */}
-          {marquee?.isActive && marqueeRect && marqueeRect.width > 2 && marqueeRect.height > 2 && (
-            <div
-              className="absolute pointer-events-none z-50"
-              style={{
-                left: marqueeRect.left,
-                top: marqueeRect.top,
-                width: marqueeRect.width,
-                height: marqueeRect.height,
-                backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                border: '1px solid rgba(59, 130, 246, 0.6)',
-                borderRadius: 2,
-              }}
-            />
-          )}
-        </div>
-      </div>
+      <canvas
+        ref={canvasRef}
+        className="block cursor-crosshair"
+        onMouseDown={handleMouseDown}
+      />
     </div>
   );
+}
+
+// Helper to lighten a hex color
+function lightenColor(hex: string, amount: number): string {
+  const num = parseInt(hex.replace('#', ''), 16);
+  const r = Math.min(255, ((num >> 16) & 0xff) + Math.round(255 * amount));
+  const g = Math.min(255, ((num >> 8) & 0xff) + Math.round(255 * amount));
+  const b = Math.min(255, (num & 0xff) + Math.round(255 * amount));
+  return `rgb(${r},${g},${b})`;
 }
