@@ -2,7 +2,7 @@
 
 import { useRef, useCallback, useEffect, useState } from 'react';
 import { TimelineRuler } from '../Timeline/TimelineRuler';
-import { TimelineContent } from './TimelineContent';
+import { TimelineCanvas } from './TimelineCanvas';
 import { TrackLabels } from './TrackLabels';
 import { Playhead } from '../Timeline/Playhead';
 import { ZoomControls } from './ZoomControls';
@@ -15,6 +15,7 @@ export function ArrangementView() {
   // Separate selectors for primitives vs object data
   const totalBars = useProjectStore((state) => state.project.totalBars);
   const beatsPerBar = useProjectStore((state) => state.project.beatsPerBar);
+  const bpm = useProjectStore((state) => state.project.bpm);
   // tracks subscription still needed for flattenTracks - this is a known remaining bottleneck
   const tracks = useProjectStore((state) => state.project.tracks);
   const rootTracks = useProjectStore((state) => state.project.rootTracks);
@@ -151,11 +152,12 @@ export function ArrangementView() {
           </div>
 
           {/* Timeline Content */}
-          <TimelineContent
+          <TimelineCanvas
             flatTracks={flatTracks}
             pixelsPerBeat={pixelsPerBeat}
             beatsPerBar={beatsPerBar}
             totalBars={totalBars}
+            bpm={bpm}
           />
         </div>
       </div>
