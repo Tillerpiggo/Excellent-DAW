@@ -52,41 +52,22 @@ export class VisualPlaybackEngine {
     // Create state for each track with a visual instrument
     for (const resolved of resolvedTracks) {
       if (resolved.visualInstrumentId) {
-        this.trackStates.set(
-          resolved.trackId,
-          createVisualInstrumentState(resolved.visualInstrumentId)
-        );
+        console.log('[VisualPlayback] Creating state for track:', resolved.trackId, 'visualParams:', resolved.visualParams);
+        const state = createVisualInstrumentState(resolved.visualInstrumentId, resolved.visualParams);
+        console.log('[VisualPlayback] Created state with params:', state.params);
+        this.trackStates.set(resolved.trackId, state);
 
         // Schedule visual events for this track
+        // All events now have pitch (drums use MIDI pitches 36/38/39/42)
         for (const event of resolved.output.events) {
-          // Handle pitched events
-          if (event.pitch !== undefined) {
-            this.scheduledEvents.push({
-              trackId: resolved.trackId,
-              instrumentId: resolved.visualInstrumentId,
-              time: event.time,
-              pitch: event.pitch,
-              velocity: event.velocity ?? 100,
-              duration: event.duration ?? 0.25,
-            });
-          }
-          // Handle drum events - map drum type to pseudo-pitch for visual variety
-          else if (event.drum !== undefined) {
-            const drumPitchMap: Record<string, number> = {
-              kick: 36,
-              snare: 38,
-              clap: 39,
-              hihat: 42,
-            };
-            this.scheduledEvents.push({
-              trackId: resolved.trackId,
-              instrumentId: resolved.visualInstrumentId,
-              time: event.time,
-              pitch: drumPitchMap[event.drum] ?? 36,
-              velocity: event.velocity ?? 100,
-              duration: event.duration ?? 0.1,
-            });
-          }
+          this.scheduledEvents.push({
+            trackId: resolved.trackId,
+            instrumentId: resolved.visualInstrumentId,
+            time: event.time,
+            pitch: event.pitch,
+            velocity: event.velocity,
+            duration: event.duration,
+          });
         }
       }
     }

@@ -13,6 +13,12 @@ interface VisualSceneProps {
 export function VisualScene({ trackIds }: VisualSceneProps) {
   const trackStates = useVisualStore((state) => state.trackStates);
 
+  // Render all tracks that have states (includes inherited visual instruments)
+  // Fall back to trackIds if no states yet (before playback starts)
+  const trackIdsToRender = trackStates.size > 0
+    ? Array.from(trackStates.keys())
+    : trackIds;
+
   return (
     <>
       {/* Lighting */}
@@ -30,7 +36,7 @@ export function VisualScene({ trackIds }: VisualSceneProps) {
       />
 
       {/* Render visual instruments - all centered, overlapping */}
-      {trackIds.map((trackId) => {
+      {trackIdsToRender.map((trackId) => {
         const state = trackStates.get(trackId);
         if (!state) return null;
 

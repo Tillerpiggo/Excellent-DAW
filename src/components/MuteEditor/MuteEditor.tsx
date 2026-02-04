@@ -32,25 +32,25 @@ const QUANTIZE_VALUES: Record<QuantizeValue, number> = {
   'bar': 4,
 };
 
+// Mute events use pitch 0 as a marker (not a real MIDI pitch)
+const MUTE_PITCH = 0;
+
 function extractMutesFromBlock(block: Block): MidiNote[] {
   const allEvents = block.streams?.flatMap(s => s.events) || [];
-  // Mute events have velocity but no pitch or drum
-  const muteEvents = allEvents.filter(
-    e => e.velocity !== undefined && e.pitch === undefined && e.drum === undefined
-  );
-
-  return muteEvents.map((event, index) => ({
+  // All events in a mute track are mute events
+  return allEvents.map((event, index) => ({
     id: `mute-${event.time}-${index}`,
     row: 'mute',
     time: event.time,
-    duration: event.duration ?? 0.25,
-    velocity: event.velocity ?? 100,
+    duration: event.duration,
+    velocity: event.velocity,
   }));
 }
 
 function notesToEvents(notes: MidiNote[]): Event[] {
   return notes.map(n => ({
     time: n.time,
+    pitch: MUTE_PITCH,
     velocity: n.velocity,
     duration: n.duration,
   }));

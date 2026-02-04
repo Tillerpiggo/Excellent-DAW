@@ -19,12 +19,28 @@ export interface ProjectMetadata {
   previewTracks?: PreviewTrackData[];
 }
 
+// MIDI drum pitch values (General MIDI standard)
+export const DRUM_PITCHES = {
+  kick: 36,
+  snare: 38,
+  clap: 39,
+  hihat: 42,
+} as const;
+
+export type DrumType = keyof typeof DRUM_PITCHES;
+
+export function getDrumType(pitch: number): DrumType | null {
+  for (const [type, p] of Object.entries(DRUM_PITCHES)) {
+    if (p === pitch) return type as DrumType;
+  }
+  return null;
+}
+
 export interface Event {
   time: number; // in beats
-  pitch?: number; // MIDI note number
-  velocity?: number; // 0-127
-  duration?: number; // in beats
-  drum?: 'kick' | 'snare' | 'hihat' | 'clap';
+  pitch: number; // MIDI note number (drums use 36/38/39/42)
+  velocity: number; // 0-127
+  duration: number; // in beats
 }
 
 export interface EventStream {
@@ -92,6 +108,7 @@ export interface Track {
   typeId: TrackTypeId;
   instrumentId?: InstrumentId;
   visualInstrumentId?: VisualInstrumentId;
+  visualParams?: Record<string, unknown>; // Overrides for visual instrument defaults
   muted: boolean;
   collapsed: boolean;
   blocks: Block[];

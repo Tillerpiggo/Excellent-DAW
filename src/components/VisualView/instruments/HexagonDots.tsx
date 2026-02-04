@@ -15,6 +15,9 @@ interface DotInstance {
   color: THREE.Color;
   size: number;
   opacity: number;
+  // For rotation: store the radius from center and current angle
+  radius: number;
+  angle: number;
 }
 
 // Rainbow color palette with smooth transitions
@@ -123,6 +126,9 @@ export function HexagonDots({ state }: HexagonDotsProps) {
           const angle = baseAngle + (Math.random() - 0.5) * 0.3;
           const position = getHexagonPoint(angle, hexagonRadius, hexagonDistance);
 
+          // Calculate the radius from center for this dot (distance in x,y plane)
+          const dotRadius = Math.sqrt(position.x * position.x + position.y * position.y);
+
           // Slight color variation for each dot
           const dotColor = baseColor.clone();
           dotColor.offsetHSL(Math.random() * 0.05 - 0.025, 0, Math.random() * 0.1 - 0.05);
@@ -135,6 +141,8 @@ export function HexagonDots({ state }: HexagonDotsProps) {
             color: dotColor,
             size: 0.1 + velocityFactor * 0.1,
             opacity: 0.8 + velocityFactor * 0.2,
+            radius: dotRadius,
+            angle: angle,
           };
           dotsRef.current.push(newDot);
         }
@@ -149,9 +157,17 @@ export function HexagonDots({ state }: HexagonDotsProps) {
       }
     }
 
-    // Update all dots - move towards camera
+    // Rotation speed in radians per second
+    const rotationSpeed = 0.5;
+
+    // Update all dots - move towards camera and rotate around center
     for (const dot of dotsRef.current) {
       dot.position.z += dotSpeed * delta;
+
+      // Rotate the dot around the center of its plane
+      dot.angle += rotationSpeed * delta;
+      dot.position.x = Math.cos(dot.angle) * dot.radius;
+      dot.position.y = Math.sin(dot.angle) * dot.radius;
 
       // Fade in when starting, fade out when approaching camera
       const distanceFromCamera = camera.position.z - dot.position.z;

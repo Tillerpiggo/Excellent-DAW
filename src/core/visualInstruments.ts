@@ -35,17 +35,26 @@ export const VISUAL_INSTRUMENTS: Record<VisualInstrumentId, VisualInstrumentDefi
       symmetry: 6,
       generations: 3,
       glowIntensity: 0.9,
+      colorPulse: false,            // When true, midi hits spawn outward color inversion pulses
+      pulseSpeed: 200,              // Pixels per second the pulse expands
+      pulseBandWidth: 40,           // Width of the inverted color band
+      pulseFadeDuration: 2.0,       // Seconds for pulse to fade out
     },
   },
 };
 
-export function createVisualInstrumentState(instrumentId: VisualInstrumentId): VisualInstrumentState {
+export function createVisualInstrumentState(
+  instrumentId: VisualInstrumentId,
+  params?: Record<string, unknown>
+): VisualInstrumentState {
+  const defaultParams = VISUAL_INSTRUMENTS[instrumentId].defaultParams;
   return {
     instrumentId,
     activeNotes: new Map<number, ActiveNote>(),
     currentRotation: 0,
     bloom: 0,
     colorShift: 0,
+    params: { ...defaultParams, ...params },
   };
 }
 

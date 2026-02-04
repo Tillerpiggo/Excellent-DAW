@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Block, Track, Event } from '@/core/types';
+import { Block, Track, Event, DRUM_PITCHES, getDrumType, DrumType } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { MidiEditor, MidiNote } from '@/components/shared/MidiEditor';
@@ -12,7 +12,6 @@ interface DrumEditorProps {
   beatsPerBar: number;
 }
 
-type DrumType = 'kick' | 'snare' | 'hihat' | 'clap';
 type QuantizeValue = '16th' | '8th' | 'quarter';
 
 const DRUM_ORDER: DrumType[] = ['hihat', 'clap', 'snare', 'kick'];
@@ -39,21 +38,24 @@ const QUANTIZE_VALUES: Record<QuantizeValue, number> = {
 
 function extractDrumsFromBlock(block: Block): MidiNote[] {
   const allEvents = block.streams?.flatMap(s => s.events) || [];
-  const drumEvents = allEvents.filter(e => e.drum !== undefined);
+  const drumEvents = allEvents.filter(e => getDrumType(e.pitch) !== null);
 
-  return drumEvents.map((event, index) => ({
-    id: `${event.drum}-${event.time}-${index}`,
-    row: event.drum as string,
-    time: event.time,
-    duration: event.duration ?? 0.25,
-    velocity: event.velocity ?? 100,
-  }));
+  return drumEvents.map((event, index) => {
+    const drumType = getDrumType(event.pitch)!;
+    return {
+      id: `${drumType}-${event.time}-${index}`,
+      row: drumType,
+      time: event.time,
+      duration: event.duration,
+      velocity: event.velocity,
+    };
+  });
 }
 
 function notesToEvents(notes: MidiNote[]): Event[] {
   return notes.map(n => ({
     time: n.time,
-    drum: n.row as DrumType,
+    pitch: DRUM_PITCHES[n.row as DrumType],
     velocity: n.velocity,
     duration: n.duration,
   }));

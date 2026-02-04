@@ -34,11 +34,33 @@ const INSTRUMENT_OPTIONS = Object.entries(INSTRUMENTS).map(([id, def]) => ({
 // Visual instrument options
 const VISUAL_INSTRUMENT_OPTIONS = getVisualInstrumentOptions();
 
+// Find inherited visual instrument by walking up the parent chain
+function getInheritedVisualInstrument(
+  track: Track,
+  tracks: Record<string, Track>
+): VisualInstrumentId | undefined {
+  if (track.visualInstrumentId) return track.visualInstrumentId;
+  if (!track.parentId) return undefined;
+
+  let current = tracks[track.parentId];
+  while (current) {
+    if (current.visualInstrumentId) return current.visualInstrumentId;
+    if (!current.parentId) break;
+    current = tracks[current.parentId];
+  }
+  return undefined;
+}
+
 export function TrackInspector({ track }: TrackInspectorProps) {
   const { updateTrack, deleteTrack } = useProjectStore();
+  const tracks = useProjectStore((s) => s.project.tracks);
   const { selectTrack } = useUIStore();
 
   const trackType = TRACK_TYPES[track.typeId];
+
+  // Get effective visual instrument (own or inherited from parent)
+  const effectiveVisualInstrument = getInheritedVisualInstrument(track, tracks);
+  const isInherited = effectiveVisualInstrument && !track.visualInstrumentId;
 
   const handleDelete = () => {
     if (confirm('Delete this track and all its children?')) {
@@ -111,6 +133,7 @@ export function TrackInspector({ track }: TrackInspectorProps) {
           onChange={(e) =>
             updateTrack(track.id, {
               visualInstrumentId: e.target.value ? (e.target.value as VisualInstrumentId) : undefined,
+              visualParams: undefined, // Reset params when changing instrument
             })
           }
           className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
@@ -128,6 +151,100 @@ export function TrackInspector({ track }: TrackInspectorProps) {
           </p>
         )}
       </div>
+
+      {/* Visual Instrument Parameters - Fractal Tunnel (own or inherited) */}
+      {effectiveVisualInstrument === 'fractalTunnel' && (
+        <div className="space-y-3 pl-3 border-l-2 border-accent-from/30">
+          <label className="block text-xs text-muted-foreground">
+            Fractal Options{isInherited && ' (inherited)'}
+          </label>
+
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={track.visualParams?.colorPulse as boolean ?? false}
+              onChange={(e) => {
+                const newParams = {
+                  ...track.visualParams,
+                  colorPulse: e.target.checked,
+                };
+                console.log('[TrackInspector] Setting visualParams:', newParams);
+                updateTrack(track.id, { visualParams: newParams });
+              }}
+              className="w-4 h-4 rounded border-border accent-accent-from"
+            />
+            <span className="text-sm">Color Pulse</span>
+          </label>
+
+          {(track.visualParams?.colorPulse as boolean) && (
+            <div className="space-y-2">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">
+                  Pulse Speed (pixels/sec)
+                </label>
+                <input
+                  type="number"
+                  min="50"
+                  max="500"
+                  step="10"
+                  value={track.visualParams?.pulseSpeed as number ?? 200}
+                  onChange={(e) =>
+                    updateTrack(track.id, {
+                      visualParams: {
+                        ...track.visualParams,
+                        pulseSpeed: parseFloat(e.target.value) || 200,
+                      },
+                    })
+                  }
+                  className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">
+                  Band Width (pixels)
+                </label>
+                <input
+                  type="number"
+                  min="10"
+                  max="100"
+                  step="5"
+                  value={track.visualParams?.pulseBandWidth as number ?? 40}
+                  onChange={(e) =>
+                    updateTrack(track.id, {
+                      visualParams: {
+                        ...track.visualParams,
+                        pulseBandWidth: parseFloat(e.target.value) || 40,
+                      },
+                    })
+                  }
+                  className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">
+                  Fade Duration (seconds)
+                </label>
+                <input
+                  type="number"
+                  min="0.5"
+                  max="5"
+                  step="0.1"
+                  value={track.visualParams?.pulseFadeDuration as number ?? 2.0}
+                  onChange={(e) =>
+                    updateTrack(track.id, {
+                      visualParams: {
+                        ...track.visualParams,
+                        pulseFadeDuration: parseFloat(e.target.value) || 2.0,
+                      },
+                    })
+                  }
+                  className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Mute Toggle */}
       <div className="flex items-center gap-3">

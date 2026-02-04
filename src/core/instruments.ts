@@ -1,5 +1,5 @@
 import * as Tone from 'tone';
-import { InstrumentDefinition, InstrumentId, Event, AudioData } from './types';
+import { InstrumentDefinition, InstrumentId, Event, AudioData, getDrumType } from './types';
 import { getAudioFile, createAudioBlobUrl, revokeAudioBlobUrl } from '@/services/audioStorage';
 
 export const INSTRUMENTS: Record<InstrumentId, InstrumentDefinition> = {
@@ -208,12 +208,13 @@ export function scheduleEvent(
   // The lookAhead system schedules callbacks early so we can schedule
   // audio events precisely. Clamping breaks sample-accurate timing.
   const time = absoluteTime;
-  const velocity = (event.velocity ?? 100) / 127;
-  const duration = event.duration ?? 0.25;
+  const velocity = event.velocity / 127;
+  const duration = event.duration;
 
   if (instrumentId === 'drums') {
-    const drum = event.drum || 'kick';
-    switch (drum) {
+    // Detect drum type from MIDI pitch
+    const drumType = getDrumType(event.pitch);
+    switch (drumType) {
       case 'kick':
         instruments.kick.triggerAttackRelease('C1', duration, time, velocity);
         break;
@@ -226,8 +227,12 @@ export function scheduleEvent(
       case 'clap':
         instruments.clap.triggerAttackRelease(duration, time, velocity);
         break;
+      default:
+        // Unknown drum pitch - default to kick
+        instruments.kick.triggerAttackRelease('C1', duration, time, velocity);
+        break;
     }
-  } else if (event.pitch !== undefined) {
+  } else {
     const note = midiToNote(event.pitch);
     switch (instrumentId) {
       case 'synth':

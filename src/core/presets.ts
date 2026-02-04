@@ -1,11 +1,23 @@
-import { PatternPreset, Event, PatternCategory } from './types';
+import { PatternPreset, Event, PatternCategory, DRUM_PITCHES, DrumType } from './types';
+
+// Marker pitch for control/modifier events (swing, gate, mute, scale)
+// These events use pitch 0 as they don't produce audio, they modify behavior
+const CONTROL_PITCH = 0;
 
 // Helper to create drum events
-const drum = (time: number, type: 'kick' | 'snare' | 'hihat' | 'clap', velocity = 100): Event => ({
+const drum = (time: number, type: DrumType, velocity = 100): Event => ({
   time,
-  drum: type,
+  pitch: DRUM_PITCHES[type],
   velocity,
   duration: 0.25,
+});
+
+// Helper to create control/modifier events (swing, gate, mute, scale)
+const ctrl = (time: number, velocity = 100, duration = 0.25): Event => ({
+  time,
+  pitch: CONTROL_PITCH,
+  velocity,
+  duration,
 });
 
 // Helper to create note events
@@ -360,10 +372,10 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 1,
     presetType: 'loop',
     events: [
-      { time: 0.5, velocity: 42 },  // 33% swing
-      { time: 1.5, velocity: 42 },
-      { time: 2.5, velocity: 42 },
-      { time: 3.5, velocity: 42 },
+      ctrl(0.5, 42),  // 33% swing
+      ctrl(1.5, 42),
+      ctrl(2.5, 42),
+      ctrl(3.5, 42),
     ],
   },
   {
@@ -375,10 +387,10 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 1,
     presetType: 'loop',
     events: [
-      { time: 0.5, velocity: 64 },  // 50% swing
-      { time: 1.5, velocity: 64 },
-      { time: 2.5, velocity: 64 },
-      { time: 3.5, velocity: 64 },
+      ctrl(0.5, 64),  // 50% swing
+      ctrl(1.5, 64),
+      ctrl(2.5, 64),
+      ctrl(3.5, 64),
     ],
   },
   {
@@ -390,10 +402,10 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 1,
     presetType: 'loop',
     events: [
-      { time: 0.5, velocity: 84 },  // 66% swing
-      { time: 1.5, velocity: 84 },
-      { time: 2.5, velocity: 84 },
-      { time: 3.5, velocity: 84 },
+      ctrl(0.5, 84),  // 66% swing
+      ctrl(1.5, 84),
+      ctrl(2.5, 84),
+      ctrl(3.5, 84),
     ],
   },
   {
@@ -405,10 +417,10 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 1,
     presetType: 'loop',
     events: [
-      { time: 0.5, velocity: 108 },  // 85% swing
-      { time: 1.5, velocity: 108 },
-      { time: 2.5, velocity: 108 },
-      { time: 3.5, velocity: 108 },
+      ctrl(0.5, 108),  // 85% swing
+      ctrl(1.5, 108),
+      ctrl(2.5, 108),
+      ctrl(3.5, 108),
     ],
   },
   {
@@ -420,14 +432,14 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 1,
     presetType: 'loop',
     events: [
-      { time: 0.25, velocity: 64 },
-      { time: 0.75, velocity: 64 },
-      { time: 1.25, velocity: 64 },
-      { time: 1.75, velocity: 64 },
-      { time: 2.25, velocity: 64 },
-      { time: 2.75, velocity: 64 },
-      { time: 3.25, velocity: 64 },
-      { time: 3.75, velocity: 64 },
+      ctrl(0.25, 64),
+      ctrl(0.75, 64),
+      ctrl(1.25, 64),
+      ctrl(1.75, 64),
+      ctrl(2.25, 64),
+      ctrl(2.75, 64),
+      ctrl(3.25, 64),
+      ctrl(3.75, 64),
     ],
   },
   {
@@ -439,8 +451,8 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 1,
     presetType: 'loop',
     events: [
-      { time: 1.5, velocity: 84 },
-      { time: 3.5, velocity: 84 },
+      ctrl(1.5, 84),
+      ctrl(3.5, 84),
     ],
   },
 
@@ -454,10 +466,10 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 1,
     presetType: 'loop',
     events: [
-      { time: 0, velocity: 127 },
-      { time: 1, velocity: 80 },
-      { time: 2, velocity: 100 },
-      { time: 3, velocity: 80 },
+      ctrl(0, 127),
+      ctrl(1, 80),
+      ctrl(2, 100),
+      ctrl(3, 80),
     ],
   },
   {
@@ -468,10 +480,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     defaultTrackType: 'scale',
     durationBars: 2,
     presetType: 'loop',
-    events: Array.from({ length: 8 }, (_, i) => ({
-      time: i,
-      velocity: 50 + i * 10,
-    })),
+    events: Array.from({ length: 8 }, (_, i) => ctrl(i, 50 + i * 10)),
   },
   {
     id: 'mod-gate-offbeat',
@@ -482,10 +491,10 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 1,
     presetType: 'loop',
     events: [
-      { time: 0.5, velocity: 100 },
-      { time: 1.5, velocity: 100 },
-      { time: 2.5, velocity: 100 },
-      { time: 3.5, velocity: 100 },
+      ctrl(0.5),
+      ctrl(1.5),
+      ctrl(2.5),
+      ctrl(3.5),
     ],
   },
   {
@@ -497,10 +506,10 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 1,
     presetType: 'loop',
     events: [
-      { time: 0, velocity: 100 },
-      { time: 1, velocity: 100 },
-      { time: 2, velocity: 100 },
-      { time: 3, velocity: 100 },
+      ctrl(0),
+      ctrl(1),
+      ctrl(2),
+      ctrl(3),
     ],
   },
   {
@@ -512,7 +521,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 1,
     presetType: 'loop',
     events: [
-      { time: 0, pitch: 72, velocity: 100 }, // 60 + 12 = octave up
+      note(0, 72, 4), // 60 + 12 = octave up
     ],
   },
   {
@@ -524,7 +533,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 1,
     presetType: 'loop',
     events: [
-      { time: 0, pitch: 48, velocity: 100 }, // 60 - 12 = octave down
+      note(0, 48, 4), // 60 - 12 = octave down
     ],
   },
   {
@@ -536,7 +545,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 1,
     presetType: 'loop',
     events: [
-      { time: 0, velocity: 100 },
+      ctrl(0, 100, 4),
     ],
   },
   {
@@ -548,8 +557,8 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 4,
     presetType: 'loop',
     events: [
-      { time: 4, velocity: 100 },   // Bar 2 (beats 4-7)
-      { time: 12, velocity: 100 },  // Bar 4 (beats 12-15)
+      ctrl(4, 100, 4),   // Bar 2 (beats 4-7)
+      ctrl(12, 100, 4),  // Bar 4 (beats 12-15)
     ],
   },
   {
@@ -561,8 +570,8 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 4,
     presetType: 'loop',
     events: [
-      { time: 0, velocity: 100 },   // Bar 1 (beats 0-3)
-      { time: 8, velocity: 100 },   // Bar 3 (beats 8-11)
+      ctrl(0, 100, 4),   // Bar 1 (beats 0-3)
+      ctrl(8, 100, 4),   // Bar 3 (beats 8-11)
     ],
   },
   {
@@ -574,10 +583,10 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 1,
     presetType: 'loop',
     events: [
-      { time: 0.5, velocity: 100 },
-      { time: 1.5, velocity: 100 },
-      { time: 2.5, velocity: 100 },
-      { time: 3.5, velocity: 100 },
+      ctrl(0.5),
+      ctrl(1.5),
+      ctrl(2.5),
+      ctrl(3.5),
     ],
   },
   {
@@ -589,10 +598,10 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 1,
     presetType: 'loop',
     events: [
-      { time: 0, velocity: 100 },
-      { time: 1, velocity: 100 },
-      { time: 2, velocity: 100 },
-      { time: 3, velocity: 100 },
+      ctrl(0),
+      ctrl(1),
+      ctrl(2),
+      ctrl(3),
     ],
   },
   {
@@ -604,9 +613,9 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 2,
     presetType: 'loop',
     events: [
-      { time: 1.5, velocity: 100 },
-      { time: 5, velocity: 100 },
-      { time: 6.5, velocity: 100 },
+      ctrl(1.5),
+      ctrl(5),
+      ctrl(6.5),
     ],
   },
   {
@@ -618,10 +627,10 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 1,
     presetType: 'loop',
     events: [
-      { time: 2, velocity: 100 },
-      { time: 2.25, velocity: 100 },
-      { time: 2.75, velocity: 100 },
-      { time: 3, velocity: 100 },
+      ctrl(2),
+      ctrl(2.25),
+      ctrl(2.75),
+      ctrl(3),
     ],
   },
   {
@@ -633,12 +642,12 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 4,
     presetType: 'loop',
     events: [
-      { time: 0, velocity: 100 },
-      { time: 1, velocity: 100 },
-      { time: 2, velocity: 100 },
-      { time: 4, velocity: 100 },
-      { time: 5, velocity: 100 },
-      { time: 8, velocity: 100 },
+      ctrl(0),
+      ctrl(1),
+      ctrl(2),
+      ctrl(4),
+      ctrl(5),
+      ctrl(8),
     ],
   },
 
@@ -871,7 +880,7 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 1,
     presetType: 'pattern',
     events: [
-      { time: 0, velocity: 100 },
+      ctrl(0, 100, 4),
     ],
   },
   {
@@ -893,10 +902,10 @@ export const PATTERN_PRESETS: PatternPreset[] = [
     durationBars: 1,
     presetType: 'pattern',
     events: [
-      { time: 0.5, velocity: 84 },
-      { time: 1.5, velocity: 84 },
-      { time: 2.5, velocity: 84 },
-      { time: 3.5, velocity: 84 },
+      ctrl(0.5, 84),
+      ctrl(1.5, 84),
+      ctrl(2.5, 84),
+      ctrl(3.5, 84),
     ],
   },
 ];

@@ -5,7 +5,7 @@ function mergeEvents(a: Event[], b: Event[]): Event[] {
   const result = [...a];
   for (const event of b) {
     const existing = result.find(
-      e => e.time === event.time && e.pitch === event.pitch && e.drum === event.drum
+      e => e.time === event.time && e.pitch === event.pitch
     );
     if (!existing) {
       result.push(event);
@@ -286,11 +286,11 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
       if (self.events.length === 0) return { events: [], harmony: parent.harmony };
       if (parent.events.length === 0) return { events: [], harmony: parent.harmony };
 
-      // Get events active at a given time (works for both pitched and drum events)
+      // Get events active at a given time
       const getEventsAtTime = (time: number): Event[] => {
         // Find events that are active at this time (within their duration)
         const active = parent.events.filter(e => {
-          const end = e.time + (e.duration || 0.5);
+          const end = e.time + e.duration;
           return e.time <= time && time < end;
         });
         if (active.length > 0) return active;
@@ -309,24 +309,13 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
       const triggered: Event[] = [];
       for (const rhythmEvent of self.events) {
         for (const parentEvent of getEventsAtTime(rhythmEvent.time)) {
-          // Preserve the event type (pitched or drum)
-          if (parentEvent.drum !== undefined) {
-            // Drum event - preserve drum property
-            triggered.push({
-              time: rhythmEvent.time,
-              drum: parentEvent.drum,
-              velocity: rhythmEvent.velocity ?? parentEvent.velocity,
-              duration: rhythmEvent.duration ?? 0.25,
-            });
-          } else if (parentEvent.pitch !== undefined) {
-            // Pitched event - preserve pitch property
-            triggered.push({
-              time: rhythmEvent.time,
-              pitch: parentEvent.pitch,
-              velocity: rhythmEvent.velocity ?? parentEvent.velocity,
-              duration: rhythmEvent.duration ?? 0.25,
-            });
-          }
+          // Pitch carries through naturally (works for both melodic and drum events)
+          triggered.push({
+            time: rhythmEvent.time,
+            pitch: parentEvent.pitch,
+            velocity: rhythmEvent.velocity ?? parentEvent.velocity,
+            duration: rhythmEvent.duration ?? 0.25,
+          });
         }
       }
       return { events: triggered.sort((a, b) => a.time - b.time), harmony: parent.harmony };

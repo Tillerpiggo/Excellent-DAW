@@ -5,7 +5,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { DrumEditor } from './DrumEditor';
 import { PresetSelector } from '@/components/shared/PresetSelector';
-import { PatternPreset } from '@/core/types';
+import { PatternPreset, getDrumType } from '@/core/types';
 
 export function DrumEditorPanel() {
   const { selectedBlockIds, selectedTrackId, showDrumEditor, setShowDrumEditor } = useUIStore();
@@ -26,7 +26,7 @@ export function DrumEditorPanel() {
     if (!selectedBlock || !selectedTrack) return false;
     if (selectedTrack.typeId === 'rhythm') return false;
     const allEvents = selectedBlock.streams?.flatMap(s => s.events) || [];
-    return allEvents.some(e => e.drum !== undefined);
+    return allEvents.some(e => getDrumType(e.pitch) !== null);
   }, [selectedBlock, selectedTrack]);
 
   // Check if track uses a pitched instrument (takes priority over drums)

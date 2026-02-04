@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Block, Track } from '@/core/types';
+import { Block, Track, getDrumType } from '@/core/types';
 import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useDragDrop } from '@/hooks/useDragDrop';
@@ -475,7 +475,8 @@ function EventVisualization({
         let topPercent: number;
         let heightPercent: number;
 
-        if (event.drum) {
+        const drumType = getDrumType(event.pitch);
+        if (drumType) {
           // Drums: position based on drum type with fixed lanes
           const drumLanes: Record<string, number> = {
             hihat: 0,
@@ -484,17 +485,14 @@ function EventVisualization({
             kick: 3,
           };
           const laneCount = 4;
-          const lane = drumLanes[event.drum] ?? 2;
+          const lane = drumLanes[drumType] ?? 2;
           heightPercent = 100 / laneCount - 4;
           topPercent = (lane / laneCount) * 100 + 2;
-        } else if (event.pitch !== undefined) {
+        } else {
           // Melodic: position based on pitch (higher pitch = higher position)
           const normalizedPitch = (event.pitch - minPitch) / pitchRange;
           heightPercent = Math.max(100 / pitchRange, 6);
           topPercent = (1 - normalizedPitch) * (100 - heightPercent);
-        } else {
-          topPercent = 40;
-          heightPercent = 20;
         }
 
         // Slightly reduced opacity for loop iterations

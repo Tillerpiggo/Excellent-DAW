@@ -23,6 +23,7 @@ export interface VisualInstrumentState {
   currentRotation: number;
   bloom: number;
   colorShift: number;
+  params: Record<string, unknown>; // Merged: instrument defaults + track overrides
 }
 
 export interface VisualEvent {

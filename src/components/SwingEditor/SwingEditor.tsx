@@ -34,27 +34,25 @@ const QUANTIZE_VALUES: Record<QuantizeValue, number> = {
 // Default swing amount (0-100%)
 const DEFAULT_SWING_AMOUNT = 66;
 
+// Swing events use pitch 0 as a control marker
+const SWING_PITCH = 0;
+
 function extractSwingFromBlock(block: Block): { notes: MidiNote[]; swingAmount: number } {
   const allEvents = block.streams?.flatMap(s => s.events) || [];
 
-  // Swing events have velocity that represents swing amount
-  const swingEvents = allEvents.filter(
-    e => e.velocity !== undefined
-  );
-
   // Calculate average velocity to determine swing amount
   let swingAmount = DEFAULT_SWING_AMOUNT;
-  if (swingEvents.length > 0) {
-    const avgVelocity = swingEvents.reduce((sum, e) => sum + (e.velocity ?? 64), 0) / swingEvents.length;
+  if (allEvents.length > 0) {
+    const avgVelocity = allEvents.reduce((sum, e) => sum + e.velocity, 0) / allEvents.length;
     swingAmount = Math.round((avgVelocity / 127) * 100);
   }
 
-  const notes = swingEvents.map((event, index) => ({
+  const notes = allEvents.map((event, index) => ({
     id: `swing-${event.time}-${index}`,
     row: 'swing' as SwingRow,
     time: event.time,
-    duration: event.duration ?? 0.25,
-    velocity: event.velocity ?? Math.round((swingAmount / 100) * 127),
+    duration: event.duration,
+    velocity: event.velocity,
   }));
 
   return { notes, swingAmount };
@@ -64,6 +62,7 @@ function notesToEvents(notes: MidiNote[], swingAmount: number): Event[] {
   const velocity = Math.round((swingAmount / 100) * 127);
   return notes.map(n => ({
     time: n.time,
+    pitch: SWING_PITCH,
     velocity,
     duration: n.duration,
   }));

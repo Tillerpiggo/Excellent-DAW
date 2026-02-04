@@ -20,6 +20,7 @@ export const useVisualStore = create<VisualState>((set) => ({
       newStates.set(trackId, {
         ...state,
         activeNotes: new Map(state.activeNotes),
+        params: { ...state.params }, // Clone params to ensure updates propagate
       });
     }
     set({ trackStates: newStates });

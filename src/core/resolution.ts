@@ -6,6 +6,7 @@ export interface ResolvedTrack {
   trackId: string;
   instrumentId?: string;
   visualInstrumentId?: VisualInstrumentId;
+  visualParams?: Record<string, unknown>;
   output: Output;
 }
 
@@ -92,7 +93,8 @@ export function resolveTrack(
   track: Track,
   project: Project,
   context: ProcessContext,
-  parentOutput?: Output
+  parentOutput?: Output,
+  inheritedVisualInstrumentId?: VisualInstrumentId
 ): ResolvedTrack[] {
   const results: ResolvedTrack[] = [];
 
@@ -144,18 +146,57 @@ export function resolveTrack(
   const hasAudioInstrument = track.instrumentId && combinedOutput.events.length > 0;
   const hasVisualInstrument = track.visualInstrumentId && combinedOutput.events.length > 0;
 
+  // Determine the visual instrument ID (own or inherited)
+  const effectiveVisualInstrumentId = track.visualInstrumentId || inheritedVisualInstrumentId;
+
+  // Check if this track should have visual output via inheritance
+  // (has visualParams with actual content, no own visualInstrumentId, but can inherit one, and has its own events)
+  const hasVisualParams = track.visualParams && Object.keys(track.visualParams).length > 0;
+  const hasInheritedVisualOutput = !track.visualInstrumentId &&
+    hasVisualParams &&
+    inheritedVisualInstrumentId &&
+    selfOutput.events.length > 0;
+
+  // Debug: log inheritance check for any track with visualParams
+  if (hasVisualParams && !track.visualInstrumentId) {
+    console.log('[Resolution] Inheritance check for', track.id, ':', {
+      hasVisualParams,
+      inheritedVisualInstrumentId,
+      selfEventsCount: selfOutput.events.length,
+      willInherit: hasInheritedVisualOutput,
+      visualParams: track.visualParams
+    });
+  }
+
   if (hasAudioBlocks || hasAudioInstrument || hasVisualInstrument) {
+    if (track.visualInstrumentId) {
+      console.log('[Resolution] Track', track.id, 'has own visual, visualParams:', track.visualParams);
+    }
     results.push({
       trackId: track.id,
       instrumentId: track.instrumentId,
       visualInstrumentId: track.visualInstrumentId,
+      visualParams: track.visualParams,
       output: combinedOutput,
     });
   }
 
-  // Step 6: Process regular children
+  // If track inherits visual instrument via visualParams, create a visual-only output
+  if (hasInheritedVisualOutput) {
+    console.log('[Resolution] Track', track.id, 'INHERITS visual, visualParams:', track.visualParams);
+    results.push({
+      trackId: track.id,
+      instrumentId: undefined, // No audio output
+      visualInstrumentId: inheritedVisualInstrumentId,
+      visualParams: track.visualParams,
+      output: selfOutput, // Only this track's events, not combined
+    });
+  }
+
+  // Step 6: Process regular children, passing down visual instrument for inheritance
+  const visualToInherit = track.visualInstrumentId || inheritedVisualInstrumentId;
   for (const childTrack of regularChildren) {
-    const childResults = resolveTrack(childTrack, project, enrichedContext, combinedOutput);
+    const childResults = resolveTrack(childTrack, project, enrichedContext, combinedOutput, visualToInherit);
     results.push(...childResults);
   }
 
@@ -258,11 +299,14 @@ export function resolveBlockEvents(
 export function extractEvents(events: Event[], mode: 'timing' | 'pitch' | 'velocity' | 'all'): Event[] {
   switch (mode) {
     case 'timing':
-      return events.map(e => ({ time: e.time, velocity: 100 }));
+      // Keep timing, use default pitch (C4) and velocity
+      return events.map(e => ({ time: e.time, pitch: 60, velocity: 100, duration: e.duration }));
     case 'pitch':
-      return events.map(e => ({ time: e.time, pitch: e.pitch }));
+      // Keep pitch and timing, use default velocity
+      return events.map(e => ({ time: e.time, pitch: e.pitch, velocity: 100, duration: e.duration }));
     case 'velocity':
-      return events.map(e => ({ time: e.time, velocity: e.velocity }));
+      // Keep velocity and timing, use default pitch (C4)
+      return events.map(e => ({ time: e.time, pitch: 60, velocity: e.velocity, duration: e.duration }));
     case 'all':
     default:
       return events;
