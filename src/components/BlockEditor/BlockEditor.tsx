@@ -10,10 +10,11 @@ import { MuteEditorPanel } from '../MuteEditor';
 import { TransposeEditorPanel } from '../TransposeEditor';
 import { RhythmEditorPanel } from '../RhythmEditor';
 import { SwingEditorPanel } from '../SwingEditor';
+import { GenericMidiEditorPanel } from '../GenericMidiEditor';
 import { VisualViewPanel } from '../VisualView';
 import { PatternCategory } from '@/core/types';
 
-export type EditorType = 'chord' | 'drum' | 'arp' | 'mute' | 'transpose' | 'rhythm' | 'swing' | null;
+export type EditorType = 'chord' | 'drum' | 'arp' | 'mute' | 'transpose' | 'rhythm' | 'swing' | 'generic' | null;
 type ViewMode = 'editor' | 'visual';
 
 /**
@@ -73,7 +74,8 @@ export function BlockEditor() {
     if (instrumentId === 'drumKit') return 'drum';
     if (['leadSynth', 'keys', 'pad', 'bass'].includes(instrumentId ?? '')) return 'chord';
 
-    return null;
+    // Default to generic MIDI editor
+    return 'generic';
   }, [selectedBlock, selectedTrack]);
 
   // Render the editor content based on type
@@ -93,6 +95,8 @@ export function BlockEditor() {
         return <RhythmEditorPanel />;
       case 'swing':
         return <SwingEditorPanel />;
+      case 'generic':
+        return <GenericMidiEditorPanel />;
       default:
         return (
           <div className="flex-1 flex flex-col items-center justify-center text-muted gap-3">
@@ -100,9 +104,7 @@ export function BlockEditor() {
             <svg className="w-12 h-12 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
             </svg>
-            <p className="text-sm">
-              {!selectedBlock ? 'Select a block to edit' : 'No editor available for this block type'}
-            </p>
+            <p className="text-sm">Select a block to edit</p>
           </div>
         );
     }

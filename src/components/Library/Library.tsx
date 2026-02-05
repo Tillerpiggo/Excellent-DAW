@@ -2,12 +2,13 @@
 
 import { useState } from 'react';
 import { CategorySection } from './CategorySection';
-import { SegmentedControl } from './SegmentedControl';
+import { SegmentedControl, LibraryTab } from './SegmentedControl';
 import { PatternGrid } from './PatternGrid';
+import { InstrumentBrowser } from './InstrumentBrowser';
 import { PRESET_CATEGORIES } from '@/core/presets';
 
 export function Library() {
-  const [activeTab, setActiveTab] = useState<'loops' | 'patterns'>('loops');
+  const [activeTab, setActiveTab] = useState<LibraryTab>('instruments');
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set(PRESET_CATEGORIES)
   );
@@ -32,7 +33,9 @@ export function Library() {
 
       <SegmentedControl activeTab={activeTab} onChange={setActiveTab} />
 
-      {activeTab === 'loops' ? (
+      {activeTab === 'instruments' && <InstrumentBrowser />}
+
+      {activeTab === 'loops' && (
         <div className="space-y-2">
           {PRESET_CATEGORIES.map((category) => (
             <CategorySection
@@ -43,13 +46,15 @@ export function Library() {
             />
           ))}
         </div>
-      ) : (
-        <PatternGrid />
       )}
+
+      {activeTab === 'patterns' && <PatternGrid />}
 
       <div className="mt-4 pt-4 border-t border-border">
         <p className="text-xs text-muted-foreground">
-          Drag patterns onto the timeline or track hierarchy to add them.
+          {activeTab === 'instruments'
+            ? 'Click to assign to selected track, or drag onto timeline.'
+            : 'Drag patterns onto the timeline or track hierarchy to add them.'}
         </p>
       </div>
     </div>

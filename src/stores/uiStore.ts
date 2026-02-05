@@ -1,12 +1,12 @@
 import { create } from 'zustand';
 import { Preset } from '@/core/types';
-import { DropPosition } from '@/utils/trackDragValidation';
 
 interface DragState {
-  type: 'preset' | 'block' | null;
+  type: 'preset' | 'block' | 'instrument' | null;
   preset?: Preset;
   blockId?: string;
   sourceTrackId?: string;
+  instrumentId?: string;
 }
 
 interface MarqueeSelection {
@@ -28,11 +28,6 @@ interface UIState {
   dropTargetTrackId: string | null;
   dropTargetBar: number | null;
 
-  // Track reorder drag state
-  trackDragActiveId: string | null;
-  trackDropTargetId: string | null;
-  trackDropPosition: DropPosition | null;
-
   // Playback
   isPlaying: boolean;
   currentBeat: number;
@@ -49,6 +44,9 @@ interface UIState {
   trackHeightScale: number;
   scrollLeft: number;
   scrollTop: number;
+
+  // Timeline quantization (in beats)
+  timelineQuantize: number;
 
   // Panel visibility
   showInspector: boolean;
@@ -72,6 +70,7 @@ interface UIState {
 
   startDragPreset: (preset: Preset) => void;
   startDragBlock: (blockId: string, sourceTrackId: string) => void;
+  startDragInstrument: (instrumentId: string) => void;
   setDropTarget: (trackId: string | null, bar?: number | null) => void;
   endDrag: () => void;
 
@@ -89,15 +88,12 @@ interface UIState {
   setTrackHeightScale: (scale: number) => void;
   setScrollLeft: (scroll: number) => void;
   setScrollTop: (scroll: number) => void;
+  setTimelineQuantize: (beats: number) => void;
 
   toggleInspector: () => void;
   toggleLibrary: () => void;
   openChordPicker: (index: number) => void;
   closeChordPicker: () => void;
-
-  // Track reorder actions
-  setTrackDragState: (activeId: string, targetId: string | null, position: DropPosition | null) => void;
-  clearTrackDragState: () => void;
 
   // View actions
   setCurrentView: (view: 'home' | 'editor') => void;
@@ -113,11 +109,6 @@ export const useUIStore = create<UIState>((set) => ({
   dragState: { type: null },
   dropTargetTrackId: null,
   dropTargetBar: null,
-
-  // Track reorder drag state
-  trackDragActiveId: null,
-  trackDropTargetId: null,
-  trackDropPosition: null,
 
   // Playback
   isPlaying: false,
@@ -135,6 +126,9 @@ export const useUIStore = create<UIState>((set) => ({
   trackHeightScale: 1.0,
   scrollLeft: 0,
   scrollTop: 0,
+
+  // Timeline quantization (default: 4 beats = 1 bar)
+  timelineQuantize: 4,
 
   // Panel visibility
   showInspector: true,
@@ -218,6 +212,12 @@ export const useUIStore = create<UIState>((set) => ({
     });
   },
 
+  startDragInstrument: (instrumentId) => {
+    set({
+      dragState: { type: 'instrument', instrumentId },
+    });
+  },
+
   setDropTarget: (trackId, bar) => {
     set({
       dropTargetTrackId: trackId,
@@ -285,6 +285,10 @@ export const useUIStore = create<UIState>((set) => ({
     set({ scrollTop: Math.max(0, scroll) });
   },
 
+  setTimelineQuantize: (beats) => {
+    set({ timelineQuantize: beats });
+  },
+
   toggleInspector: () => {
     set((state) => ({ showInspector: !state.showInspector }));
   },
@@ -299,22 +303,6 @@ export const useUIStore = create<UIState>((set) => ({
 
   closeChordPicker: () => {
     set({ chordPickerOpen: false, chordPickerTargetIndex: null });
-  },
-
-  setTrackDragState: (activeId, targetId, position) => {
-    set({
-      trackDragActiveId: activeId,
-      trackDropTargetId: targetId,
-      trackDropPosition: position,
-    });
-  },
-
-  clearTrackDragState: () => {
-    set({
-      trackDragActiveId: null,
-      trackDropTargetId: null,
-      trackDropPosition: null,
-    });
   },
 
   setCurrentView: (view) => {

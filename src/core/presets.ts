@@ -36,7 +36,7 @@ export const PATTERN_PRESETS: Preset[] = [
     category: 'drums',
     description: 'Classic kick on every beat',
     defaultTrackType: 'base',
-    defaultInstrument: 'drums',
+    defaultInstrument: 'drumKit',
     durationBars: 1,
     presetType: 'loop',
     events: [
@@ -52,7 +52,7 @@ export const PATTERN_PRESETS: Preset[] = [
     category: 'drums',
     description: 'Hip-hop style kick pattern',
     defaultTrackType: 'base',
-    defaultInstrument: 'drums',
+    defaultInstrument: 'drumKit',
     durationBars: 1,
     presetType: 'loop',
     events: [
@@ -66,7 +66,7 @@ export const PATTERN_PRESETS: Preset[] = [
     category: 'drums',
     description: 'Snare on 2 and 4',
     defaultTrackType: 'add',
-    defaultInstrument: 'drums',
+    defaultInstrument: 'drumKit',
     durationBars: 1,
     presetType: 'loop',
     events: [
@@ -80,7 +80,7 @@ export const PATTERN_PRESETS: Preset[] = [
     category: 'drums',
     description: 'Hi-hats on every eighth note',
     defaultTrackType: 'add',
-    defaultInstrument: 'drums',
+    defaultInstrument: 'drumKit',
     durationBars: 1,
     presetType: 'loop',
     events: [
@@ -100,7 +100,7 @@ export const PATTERN_PRESETS: Preset[] = [
     category: 'drums',
     description: 'Fast hi-hat pattern',
     defaultTrackType: 'add',
-    defaultInstrument: 'drums',
+    defaultInstrument: 'drumKit',
     durationBars: 1,
     presetType: 'loop',
     events: Array.from({ length: 16 }, (_, i) =>
@@ -113,7 +113,7 @@ export const PATTERN_PRESETS: Preset[] = [
     category: 'drums',
     description: 'Quiet snare hits for groove',
     defaultTrackType: 'add',
-    defaultInstrument: 'drums',
+    defaultInstrument: 'drumKit',
     durationBars: 1,
     presetType: 'loop',
     events: [
@@ -129,7 +129,7 @@ export const PATTERN_PRESETS: Preset[] = [
     category: 'drums',
     description: 'Claps for emphasis',
     defaultTrackType: 'add',
-    defaultInstrument: 'drums',
+    defaultInstrument: 'drumKit',
     durationBars: 1,
     presetType: 'loop',
     events: [
@@ -143,7 +143,7 @@ export const PATTERN_PRESETS: Preset[] = [
     category: 'drums',
     description: 'Simple drum fill',
     defaultTrackType: 'add',
-    defaultInstrument: 'drums',
+    defaultInstrument: 'drumKit',
     durationBars: 1,
     presetType: 'loop',
     events: [
@@ -221,7 +221,7 @@ export const PATTERN_PRESETS: Preset[] = [
     category: 'chords',
     description: 'Root and fifth only',
     defaultTrackType: 'base',
-    defaultInstrument: 'synth',
+    defaultInstrument: 'leadSynth',
     durationBars: 2,
     presetType: 'loop',
     events: [
@@ -305,7 +305,7 @@ export const PATTERN_PRESETS: Preset[] = [
     category: 'arp',
     description: 'Upward arpeggio pattern',
     defaultTrackType: 'base',
-    defaultInstrument: 'synth',
+    defaultInstrument: 'leadSynth',
     durationBars: 1,
     presetType: 'loop',
     events: [
@@ -321,7 +321,7 @@ export const PATTERN_PRESETS: Preset[] = [
     category: 'arp',
     description: 'Downward arpeggio pattern',
     defaultTrackType: 'base',
-    defaultInstrument: 'synth',
+    defaultInstrument: 'leadSynth',
     durationBars: 1,
     presetType: 'loop',
     events: [
@@ -337,7 +337,7 @@ export const PATTERN_PRESETS: Preset[] = [
     category: 'arp',
     description: '16th note arpeggios',
     defaultTrackType: 'base',
-    defaultInstrument: 'synth',
+    defaultInstrument: 'leadSynth',
     durationBars: 1,
     presetType: 'loop',
     events: Array.from({ length: 16 }, (_, i) => {
@@ -351,7 +351,7 @@ export const PATTERN_PRESETS: Preset[] = [
     category: 'arp',
     description: 'Up-down arpeggio pattern',
     defaultTrackType: 'base',
-    defaultInstrument: 'synth',
+    defaultInstrument: 'leadSynth',
     durationBars: 1,
     presetType: 'loop',
     events: [
@@ -796,7 +796,7 @@ export const PATTERN_PRESETS: Preset[] = [
     category: 'drums',
     description: 'Simple 4-beat kick pattern',
     defaultTrackType: 'base',
-    defaultInstrument: 'drums',
+    defaultInstrument: 'drumKit',
     durationBars: 1,
     presetType: 'pattern',
     events: [
@@ -838,7 +838,7 @@ export const PATTERN_PRESETS: Preset[] = [
     category: 'arp',
     description: 'Simple 4-note arpeggio',
     defaultTrackType: 'base',
-    defaultInstrument: 'synth',
+    defaultInstrument: 'leadSynth',
     durationBars: 1,
     presetType: 'pattern',
     events: [

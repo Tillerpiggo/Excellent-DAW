@@ -3,7 +3,7 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
 import { TimelineCanvas } from './TimelineCanvas';
 import { TrackLabels } from './TrackLabels';
-import { ZoomControls } from './ZoomControls';
+import { TimelineToolbar } from './TimelineToolbar';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { flattenTracks } from '@/utils/tree';
@@ -114,11 +114,14 @@ export function ArrangementView() {
   }, [pixelsPerBeat, trackHeightScale, scrollLeft, currentBeat, setPixelsPerBeat, setTrackHeightScale, setScrollLeft]);
 
   return (
-    <div className="h-full relative">
+    <div className="h-full flex flex-col">
+      {/* Toolbar */}
+      <TimelineToolbar />
+
       {/* Scrollable content */}
       <div
         ref={containerRef}
-        className="h-full overflow-auto bg-background"
+        className="flex-1 overflow-auto bg-background"
         onScroll={handleScroll}
       >
         <div
@@ -163,8 +166,6 @@ export function ArrangementView() {
         </div>
       </div>
 
-      {/* Zoom Controls */}
-      <ZoomControls />
     </div>
   );
 }

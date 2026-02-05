@@ -1,21 +1,17 @@
 'use client';
 
-import { TrackRow } from './TrackRow';
-import { DndTrackContext } from './DndTrackContext';
+import { TrackTree } from './TrackTree';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useDragDrop } from '@/hooks/useDragDrop';
-import { flattenTracks } from '@/utils/tree';
 
 export function TrackHierarchy() {
   const project = useProjectStore((state) => state.project);
   const { addTrack } = useProjectStore();
-  const { collapsedTrackIds, dropTargetTrackId, dragState } = useUIStore();
-  const { handleDragOver, handleDragLeave, handleHierarchyDrop, handleDragEnd } = useDragDrop();
+  const { dropTargetTrackId, dragState } = useUIStore();
+  const { handleDragOver, handleDragLeave, handleHierarchyDrop } = useDragDrop();
 
-  const flatTracks = flattenTracks(project, collapsedTrackIds);
-  const flatTrackIds = flatTracks.map((node) => node.track.id);
-  const hasTracks = flatTracks.length > 0;
+  const hasTracks = Object.keys(project.tracks).length > 0;
 
   return (
     <div className="h-full flex flex-col">
@@ -59,13 +55,7 @@ export function TrackHierarchy() {
           </div>
         )}
 
-        <DndTrackContext flatTrackIds={flatTrackIds}>
-          <div className="py-1">
-            {flatTracks.map((node) => (
-              <TrackRow key={node.track.id} node={node} />
-            ))}
-          </div>
-        </DndTrackContext>
+        {hasTracks && <TrackTree treeId="track-hierarchy" />}
       </div>
     </div>
   );

@@ -183,17 +183,20 @@ function renderLines(
   width: number,
   height: number,
   rotation: number,
-  scale: number
+  scale: number,
+  params: Record<string, unknown>
 ) {
   const centerX = width / 2;
   const centerY = height / 2;
   const baseScaleVal = Math.min(width, height) * 0.4;
+  const symmetryFolds = (params.symmetryFolds as number) ?? CONFIG.symmetryFolds;
+  const glowIntensity = (params.glowIntensity as number) ?? CONFIG.glowIntensity;
 
   ctx.globalCompositeOperation = 'lighter';
 
   for (const line of lines) {
-    for (let fold = 0; fold < CONFIG.symmetryFolds; fold++) {
-      const angle = (fold / CONFIG.symmetryFolds) * Math.PI * 2 + rotation;
+    for (let fold = 0; fold < symmetryFolds; fold++) {
+      const angle = (fold / symmetryFolds) * Math.PI * 2 + rotation;
       const mirror = fold % 2 === 1;
 
       ctx.beginPath();
@@ -223,9 +226,9 @@ function renderLines(
       const lightness = 40 + depthBrightness * 30;
 
       const passes = [
-        { width: 8 * CONFIG.glowIntensity, alpha: 0.03 * line.opacity },
-        { width: 4 * CONFIG.glowIntensity, alpha: 0.08 * line.opacity },
-        { width: 2 * CONFIG.glowIntensity, alpha: 0.15 * line.opacity },
+        { width: 8 * glowIntensity, alpha: 0.03 * line.opacity },
+        { width: 4 * glowIntensity, alpha: 0.08 * line.opacity },
+        { width: 2 * glowIntensity, alpha: 0.15 * line.opacity },
         { width: 1, alpha: 0.4 * line.opacity },
       ];
 
@@ -294,6 +297,7 @@ function SilkSymmetryVisual({ trackId }: SilkSymmetryProps) {
     if (!ctx) return;
 
     const state = engineRef.current.getTrackState(trackId);
+    const params = state?.params ?? {};
     const hasActiveNotes = state ? state.activeNotes.size > 0 : false;
     const spiralDirection = hasActiveNotes ? -1 : 1;
 
@@ -305,7 +309,7 @@ function SilkSymmetryVisual({ trackId }: SilkSymmetryProps) {
 
     const rotation = beatsRef.current * 0.05 * spiralDirection;
     const lines = generateLines(beatsRef.current, oscillators, spiralDirection);
-    renderLines(ctx, lines, canvas.width, canvas.height, rotation, 1.0);
+    renderLines(ctx, lines, canvas.width, canvas.height, rotation, 1.0, params);
     renderVignette(ctx, canvas.width, canvas.height);
 
     texture.needsUpdate = true;
@@ -344,6 +348,7 @@ export const SilkSymmetry: Instrument = {
   },
 
   settingsSchema: {
+    symmetryFolds: { type: 'number', label: 'Symmetry Folds', min: 2, max: 16, step: 1, default: 8 },
     glowIntensity: { type: 'number', label: 'Glow', min: 0, max: 1, step: 0.1, default: 0.7 },
   },
 

@@ -2,10 +2,11 @@
 
 import { useCallback, DragEvent, useState } from 'react';
 import { useUIStore } from '@/stores/uiStore';
-import { useProjectStore, addTrackFromPreset } from '@/stores/projectStore';
+import { useProjectStore, addTrackFromPreset, addTrackFromInstrument } from '@/stores/projectStore';
 import { Preset } from '@/core/types';
 import { PATTERN_PRESETS } from '@/core/presets';
 import { processAudioFile, audioDurationToBars, isAudioFile } from '@/core/audio';
+import { getInstrument } from '@/instruments';
 
 export function useDragDrop() {
   const {
@@ -18,7 +19,7 @@ export function useDragDrop() {
     dropTargetBar,
   } = useUIStore();
 
-  const { addBlock, moveBlock, addAudioTrack } = useProjectStore();
+  const { addBlock, moveBlock, addAudioTrack, updateTrack } = useProjectStore();
   const project = useProjectStore((state) => state.project);
 
   // Track if we're currently processing an audio file drop
@@ -46,10 +47,10 @@ export function useDragDrop() {
 
   // Handle drag over timeline or track hierarchy
   const handleDragOver = useCallback(
-    (e: DragEvent, trackId: string, bar?: number) => {
+    (e: DragEvent, trackId: string | null, bar?: number) => {
       e.preventDefault();
-      // For presets always copy, for blocks check Ctrl/Meta key
-      if (dragState.type === 'preset') {
+      // For presets and instruments always copy, for blocks check Alt key
+      if (dragState.type === 'preset' || dragState.type === 'instrument') {
         e.dataTransfer.dropEffect = 'copy';
       } else {
         e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move';
@@ -126,7 +127,7 @@ export function useDragDrop() {
 
   // Handle drop on timeline
   const handleTimelineDrop = useCallback(
-    async (e: DragEvent, trackId: string, bar: number) => {
+    async (e: DragEvent, trackId: string | null, bar: number) => {
       e.preventDefault();
 
       // Check for file drop first
@@ -141,19 +142,40 @@ export function useDragDrop() {
       }
 
       try {
+        // Try to get instrument data first
+        const instrumentId = e.dataTransfer.getData('application/instrument');
+        if (instrumentId) {
+          // Dropping an instrument
+          if (trackId) {
+            // Drop on existing track - assign the instrument to it
+            const instrument = getInstrument(instrumentId);
+            updateTrack(trackId, {
+              instrumentId,
+              instrumentSettings: instrument?.defaultSettings ? { ...instrument.defaultSettings } : undefined,
+            });
+          } else {
+            // Drop on empty area - create new track with this instrument
+            addTrackFromInstrument(instrumentId);
+          }
+          endDrag();
+          return;
+        }
+
         const data = JSON.parse(e.dataTransfer.getData('application/json'));
 
         if (data.type === 'preset') {
-          const preset = PATTERN_PRESETS.find(p => p.id === data.presetId);
-          if (preset) {
-            addBlock(trackId, {
-              startBar: bar,
-              durationBars: preset.durationBars,
-              loop: true,
-              streams: [{ events: [...preset.events] }],
-            });
+          if (trackId) {
+            const preset = PATTERN_PRESETS.find(p => p.id === data.presetId);
+            if (preset) {
+              addBlock(trackId, {
+                startBar: bar,
+                durationBars: preset.durationBars,
+                loop: true,
+                streams: [{ events: [...preset.events] }],
+              });
+            }
           }
-        } else if (data.type === 'block') {
+        } else if (data.type === 'block' && trackId) {
           const sourceTrack = project.tracks[data.trackId];
           const block = sourceTrack?.blocks.find(b => b.id === data.blockId);
           if (block) {
@@ -184,12 +206,12 @@ export function useDragDrop() {
           }
         }
       } catch (err) {
-        console.error('Drop error:', err);
+        // Ignore parse errors - might be empty or instrument drop
       }
 
       endDrag();
     },
-    [addBlock, moveBlock, project.tracks, endDrag, handleAudioFileDrop]
+    [addBlock, moveBlock, updateTrack, project.tracks, endDrag, handleAudioFileDrop]
   );
 
   // Handle drop on track hierarchy (adds a child track)
@@ -198,13 +220,21 @@ export function useDragDrop() {
       e.preventDefault();
 
       try {
+        // Try to get instrument data first
+        const instrumentId = e.dataTransfer.getData('application/instrument');
+        if (instrumentId) {
+          addTrackFromInstrument(instrumentId, parentTrackId);
+          endDrag();
+          return;
+        }
+
         const data = JSON.parse(e.dataTransfer.getData('application/json'));
 
         if (data.type === 'preset') {
           addTrackFromPreset(data.presetId, parentTrackId);
         }
       } catch (err) {
-        console.error('Drop error:', err);
+        // Ignore parse errors
       }
 
       endDrag();

@@ -569,3 +569,39 @@ export function addTrackFromPreset(presetId: string, parentId?: string): string 
 
   return useProjectStore.getState().addTrack(parentId, preset);
 }
+
+// Helper to add a track from an instrument
+export function addTrackFromInstrument(instrumentId: string, parentId?: string): string {
+  const { getInstrument } = require('@/instruments');
+  const instrument = getInstrument(instrumentId);
+
+  const trackId = generateId();
+
+  const track: Track = {
+    id: trackId,
+    name: instrument?.name || 'New Track',
+    typeId: 'base',
+    instrumentId,
+    instrumentSettings: instrument?.defaultSettings ? { ...instrument.defaultSettings } : undefined,
+    muted: false,
+    collapsed: false,
+    blocks: [],
+    childIds: [],
+    parentId,
+  };
+
+  useProjectStore.setState((state) => {
+    state.project.tracks[trackId] = track;
+
+    if (parentId) {
+      const parent = state.project.tracks[parentId];
+      if (parent) {
+        parent.childIds.push(trackId);
+      }
+    } else {
+      state.project.rootTracks.push(trackId);
+    }
+  });
+
+  return trackId;
+}

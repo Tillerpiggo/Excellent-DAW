@@ -1,33 +1,34 @@
 'use client';
 
+export type LibraryTab = 'instruments' | 'loops' | 'patterns';
+
 interface SegmentedControlProps {
-  activeTab: 'loops' | 'patterns';
-  onChange: (tab: 'loops' | 'patterns') => void;
+  activeTab: LibraryTab;
+  onChange: (tab: LibraryTab) => void;
 }
+
+const TABS: { id: LibraryTab; label: string }[] = [
+  { id: 'instruments', label: 'Instruments' },
+  { id: 'loops', label: 'Loops' },
+  { id: 'patterns', label: 'Patterns' },
+];
 
 export function SegmentedControl({ activeTab, onChange }: SegmentedControlProps) {
   return (
     <div className="flex rounded-lg bg-muted/50 p-1 mb-3">
-      <button
-        onClick={() => onChange('loops')}
-        className={`flex-1 px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
-          activeTab === 'loops'
-            ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-sm'
-            : 'text-muted-foreground hover:text-foreground'
-        }`}
-      >
-        Loops
-      </button>
-      <button
-        onClick={() => onChange('patterns')}
-        className={`flex-1 px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
-          activeTab === 'patterns'
-            ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-sm'
-            : 'text-muted-foreground hover:text-foreground'
-        }`}
-      >
-        Patterns
-      </button>
+      {TABS.map((tab) => (
+        <button
+          key={tab.id}
+          onClick={() => onChange(tab.id)}
+          className={`flex-1 px-2 py-1.5 text-sm font-medium rounded-md transition-all ${
+            activeTab === tab.id
+              ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          {tab.label}
+        </button>
+      ))}
     </div>
   );
 }

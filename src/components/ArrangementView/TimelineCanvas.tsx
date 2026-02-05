@@ -361,9 +361,9 @@ function BlockMesh({
   const contentAreaWidth = blockWidth - handleWidthPx;
 
   // Colors
-  const baseColor = track.instrumentId
+  const baseColor = (track.instrumentId
     ? INSTRUMENT_COLORS[track.instrumentId]
-    : TRACK_TYPE_COLORS[track.typeId];
+    : TRACK_TYPE_COLORS[track.typeId]) || '#64748b';
   const handleColor = darken(baseColor, 40);
   const selectionColor = tintWhite(baseColor, 0.85);
   const selectedHandleColor = tintWhite(baseColor, 0.5);
@@ -1179,7 +1179,8 @@ function TimelineScene({
   const {
     selectedBlockIds, selectBlock, selectBlocks, clearBlockSelection,
     setIsScrubbing, setCurrentBeat,
-    loopStart, loopEnd, setLoopEnabled
+    loopStart, loopEnd, setLoopEnabled,
+    timelineQuantize
   } = useUIStore();
   const { updateBlock } = useProjectStore();
   const tracks = useProjectStore((state) => state.project.tracks);
@@ -1333,11 +1334,16 @@ function TimelineScene({
       const { x, y } = screenToWorld(e.clientX, e.clientY);
       if (x === 0 && y === 0) return; // Canvas not found
 
+      // Calculate quantized delta in bars
+      // timelineQuantize is in beats, so we snap to that grid
+      const quantizePixels = timelineQuantize * pixelsPerBeat;
+
       if (dragState.type === 'marquee') {
         setDragState(prev => ({ ...prev, currentX: x, currentY: y }));
       } else if (dragState.type === 'drag' && dragState.originalPositions && dragState.block) {
         const deltaX = x - dragState.startX;
-        const deltaBars = Math.round(deltaX / barWidth);
+        const deltaQuantizeUnits = Math.round(deltaX / quantizePixels);
+        const deltaBars = (deltaQuantizeUnits * timelineQuantize) / beatsPerBar;
 
         for (const [blockId, original] of dragState.originalPositions) {
           const newStartBar = Math.max(0, original.startBar + deltaBars);
@@ -1345,16 +1351,18 @@ function TimelineScene({
         }
       } else if (dragState.type === 'resize-left' && dragState.originalPositions) {
         const deltaX = x - dragState.startX;
-        const deltaBars = Math.round(deltaX / barWidth);
+        const deltaQuantizeUnits = Math.round(deltaX / quantizePixels);
+        const deltaBars = (deltaQuantizeUnits * timelineQuantize) / beatsPerBar;
 
         for (const [blockId, original] of dragState.originalPositions) {
           const newStartBar = Math.max(0, original.startBar + deltaBars);
           const startDelta = newStartBar - original.startBar;
-          const newDuration = Math.max(1, original.durationBars - startDelta);
+          const minDurationBars = timelineQuantize / beatsPerBar; // Minimum is one quantize unit
+          const newDuration = Math.max(minDurationBars, original.durationBars - startDelta);
           const originalEndBar = original.startBar + original.durationBars;
           const clampedDuration = Math.min(newDuration, originalEndBar - newStartBar);
 
-          if (clampedDuration >= 1) {
+          if (clampedDuration >= minDurationBars) {
             updateBlock(original.trackId, blockId, {
               startBar: newStartBar,
               durationBars: clampedDuration,
@@ -1363,10 +1371,12 @@ function TimelineScene({
         }
       } else if ((dragState.type === 'resize-right-loop' || dragState.type === 'resize-right-extend') && dragState.originalPositions) {
         const deltaX = x - dragState.startX;
-        const deltaBars = Math.round(deltaX / barWidth);
+        const deltaQuantizeUnits = Math.round(deltaX / quantizePixels);
+        const deltaBars = (deltaQuantizeUnits * timelineQuantize) / beatsPerBar;
 
         for (const [blockId, original] of dragState.originalPositions) {
-          const newDuration = Math.max(1, original.durationBars + deltaBars);
+          const minDurationBars = timelineQuantize / beatsPerBar;
+          const newDuration = Math.max(minDurationBars, original.durationBars + deltaBars);
           const block = tracks[original.trackId]?.blocks.find(b => b.id === blockId);
 
           if (dragState.type === 'resize-right-loop' && block) {
@@ -1650,6 +1660,16 @@ export function TimelineCanvas({
   const [isMounted, setIsMounted] = useState(false);
   const dragCounter = useRef(0);
 
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    trackId: string | null;
+    bar: number;
+  } | null>(null);
+
+  const { addBlock, addTrack } = useProjectStore();
+
   // Only render Canvas on client side
   useEffect(() => {
     setIsMounted(true);
@@ -1693,6 +1713,74 @@ export function TimelineCanvas({
     }
   }, []);
 
+  // Context menu handler
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    // Calculate position relative to container
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    // Calculate which bar was clicked
+    const bar = Math.floor(x / barWidth);
+
+    // Calculate which track was clicked (accounting for ruler height)
+    const trackY = y - RULER_HEIGHT;
+    const trackIndex = Math.floor(trackY / trackHeight);
+    const targetTrack = trackIndex >= 0 && trackIndex < flatTracks.length
+      ? flatTracks[trackIndex]?.track
+      : null;
+
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      trackId: targetTrack?.id || null,
+      bar: Math.max(0, bar),
+    });
+  }, [barWidth, trackHeight, flatTracks]);
+
+  // Close context menu
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  // Close context menu when clicking elsewhere
+  useEffect(() => {
+    if (contextMenu) {
+      const handleClick = () => closeContextMenu();
+      window.addEventListener('click', handleClick);
+      return () => window.removeEventListener('click', handleClick);
+    }
+  }, [contextMenu, closeContextMenu]);
+
+  // Add a new empty block at the context menu position
+  const handleAddBlock = useCallback(() => {
+    if (!contextMenu) return;
+
+    if (contextMenu.trackId) {
+      // Add block to existing track
+      addBlock(contextMenu.trackId, {
+        startBar: contextMenu.bar,
+        durationBars: 1,
+        loop: true,
+        streams: [{ events: [] }],
+      });
+    } else {
+      // Create a new track first
+      const trackId = addTrack();
+      addBlock(trackId, {
+        startBar: contextMenu.bar,
+        durationBars: 1,
+        loop: true,
+        streams: [{ events: [] }],
+      });
+    }
+    closeContextMenu();
+  }, [contextMenu, addBlock, addTrack, closeContextMenu]);
+
   const handleFileDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
@@ -1734,6 +1822,7 @@ export function TimelineCanvas({
       onDragLeave={handleFileDragLeave}
       onDragOver={handleFileDragOver}
       onDrop={handleFileDrop}
+      onContextMenu={handleContextMenu}
     >
       {/*
         Lusion scroll sync technique:
@@ -1819,6 +1908,31 @@ export function TimelineCanvas({
               {isProcessingAudio ? 'Processing audio...' : 'Drop audio file here'}
             </span>
           </div>
+        </div>
+      )}
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-[100] min-w-[160px] bg-surface border border-border rounded-lg shadow-xl py-1 overflow-hidden"
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={handleAddBlock}
+            className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
+          >
+            <span className="text-muted-foreground">+</span>
+            <span>Add Region</span>
+            {contextMenu.trackId ? (
+              <span className="text-xs text-muted-foreground ml-auto">Bar {contextMenu.bar + 1}</span>
+            ) : (
+              <span className="text-xs text-muted-foreground ml-auto">New Track</span>
+            )}
+          </button>
         </div>
       )}
     </div>
