@@ -44,7 +44,7 @@ function getPatternBars(block: Block, beatsPerBar: number): number {
   return Math.ceil(patternLengthBeats / beatsPerBar);
 }
 
-// Create a rounded rectangle shape
+// Create a CENTERED rounded rectangle shape (centered at origin)
 function createRoundedRectShape(
   width: number,
   height: number,
@@ -53,15 +53,32 @@ function createRoundedRectShape(
   const [tl, tr, br, bl] = radii;
   const shape = new THREE.Shape();
 
-  shape.moveTo(tl, 0);
-  shape.lineTo(width - tr, 0);
-  if (tr > 0) shape.quadraticCurveTo(width, 0, width, tr);
-  shape.lineTo(width, height - br);
-  if (br > 0) shape.quadraticCurveTo(width, height, width - br, height);
-  shape.lineTo(bl, height);
-  if (bl > 0) shape.quadraticCurveTo(0, height, 0, height - bl);
-  shape.lineTo(0, tl);
-  if (tl > 0) shape.quadraticCurveTo(0, 0, tl, 0);
+  // Center the shape at origin
+  const hw = width / 2;  // half width
+  const hh = height / 2; // half height
+
+  // Start at top-left after corner, going clockwise
+  // Top edge (y = +hh)
+  shape.moveTo(-hw + tl, hh);
+  shape.lineTo(hw - tr, hh);
+  // Top-right corner
+  if (tr > 0) shape.quadraticCurveTo(hw, hh, hw, hh - tr);
+  else shape.lineTo(hw, hh);
+  // Right edge
+  shape.lineTo(hw, -hh + br);
+  // Bottom-right corner
+  if (br > 0) shape.quadraticCurveTo(hw, -hh, hw - br, -hh);
+  else shape.lineTo(hw, -hh);
+  // Bottom edge
+  shape.lineTo(-hw + bl, -hh);
+  // Bottom-left corner
+  if (bl > 0) shape.quadraticCurveTo(-hw, -hh, -hw, -hh + bl);
+  else shape.lineTo(-hw, -hh);
+  // Left edge
+  shape.lineTo(-hw, hh - tl);
+  // Top-left corner
+  if (tl > 0) shape.quadraticCurveTo(-hw, hh, -hw + tl, hh);
+  else shape.lineTo(-hw, hh);
 
   return shape;
 }
@@ -314,10 +331,14 @@ function BlockMesh({
     );
   }, [isSelected, blockWidth, blockHeight, blockLeft, blockTop, selectionColor]);
 
-  // Header background when selected
+  // Header background when selected (rounded top corners)
+  const headerShape = useMemo(() =>
+    createRoundedRectShape(contentAreaWidth, 20, [4, 0, 0, 0]),
+    [contentAreaWidth]
+  );
   const headerBg = isSelected ? (
     <mesh position={[blockLeft + contentAreaWidth / 2, -(blockTop + 10), 0.05]}>
-      <planeGeometry args={[contentAreaWidth, 20]} />
+      <shapeGeometry args={[headerShape]} />
       <meshBasicMaterial color={selectionColor} />
     </mesh>
   ) : null;
