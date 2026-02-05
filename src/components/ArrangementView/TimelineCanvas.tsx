@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useThree, ThreeEvent } from '@react-three/fiber';
-import { OrthographicCamera } from '@react-three/drei';
+import { OrthographicCamera, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { TrackNode } from '@/utils/tree';
 import { Block, Track, getDrumType } from '@/core/types';
@@ -117,6 +117,7 @@ interface BlockMeshProps {
   pixelsPerBeat: number;
   beatsPerBar: number;
   trackHeight: number;
+  bpm: number;
   isSelected: boolean;
   onPointerDown: (e: ThreeEvent<PointerEvent>, block: Block, track: Track, trackIndex: number, zone: string) => void;
   onPointerOver: (blockId: string, zone: string) => void;
@@ -132,6 +133,7 @@ function BlockMesh({
   pixelsPerBeat,
   beatsPerBar,
   trackHeight,
+  bpm,
   isSelected,
   onPointerDown,
   onPointerOver,
@@ -139,6 +141,7 @@ function BlockMesh({
   isHovered,
   hoveredZone,
 }: BlockMeshProps) {
+  const isAudioBlock = track.instrumentId === 'audio' && block.audioData;
   const barWidth = beatsPerBar * pixelsPerBeat;
   const handleWidthPx = 12;
 
@@ -404,6 +407,50 @@ function BlockMesh({
     </mesh>
   );
 
+  // Waveform rendering for audio blocks
+  const waveformMesh = useMemo(() => {
+    if (!isAudioBlock || !block.audioData?.waveformPeaks) return null;
+
+    const peaks = block.audioData.waveformPeaks;
+    const contentTop = blockTop + 24;
+    const contentHeight = blockHeight - 28;
+    const contentLeft = blockLeft + 3;
+    const contentWidth = contentAreaWidth - 6;
+
+    const beatsPerSecond = bpm / 60;
+    const audioBeats = block.audioData.duration * beatsPerSecond;
+    const audioBars = audioBeats / beatsPerBar;
+    const audioWidthPx = audioBars * barWidth;
+
+    const centerY = contentTop + contentHeight / 2;
+    const maxAmplitude = contentHeight / 2 - 2;
+
+    // Create waveform geometry
+    const positions: number[] = [];
+    const drawWidth = Math.min(audioWidthPx, contentWidth);
+    const samplesPerPixel = peaks.length / Math.max(1, audioWidthPx);
+
+    for (let x = 0; x < drawWidth; x++) {
+      const sampleIndex = Math.floor(x * samplesPerPixel);
+      const peak = peaks[Math.min(sampleIndex, peaks.length - 1)] || 0;
+      const barHeight = Math.max(1, peak * maxAmplitude);
+
+      // Top of bar
+      positions.push(contentLeft + x, -(centerY - barHeight), 0.1);
+      // Bottom of bar
+      positions.push(contentLeft + x, -(centerY + barHeight), 0.1);
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+    return (
+      <lineSegments geometry={geometry}>
+        <lineBasicMaterial color="#ffffff" opacity={0.85} transparent />
+      </lineSegments>
+    );
+  }, [isAudioBlock, block.audioData, bpm, beatsPerBar, barWidth, blockTop, blockHeight, blockLeft, contentAreaWidth]);
+
   return (
     <group>
       {/* Iteration backgrounds */}
@@ -415,15 +462,41 @@ function BlockMesh({
         <meshBasicMaterial
           color={isSelected ? selectedHandleColor : handleColor}
           opacity={handleOpacity}
-          transparent
+          transparent={handleOpacity < 1}
         />
       </mesh>
 
       {/* Header background */}
       {headerBg}
 
-      {/* Events */}
-      {eventMeshes}
+      {/* Track name text */}
+      <Text
+        position={[blockLeft + 6, -(blockTop + 10), 0.1]}
+        fontSize={11}
+        color={isSelected ? baseColor : '#ffffff'}
+        anchorX="left"
+        anchorY="middle"
+        maxWidth={contentAreaWidth - 20}
+      >
+        {track.name}
+      </Text>
+
+      {/* Loop indicator */}
+      {block.loop && (
+        <Text
+          position={[blockLeft + contentAreaWidth - 8, -(blockTop + 10), 0.1]}
+          fontSize={10}
+          color="#ffffff"
+          anchorX="right"
+          anchorY="middle"
+          fillOpacity={0.7}
+        >
+          ⟳
+        </Text>
+      )}
+
+      {/* Events or Waveform */}
+      {isAudioBlock ? waveformMesh : eventMeshes}
 
       {/* Selection border */}
       {selectionBorder}
@@ -753,6 +826,7 @@ function TimelineScene({
             pixelsPerBeat={pixelsPerBeat}
             beatsPerBar={beatsPerBar}
             trackHeight={trackHeight}
+            bpm={bpm}
             isSelected={selectedBlockIds.has(block.id)}
             onPointerDown={handleBlockPointerDown}
             onPointerOver={(blockId, zone) => {
