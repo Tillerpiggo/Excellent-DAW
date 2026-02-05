@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useThree, ThreeEvent } from '@react-three/fiber';
-import { OrthographicCamera, Text } from '@react-three/drei';
+import { OrthographicCamera, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { TrackNode } from '@/utils/tree';
 import { Block, Track, getDrumType } from '@/core/types';
@@ -469,31 +469,43 @@ function BlockMesh({
       {/* Header background */}
       {headerBg}
 
-      {/* Track name text */}
-      <Text
-        position={[blockLeft + 6, -(blockTop + 10), 0.1]}
-        fontSize={11}
-        color={isSelected ? baseColor : '#ffffff'}
-        anchorX="left"
-        anchorY="middle"
-        maxWidth={contentAreaWidth - 20}
+      {/* Track name and loop indicator using Html overlay */}
+      <Html
+        position={[blockLeft + 4, -(blockTop + 6), 0.1]}
+        style={{
+          width: contentAreaWidth - 16,
+          pointerEvents: 'none',
+        }}
+        transform={false}
+        zIndexRange={[0, 0]}
       >
-        {track.name}
-      </Text>
-
-      {/* Loop indicator */}
-      {block.loop && (
-        <Text
-          position={[blockLeft + contentAreaWidth - 8, -(blockTop + 10), 0.1]}
-          fontSize={10}
-          color="#ffffff"
-          anchorX="right"
-          anchorY="middle"
-          fillOpacity={0.7}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            fontSize: '11px',
+            fontWeight: 500,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+          }}
         >
-          ⟳
-        </Text>
-      )}
+          <span
+            style={{
+              color: isSelected ? baseColor : 'rgba(255,255,255,0.9)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {track.name}
+          </span>
+          {block.loop && (
+            <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '10px', marginLeft: '4px' }}>
+              ⟳
+            </span>
+          )}
+        </div>
+      </Html>
 
       {/* Events or Waveform */}
       {isAudioBlock ? waveformMesh : eventMeshes}
@@ -878,7 +890,13 @@ export function TimelineCanvas({
   const { handleAudioFileDrop, isProcessingAudio } = useDragDrop();
 
   const [isDraggingAudioFile, setIsDraggingAudioFile] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
   const dragCounter = useRef(0);
+
+  // Only render Canvas on client side
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const trackHeight = Math.round(64 * trackHeightScale);
   const barWidth = beatsPerBar * pixelsPerBeat;
@@ -941,22 +959,24 @@ export function TimelineCanvas({
       onDragOver={handleFileDragOver}
       onDrop={handleFileDrop}
     >
-      <Canvas
-        style={{ width: timelineWidth, height: totalHeight }}
-        gl={{ antialias: true, alpha: true }}
-        dpr={window.devicePixelRatio || 1}
-      >
-        <TimelineScene
-          flatTracks={flatTracks}
-          pixelsPerBeat={pixelsPerBeat}
-          beatsPerBar={beatsPerBar}
-          totalBars={totalBars}
-          bpm={bpm}
-          trackHeight={trackHeight}
-          timelineWidth={timelineWidth}
-          totalHeight={totalHeight}
-        />
-      </Canvas>
+      {isMounted && (
+        <Canvas
+          style={{ width: timelineWidth, height: totalHeight }}
+          gl={{ antialias: true, alpha: true }}
+          dpr={[1, 2]}
+        >
+          <TimelineScene
+            flatTracks={flatTracks}
+            pixelsPerBeat={pixelsPerBeat}
+            beatsPerBar={beatsPerBar}
+            totalBars={totalBars}
+            bpm={bpm}
+            trackHeight={trackHeight}
+            timelineWidth={timelineWidth}
+            totalHeight={totalHeight}
+          />
+        </Canvas>
+      )}
 
       {/* Empty state */}
       {flatTracks.length === 0 && (
