@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Project, Track, Block, ProjectMetadata, Event } from '@/core/types';
+import { Project, Track, Block, ProjectMetadata, Event, PluginInstance } from '@/core/types';
 import { generateId } from '@/utils/id';
 import { PATTERN_PRESETS } from '@/core/presets';
 import * as storage from '@/services/storage';
@@ -17,6 +17,7 @@ interface ProjectState {
   deleteTrack: (trackId: string) => void;
   moveTrack: (trackId: string, newParentId?: string, index?: number) => void;
   reorderTrack: (trackId: string, direction: 'up' | 'down') => void;
+  groupTracks: (trackIds: string[]) => string | null;
 
   // Block operations
   addBlock: (trackId: string, block: Omit<Block, 'id'>) => string;
@@ -26,6 +27,12 @@ interface ProjectState {
   splitBlockAtPosition: (trackId: string, blockId: string, splitBar: number, beatsPerBar: number) => string | null;
   updateBlockDrums: (trackId: string, blockId: string, events: Event[]) => void;
   updateBlockEvents: (trackId: string, blockId: string, events: Event[]) => void;
+
+  // Visual plugin operations
+  addVisualPlugin: (trackId: string, pluginId: string) => string;
+  updateVisualPlugin: (trackId: string, instanceId: string, updates: Partial<PluginInstance>) => void;
+  deleteVisualPlugin: (trackId: string, instanceId: string) => void;
+  reorderVisualPlugins: (trackId: string, fromIndex: number, toIndex: number) => void;
 
   // Project operations
   setBpm: (bpm: number) => void;
@@ -242,6 +249,60 @@ export const useProjectStore = create<ProjectState>()(
       });
     },
 
+    groupTracks: (trackIds: string[]) => {
+      console.log('groupTracks called with:', trackIds);
+      if (trackIds.length < 2) return null;
+
+      const groupId = generateId();
+
+      set((state) => {
+        // Verify all tracks exist
+        const tracks = trackIds.map((id) => state.project.tracks[id]).filter(Boolean);
+        console.log('Found tracks:', tracks.length, 'of', trackIds.length);
+        if (tracks.length !== trackIds.length) return;
+
+        // Create the group track at root level (no parent)
+        const groupTrack: Track = {
+          id: groupId,
+          name: 'Group',
+          typeId: 'base',
+          muted: false,
+          collapsed: false,
+          blocks: [],
+          childIds: [...trackIds],
+          parentId: undefined, // Always at root
+        };
+
+        // Add group track to project
+        state.project.tracks[groupId] = groupTrack;
+
+        // Remove each track from its current parent and update parentId
+        for (const track of tracks) {
+          const oldParentId = track.parentId;
+
+          // Remove from old parent's childIds or rootTracks
+          if (oldParentId) {
+            const oldParent = state.project.tracks[oldParentId];
+            if (oldParent) {
+              oldParent.childIds = oldParent.childIds.filter((id) => id !== track.id);
+            }
+          } else {
+            state.project.rootTracks = state.project.rootTracks.filter((id) => id !== track.id);
+          }
+
+          // Update to new parent
+          track.parentId = groupId;
+        }
+
+        // Add group to root tracks
+        state.project.rootTracks.push(groupId);
+
+        console.log('Group created:', groupId);
+      });
+
+      return groupId;
+    },
+
     addBlock: (trackId: string, blockData: Omit<Block, 'id'>) => {
       const blockId = generateId();
 
@@ -414,6 +475,67 @@ export const useProjectStore = create<ProjectState>()(
         if (!block) return;
 
         block.streams = [{ events }];
+      });
+    },
+
+    addVisualPlugin: (trackId: string, pluginId: string) => {
+      const instanceId = generateId();
+
+      set((state) => {
+        const track = state.project.tracks[trackId];
+        if (!track) return;
+
+        // Dynamically import to avoid circular dependency
+        const { getPlugin } = require('@/plugins');
+        const plugin = getPlugin(pluginId);
+        if (!plugin) return;
+
+        const instance: PluginInstance = {
+          id: instanceId,
+          pluginId,
+          enabled: true,
+          settings: { ...plugin.defaultSettings },
+        };
+
+        if (!track.visualPlugins) {
+          track.visualPlugins = [];
+        }
+        track.visualPlugins.push(instance);
+      });
+
+      return instanceId;
+    },
+
+    updateVisualPlugin: (trackId: string, instanceId: string, updates: Partial<PluginInstance>) => {
+      set((state) => {
+        const track = state.project.tracks[trackId];
+        if (!track?.visualPlugins) return;
+
+        const plugin = track.visualPlugins.find((p) => p.id === instanceId);
+        if (plugin) {
+          Object.assign(plugin, updates);
+        }
+      });
+    },
+
+    deleteVisualPlugin: (trackId: string, instanceId: string) => {
+      set((state) => {
+        const track = state.project.tracks[trackId];
+        if (track?.visualPlugins) {
+          track.visualPlugins = track.visualPlugins.filter((p) => p.id !== instanceId);
+        }
+      });
+    },
+
+    reorderVisualPlugins: (trackId: string, fromIndex: number, toIndex: number) => {
+      set((state) => {
+        const track = state.project.tracks[trackId];
+        if (!track?.visualPlugins) return;
+
+        const plugins = [...track.visualPlugins];
+        const [moved] = plugins.splice(fromIndex, 1);
+        plugins.splice(toIndex, 0, moved);
+        track.visualPlugins = plugins;
       });
     },
 

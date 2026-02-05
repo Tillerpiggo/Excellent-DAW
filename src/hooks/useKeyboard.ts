@@ -10,6 +10,7 @@ export function useKeyboard() {
   const { toggle } = usePlayback();
   const {
     selectedTrackId,
+    selectedTrackIds,
     selectedBlockIds,
     selectTrack,
     selectBlock,
@@ -19,7 +20,7 @@ export function useKeyboard() {
     currentBeat,
   } = useUIStore();
 
-  const { deleteTrack, deleteBlock, splitBlockAtPosition } = useProjectStore();
+  const { deleteTrack, deleteBlock, splitBlockAtPosition, groupTracks } = useProjectStore();
   const project = useProjectStore((state) => state.project);
 
   const handleKeyDown = useCallback(
@@ -182,15 +183,37 @@ export function useKeyboard() {
             }
           }
           break;
+
+        case 'KeyG':
+          // Cmd/Ctrl + Shift + G: Group selected tracks
+          if ((e.metaKey || e.ctrlKey) && e.shiftKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            // Get fresh state to avoid stale closure
+            const currentSelectedTrackIds = useUIStore.getState().selectedTrackIds;
+            console.log('Cmd+Shift+G pressed, selectedTrackIds:', Array.from(currentSelectedTrackIds));
+            if (currentSelectedTrackIds.size >= 2) {
+              const trackIdsToGroup = Array.from(currentSelectedTrackIds);
+              const groupId = groupTracks(trackIdsToGroup);
+              console.log('groupTracks returned:', groupId);
+              if (groupId) {
+                // Select the new group
+                selectTrack(groupId);
+              }
+            }
+          }
+          break;
       }
     },
     [
       toggle,
       selectedTrackId,
+      selectedTrackIds,
       selectedBlockIds,
       deleteTrack,
       deleteBlock,
       splitBlockAtPosition,
+      groupTracks,
       selectTrack,
       clearBlockSelection,
       setPixelsPerBeat,

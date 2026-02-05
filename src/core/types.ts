@@ -105,12 +105,21 @@ export interface AudioData {
 // Legacy type for backwards compatibility during migration
 export type VisualInstrumentId = 'silkSymmetry' | 'hexagonDots' | 'fractalTunnel' | 'circleGrid' | string;
 
+// Plugin instance for visual effects chain
+export interface PluginInstance {
+  id: string;
+  pluginId: string;
+  enabled: boolean;
+  settings: Record<string, unknown>;
+}
+
 export interface Track {
   id: string;
   name: string;
   typeId: TrackTypeId;
   instrumentId?: string; // Unified instrument ID (e.g., "leadSynth", "fractalTunnel")
   instrumentSettings?: Record<string, unknown>; // Track-level settings for the instrument
+  visualPlugins?: PluginInstance[]; // Visual effects plugin chain
   muted: boolean;
   collapsed: boolean;
   blocks: Block[];

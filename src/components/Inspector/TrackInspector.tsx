@@ -1,10 +1,14 @@
 'use client';
 
+import { useState } from 'react';
 import { Track, TrackTypeId } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { TRACK_TYPES } from '@/core/trackTypes';
 import { INSTRUMENTS, getInstrument, getInstrumentOptions } from '@/instruments';
+import { PluginInspector } from './PluginInspector';
+
+type InspectorTab = 'settings' | 'effects';
 
 interface TrackInspectorProps {
   track: Track;
@@ -46,12 +50,22 @@ function getInheritedInstrument(
 }
 
 export function TrackInspector({ track }: TrackInspectorProps) {
+  const [activeTab, setActiveTab] = useState<InspectorTab>('settings');
   const { updateTrack, deleteTrack } = useProjectStore();
   const tracks = useProjectStore((s) => s.project.tracks);
   const { selectTrack } = useUIStore();
 
   const trackType = TRACK_TYPES[track.typeId];
   const instrument = track.instrumentId ? getInstrument(track.instrumentId) : undefined;
+
+  // Check if track has a visual instrument (for showing Effects tab)
+  // Also show for groups (tracks with children) so they can apply effects to children
+  const effectiveInstrumentForEffects = getInheritedInstrument(track, tracks);
+  const hasVisualInstrument = effectiveInstrumentForEffects
+    ? getInstrument(effectiveInstrumentForEffects)?.hasVisual
+    : false;
+  const isGroup = track.childIds.length > 0;
+  const showEffectsTab = hasVisualInstrument || isGroup;
 
   // Get effective instrument (own or inherited for visual settings)
   const effectiveInstrumentId = getInheritedInstrument(track, tracks);
@@ -84,150 +98,189 @@ export function TrackInspector({ track }: TrackInspectorProps) {
 
   return (
     <div className="space-y-4">
-      {/* Track Name */}
-      <div>
-        <label className="block text-xs text-muted-foreground mb-1">Name</label>
-        <input
-          type="text"
-          value={track.name}
-          onChange={(e) => updateTrack(track.id, { name: e.target.value })}
-          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
-        />
-      </div>
-
-      {/* Track Type */}
-      <div>
-        <label className="block text-xs text-muted-foreground mb-1">Track Type</label>
-        <select
-          value={track.typeId}
-          onChange={(e) => updateTrack(track.id, { typeId: e.target.value as TrackTypeId })}
-          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
-        >
-          {TRACK_TYPE_OPTIONS.map((opt) => (
-            <option key={opt.id} value={opt.id}>
-              {opt.label} ({opt.category})
-            </option>
-          ))}
-        </select>
-        <p className="text-xs text-muted-foreground mt-1">{trackType?.description}</p>
-      </div>
-
-      {/* Unified Instrument */}
-      <div>
-        <label className="block text-xs text-muted-foreground mb-1">Instrument</label>
-        <select
-          value={track.instrumentId || ''}
-          onChange={(e) => handleInstrumentChange(e.target.value || undefined)}
-          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
-        >
-          <option value="">None (modifier only)</option>
-          {INSTRUMENT_OPTIONS.map((opt) => (
-            <option key={opt.id} value={opt.id}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-        {instrument && (
-          <p className="text-xs text-muted-foreground mt-1">
-            {instrument.description}
-            {instrument.hasAudio && instrument.hasVisual && ' (Audio + Visual)'}
-            {instrument.hasAudio && !instrument.hasVisual && ' (Audio)'}
-            {!instrument.hasAudio && instrument.hasVisual && ' (Visual)'}
-          </p>
-        )}
-      </div>
-
-      {/* Instrument Settings - Dynamic based on settingsSchema */}
-      {effectiveInstrument?.settingsSchema && (
-        <div className="space-y-3 pl-3 border-l-2 border-accent-from/30">
-          <label className="block text-xs text-muted-foreground">
-            Settings{isInherited && ' (inherited instrument)'}
-          </label>
-
-          {Object.entries(effectiveInstrument.settingsSchema).map(([key, field]) => (
-            <div key={key}>
-              {field.type === 'number' && (
-                <>
-                  <label className="block text-xs text-muted-foreground mb-1">
-                    {field.label}
-                  </label>
-                  <input
-                    type="number"
-                    min={field.min}
-                    max={field.max}
-                    step={field.step}
-                    value={(track.instrumentSettings?.[key] as number) ?? field.default}
-                    onChange={(e) => handleSettingChange(key, parseFloat(e.target.value))}
-                    className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
-                  />
-                </>
-              )}
-
-              {field.type === 'boolean' && (
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={(track.instrumentSettings?.[key] as boolean) ?? field.default}
-                    onChange={(e) => handleSettingChange(key, e.target.checked)}
-                    className="w-4 h-4 rounded border-border accent-accent-from"
-                  />
-                  <span className="text-sm">{field.label}</span>
-                </label>
-              )}
-
-              {field.type === 'select' && field.options && (
-                <>
-                  <label className="block text-xs text-muted-foreground mb-1">
-                    {field.label}
-                  </label>
-                  <select
-                    value={(track.instrumentSettings?.[key] as string) ?? field.default}
-                    onChange={(e) => handleSettingChange(key, e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
-                  >
-                    {field.options.map((opt) => (
-                      <option key={String(opt.value)} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </>
-              )}
-            </div>
-          ))}
+      {/* Tab switcher */}
+      {showEffectsTab && (
+        <div className="flex gap-1 p-1 bg-background rounded-lg">
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              activeTab === 'settings'
+                ? 'bg-surface text-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Settings
+          </button>
+          <button
+            onClick={() => setActiveTab('effects')}
+            className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              activeTab === 'effects'
+                ? 'bg-surface text-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Effects
+            {(track.visualPlugins?.length ?? 0) > 0 && (
+              <span className="ml-1.5 px-1.5 py-0.5 text-xs bg-accent-from/20 text-accent-from rounded">
+                {track.visualPlugins?.length}
+              </span>
+            )}
+          </button>
         </div>
       )}
 
-      {/* Mute Toggle */}
-      <div className="flex items-center gap-3">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={track.muted}
-            onChange={(e) => updateTrack(track.id, { muted: e.target.checked })}
-            className="w-4 h-4 rounded border-border accent-accent-from"
-          />
-          <span className="text-sm">Muted</span>
-        </label>
-      </div>
+      {/* Effects Tab */}
+      {activeTab === 'effects' && showEffectsTab && <PluginInspector track={track} />}
 
-      {/* Stats */}
-      <div className="pt-4 border-t border-border">
-        <p className="text-xs text-muted-foreground">
-          {track.blocks.length} block{track.blocks.length !== 1 ? 's' : ''} •{' '}
-          {track.childIds.length} child track{track.childIds.length !== 1 ? 's' : ''}
-        </p>
-      </div>
+      {/* Settings Tab */}
+      {activeTab === 'settings' && (
+        <>
+          {/* Track Name */}
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1">Name</label>
+            <input
+              type="text"
+              value={track.name}
+              onChange={(e) => updateTrack(track.id, { name: e.target.value })}
+              className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
+            />
+          </div>
 
-      {/* Delete Button */}
-      <div className="pt-4">
-        <button
-          onClick={handleDelete}
-          className="w-full px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
-        >
-          Delete Track
-        </button>
-      </div>
+          {/* Track Type */}
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1">Track Type</label>
+            <select
+              value={track.typeId}
+              onChange={(e) => updateTrack(track.id, { typeId: e.target.value as TrackTypeId })}
+              className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
+            >
+              {TRACK_TYPE_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label} ({opt.category})
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground mt-1">{trackType?.description}</p>
+          </div>
+
+          {/* Unified Instrument */}
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1">Instrument</label>
+            <select
+              value={track.instrumentId || ''}
+              onChange={(e) => handleInstrumentChange(e.target.value || undefined)}
+              className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
+            >
+              <option value="">None (modifier only)</option>
+              {INSTRUMENT_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            {instrument && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {instrument.description}
+                {instrument.hasAudio && instrument.hasVisual && ' (Audio + Visual)'}
+                {instrument.hasAudio && !instrument.hasVisual && ' (Audio)'}
+                {!instrument.hasAudio && instrument.hasVisual && ' (Visual)'}
+              </p>
+            )}
+          </div>
+
+          {/* Instrument Settings - Dynamic based on settingsSchema */}
+          {effectiveInstrument?.settingsSchema && (
+            <div className="space-y-3 pl-3 border-l-2 border-accent-from/30">
+              <label className="block text-xs text-muted-foreground">
+                Settings{isInherited && ' (inherited instrument)'}
+              </label>
+
+              {Object.entries(effectiveInstrument.settingsSchema).map(([key, field]) => (
+                <div key={key}>
+                  {field.type === 'number' && (
+                    <>
+                      <label className="block text-xs text-muted-foreground mb-1">
+                        {field.label}
+                      </label>
+                      <input
+                        type="number"
+                        min={field.min}
+                        max={field.max}
+                        step={field.step}
+                        value={(track.instrumentSettings?.[key] as number) ?? field.default}
+                        onChange={(e) => handleSettingChange(key, parseFloat(e.target.value))}
+                        className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
+                      />
+                    </>
+                  )}
+
+                  {field.type === 'boolean' && (
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={(track.instrumentSettings?.[key] as boolean) ?? field.default}
+                        onChange={(e) => handleSettingChange(key, e.target.checked)}
+                        className="w-4 h-4 rounded border-border accent-accent-from"
+                      />
+                      <span className="text-sm">{field.label}</span>
+                    </label>
+                  )}
+
+                  {field.type === 'select' && field.options && (
+                    <>
+                      <label className="block text-xs text-muted-foreground mb-1">
+                        {field.label}
+                      </label>
+                      <select
+                        value={(track.instrumentSettings?.[key] as string) ?? field.default}
+                        onChange={(e) => handleSettingChange(key, e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
+                      >
+                        {field.options.map((opt) => (
+                          <option key={String(opt.value)} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Mute Toggle */}
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={track.muted}
+                onChange={(e) => updateTrack(track.id, { muted: e.target.checked })}
+                className="w-4 h-4 rounded border-border accent-accent-from"
+              />
+              <span className="text-sm">Muted</span>
+            </label>
+          </div>
+
+          {/* Stats */}
+          <div className="pt-4 border-t border-border">
+            <p className="text-xs text-muted-foreground">
+              {track.blocks.length} block{track.blocks.length !== 1 ? 's' : ''} •{' '}
+              {track.childIds.length} child track{track.childIds.length !== 1 ? 's' : ''}
+            </p>
+          </div>
+
+          {/* Delete Button */}
+          <div className="pt-4">
+            <button
+              onClick={handleDelete}
+              className="w-full px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+            >
+              Delete Track
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

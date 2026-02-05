@@ -63,6 +63,7 @@ function TrackLabelRow({ node, trackHeight }: { node: TrackNode; trackHeight: nu
   const { track, depth } = node;
   const updateTrack = useProjectStore((state) => state.updateTrack);
   const selectedTrackId = useUIStore((state) => state.selectedTrackId);
+  const selectedTrackIds = useUIStore((state) => state.selectedTrackIds);
   const selectTrack = useUIStore((state) => state.selectTrack);
   const collapsedTrackIds = useUIStore((state) => state.collapsedTrackIds);
   const toggleTrackCollapsed = useUIStore((state) => state.toggleTrackCollapsed);
@@ -70,7 +71,7 @@ function TrackLabelRow({ node, trackHeight }: { node: TrackNode; trackHeight: nu
   const dragState = useUIStore((state) => state.dragState);
   const { handleDragOver, handleDragLeave, handleHierarchyDrop } = useDragDrop();
 
-  const isSelected = selectedTrackId === track.id;
+  const isSelected = selectedTrackIds.has(track.id);
   const isCollapsed = collapsedTrackIds.has(track.id);
   const hasChildren = track.childIds.length > 0;
   const isDropTarget = dropTargetTrackId === track.id;
@@ -89,7 +90,7 @@ function TrackLabelRow({ node, trackHeight }: { node: TrackNode; trackHeight: nu
           ? { background: 'linear-gradient(90deg, rgba(100, 116, 139, 0.25) 0%, rgba(71, 85, 105, 0.1) 100%)' }
           : {}),
       }}
-      onClick={() => selectTrack(track.id)}
+      onClick={(e) => selectTrack(track.id, e.shiftKey)}
       onDragOver={(e) => {
         if (dragState.type === 'preset') {
           handleDragOver(e, track.id);

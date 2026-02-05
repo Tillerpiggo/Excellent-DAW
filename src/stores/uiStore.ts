@@ -20,6 +20,7 @@ interface MarqueeSelection {
 interface UIState {
   // Selection
   selectedTrackId: string | null;
+  selectedTrackIds: Set<string>; // Multi-track selection
   selectedBlockIds: Set<string>;
   marqueeSelection: MarqueeSelection | null;
 
@@ -60,7 +61,9 @@ interface UIState {
   currentView: 'home' | 'editor';
 
   // Actions
-  selectTrack: (trackId: string | null) => void;
+  selectTrack: (trackId: string | null, addToSelection?: boolean) => void;
+  selectTracks: (trackIds: string[]) => void;
+  clearTrackSelection: () => void;
   selectBlock: (blockId: string | null, trackId?: string, addToSelection?: boolean) => void;
   selectBlocks: (blockIds: string[]) => void;
   clearBlockSelection: () => void;
@@ -102,6 +105,7 @@ interface UIState {
 export const useUIStore = create<UIState>((set) => ({
   // Selection
   selectedTrackId: null,
+  selectedTrackIds: new Set(),
   selectedBlockIds: new Set(),
   marqueeSelection: null,
 
@@ -141,8 +145,50 @@ export const useUIStore = create<UIState>((set) => ({
   // View state
   currentView: 'home',
 
-  selectTrack: (trackId) => {
-    set({ selectedTrackId: trackId, selectedBlockIds: new Set() });
+  selectTrack: (trackId, addToSelection = false) => {
+    set((state) => {
+      if (trackId === null) {
+        return { selectedTrackId: null, selectedTrackIds: new Set(), selectedBlockIds: new Set() };
+      }
+      if (addToSelection) {
+        const newSet = new Set(state.selectedTrackIds);
+        if (newSet.has(trackId)) {
+          newSet.delete(trackId);
+          // If removing, set selectedTrackId to another selected track or null
+          const remaining = Array.from(newSet);
+          return {
+            selectedTrackId: remaining.length > 0 ? remaining[0] : null,
+            selectedTrackIds: newSet,
+            selectedBlockIds: new Set(),
+          };
+        } else {
+          newSet.add(trackId);
+          return {
+            selectedTrackId: trackId,
+            selectedTrackIds: newSet,
+            selectedBlockIds: new Set(),
+          };
+        }
+      }
+      // Single select - clear multi-selection
+      return {
+        selectedTrackId: trackId,
+        selectedTrackIds: new Set([trackId]),
+        selectedBlockIds: new Set(),
+      };
+    });
+  },
+
+  selectTracks: (trackIds) => {
+    set({
+      selectedTrackId: trackIds.length > 0 ? trackIds[0] : null,
+      selectedTrackIds: new Set(trackIds),
+      selectedBlockIds: new Set(),
+    });
+  },
+
+  clearTrackSelection: () => {
+    set({ selectedTrackId: null, selectedTrackIds: new Set() });
   },
 
   selectBlock: (blockId, trackId, addToSelection = false) => {

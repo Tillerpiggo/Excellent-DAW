@@ -7,6 +7,8 @@ import { VisualScene } from './VisualScene';
 export interface VisualTrackInfo {
   id: string;
   instrumentId: string;
+  isGroup?: boolean;
+  childIds?: string[];
 }
 
 interface VisualViewProps {

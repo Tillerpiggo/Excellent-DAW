@@ -2,13 +2,16 @@
 
 import { OrbitControls } from '@react-three/drei';
 import { VisualTrackInfo } from './VisualView';
-import { getInstrument } from '@/instruments';
+import { TrackRenderer } from './TrackRenderer';
+import { useProjectStore } from '@/stores/projectStore';
 
 interface VisualSceneProps {
   tracks: VisualTrackInfo[];
 }
 
 export function VisualScene({ tracks }: VisualSceneProps) {
+  const projectTracks = useProjectStore((s) => s.project.tracks);
+
   return (
     <>
       {/* Lighting */}
@@ -25,15 +28,18 @@ export function VisualScene({ tracks }: VisualSceneProps) {
         autoRotate={false}
       />
 
-      {/* Render visual instruments - all centered, overlapping */}
+      {/* Render visual instruments through plugin chain */}
       {tracks.map((track) => {
-        const instrument = getInstrument(track.instrumentId);
-        if (!instrument?.VisualComponent) return null;
-        const Component = instrument.VisualComponent;
+        const fullTrack = projectTracks[track.id];
         return (
-          <group key={track.id} position={[0, 0, 0]}>
-            <Component trackId={track.id} />
-          </group>
+          <TrackRenderer
+            key={track.id}
+            trackId={track.id}
+            instrumentId={track.instrumentId}
+            plugins={fullTrack?.visualPlugins ?? []}
+            isGroup={track.isGroup}
+            childIds={track.childIds}
+          />
         );
       })}
     </>
