@@ -1,6 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Canvas, useThree, ThreeEvent } from '@react-three/fiber';
+import { OrthographicCamera } from '@react-three/drei';
+import * as THREE from 'three';
 import { TrackNode } from '@/utils/tree';
 import { Block, Track, getDrumType } from '@/core/types';
 import { useUIStore } from '@/stores/uiStore';
@@ -17,26 +20,9 @@ interface TimelineCanvasProps {
   bpm: number;
 }
 
-// Hit detection result
-interface HitResult {
-  trackId: string;
-  trackIndex: number;
-  block: Block;
-  track: Track;
-  zone: 'body' | 'left-edge' | 'right-loop' | 'right-extend';
-}
-
-// Drag state
-interface DragState {
-  type: 'none' | 'drag' | 'resize-left' | 'resize-right-loop' | 'resize-right-extend' | 'marquee';
-  startX: number;
-  startY: number;
-  currentX: number;
-  currentY: number;
-  hit?: HitResult;
-  originalPositions?: Map<string, { startBar: number; durationBars: number; trackId: string }>;
-  // For cross-track dragging
-  startTrackIndex?: number;
+// Convert hex color to THREE.Color
+function hexToThreeColor(hex: string): THREE.Color {
+  return new THREE.Color(hex);
 }
 
 // Helper to find track ID for a given block ID
@@ -58,485 +44,204 @@ function getPatternBars(block: Block, beatsPerBar: number): number {
   return Math.ceil(patternLengthBeats / beatsPerBar);
 }
 
-// Get base color for a track
-function getTrackColor(track: Track): string {
-  return track.instrumentId
-    ? INSTRUMENT_COLORS[track.instrumentId]
-    : TRACK_TYPE_COLORS[track.typeId];
+// Create a rounded rectangle shape
+function createRoundedRectShape(
+  width: number,
+  height: number,
+  radii: [number, number, number, number] // [topLeft, topRight, bottomRight, bottomLeft]
+): THREE.Shape {
+  const [tl, tr, br, bl] = radii;
+  const shape = new THREE.Shape();
+
+  shape.moveTo(tl, 0);
+  shape.lineTo(width - tr, 0);
+  if (tr > 0) shape.quadraticCurveTo(width, 0, width, tr);
+  shape.lineTo(width, height - br);
+  if (br > 0) shape.quadraticCurveTo(width, height, width - br, height);
+  shape.lineTo(bl, height);
+  if (bl > 0) shape.quadraticCurveTo(0, height, 0, height - bl);
+  shape.lineTo(0, tl);
+  if (tl > 0) shape.quadraticCurveTo(0, 0, tl, 0);
+
+  return shape;
 }
 
-export function TimelineCanvas({
-  flatTracks,
-  pixelsPerBeat,
-  beatsPerBar,
-  totalBars,
-  bpm,
-}: TimelineCanvasProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+// Grid Lines Component
+interface GridLinesProps {
+  totalBars: number;
+  barWidth: number;
+  height: number;
+}
 
-  const {
-    selectedBlockIds,
-    selectBlock,
-    selectBlocks,
-    clearBlockSelection,
-    trackHeightScale,
-  } = useUIStore();
-
-  const { updateBlock, moveBlock } = useProjectStore();
-  const tracks = useProjectStore((state) => state.project.tracks);
-  const { handleAudioFileDrop, isProcessingAudio } = useDragDrop();
-
-  // Drag state
-  const [dragState, setDragState] = useState<DragState>({
-    type: 'none',
-    startX: 0,
-    startY: 0,
-    currentX: 0,
-    currentY: 0,
-  });
-
-  // Hover state for handle highlighting
-  const [hoverBlockId, setHoverBlockId] = useState<string | null>(null);
-  const [hoverZone, setHoverZone] = useState<HitResult['zone'] | null>(null);
-
-  // Track if we're dragging an audio file over the timeline
-  const [isDraggingAudioFile, setIsDraggingAudioFile] = useState(false);
-  const dragCounter = useRef(0);
-
-  // Dimensions
-  const trackHeight = Math.round(64 * trackHeightScale);
-  const barWidth = beatsPerBar * pixelsPerBeat;
-  const timelineWidth = totalBars * barWidth;
-  const totalHeight = flatTracks.length * trackHeight;
-  const handleWidthPx = 12;
-  const edgeZonePx = 12;
-
-  // Get device pixel ratio for sharp rendering
-  const getPixelRatio = () => typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-
-  // Hit test: find block at canvas coordinates
-  const hitTest = useCallback((canvasX: number, canvasY: number): HitResult | null => {
-    const trackIndex = Math.floor(canvasY / trackHeight);
-    if (trackIndex < 0 || trackIndex >= flatTracks.length) return null;
-
-    const node = flatTracks[trackIndex];
-    const track = node.track;
-
-    // Check each block (reverse order so topmost wins)
-    for (let i = track.blocks.length - 1; i >= 0; i--) {
-      const block = track.blocks[i];
-      const blockLeft = block.startBar * barWidth;
-      const blockRight = blockLeft + block.durationBars * barWidth;
-
-      if (canvasX >= blockLeft && canvasX < blockRight) {
-        // Determine zone
-        const relativeX = canvasX - blockLeft;
-        const blockWidth = blockRight - blockLeft;
-
-        let zone: HitResult['zone'] = 'body';
-        if (relativeX < edgeZonePx) {
-          zone = 'left-edge';
-        } else if (relativeX > blockWidth - handleWidthPx) {
-          // Right handle split into two zones
-          const handleTop = canvasY - trackIndex * trackHeight;
-          if (handleTop < trackHeight / 2) {
-            zone = 'right-loop';
-          } else {
-            zone = 'right-extend';
-          }
-        }
-
-        return {
-          trackId: track.id,
-          trackIndex,
-          block,
-          track,
-          zone,
-        };
-      }
-    }
-
-    return null;
-  }, [flatTracks, trackHeight, barWidth, edgeZonePx, handleWidthPx]);
-
-  // Draw the entire canvas
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (!canvas || !container) return;
-
-    const dpr = getPixelRatio();
-    const width = timelineWidth;
-    const height = Math.max(totalHeight, container.clientHeight);
-
-    // Set canvas size with HiDPI support
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Reset transform and scale for HiDPI (per SO #17854337)
-    ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset to identity
-    ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, width, height);
-
-    // Draw grid lines
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+function GridLines({ totalBars, barWidth, height }: GridLinesProps) {
+  const geometry = useMemo(() => {
+    const positions: number[] = [];
     for (let i = 0; i <= totalBars; i++) {
       const x = i * barWidth;
-      ctx.fillRect(x, 0, 1, height);
+      positions.push(x, 0, 0, x, -height, 0);
     }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    return geom;
+  }, [totalBars, barWidth, height]);
 
-    // Draw each track and its blocks
-    flatTracks.forEach((node, trackIndex) => {
-      const track = node.track;
-      const trackTop = trackIndex * trackHeight;
+  return (
+    <lineSegments geometry={geometry}>
+      <lineBasicMaterial color="#ffffff" opacity={0.1} transparent />
+    </lineSegments>
+  );
+}
 
-      // Draw blocks
-      for (const block of track.blocks) {
-        drawBlock(ctx, block, track, trackTop, trackIndex);
-      }
-    });
+// Single Block Component
+interface BlockMeshProps {
+  block: Block;
+  track: Track;
+  trackIndex: number;
+  pixelsPerBeat: number;
+  beatsPerBar: number;
+  trackHeight: number;
+  isSelected: boolean;
+  onPointerDown: (e: ThreeEvent<PointerEvent>, block: Block, track: Track, trackIndex: number, zone: string) => void;
+  onPointerOver: (blockId: string, zone: string) => void;
+  onPointerOut: () => void;
+  isHovered: boolean;
+  hoveredZone: string | null;
+}
 
-    // Draw marquee selection
-    if (dragState.type === 'marquee') {
-      const x1 = Math.min(dragState.startX, dragState.currentX);
-      const y1 = Math.min(dragState.startY, dragState.currentY);
-      const w = Math.abs(dragState.currentX - dragState.startX);
-      const h = Math.abs(dragState.currentY - dragState.startY);
+function BlockMesh({
+  block,
+  track,
+  trackIndex,
+  pixelsPerBeat,
+  beatsPerBar,
+  trackHeight,
+  isSelected,
+  onPointerDown,
+  onPointerOver,
+  onPointerOut,
+  isHovered,
+  hoveredZone,
+}: BlockMeshProps) {
+  const barWidth = beatsPerBar * pixelsPerBeat;
+  const handleWidthPx = 12;
 
-      if (w > 2 && h > 2) {
-        ctx.fillStyle = 'rgba(59, 130, 246, 0.15)';
-        ctx.strokeStyle = 'rgba(59, 130, 246, 0.6)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.roundRect(x1, y1, w, h, 2);
-        ctx.fill();
-        ctx.stroke();
-      }
-    }
-  }, [flatTracks, timelineWidth, totalHeight, barWidth, totalBars, trackHeight, dragState, selectedBlockIds, bpm, pixelsPerBeat, beatsPerBar, hoverBlockId, hoverZone]);
+  // Calculate position and size
+  const blockLeft = block.startBar * barWidth;
+  const fullBlockWidth = block.durationBars * barWidth;
+  const blockWidth = Math.max(fullBlockWidth - 2, 20);
+  const blockTop = trackIndex * trackHeight + 4;
+  const blockHeight = trackHeight - 8;
+  const contentAreaWidth = blockWidth - handleWidthPx;
 
-  // Helper to truncate text with ellipsis
-  const truncateText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string => {
-    const ellipsis = '...';
-    let width = ctx.measureText(text).width;
-    if (width <= maxWidth) return text;
+  // Colors
+  const baseColor = track.instrumentId
+    ? INSTRUMENT_COLORS[track.instrumentId]
+    : TRACK_TYPE_COLORS[track.typeId];
+  const handleColor = darken(baseColor, 40);
+  const selectionColor = tintWhite(baseColor, 0.85);
+  const selectedHandleColor = tintWhite(baseColor, 0.5);
 
-    const ellipsisWidth = ctx.measureText(ellipsis).width;
-    let truncated = text;
-    while (truncated.length > 0 && ctx.measureText(truncated).width + ellipsisWidth > maxWidth) {
-      truncated = truncated.slice(0, -1);
-    }
-    return truncated + ellipsis;
-  };
+  // Pattern info for loops
+  const allEvents = block.streams?.flatMap((s) => s.events) || [];
+  const patternLengthBeats = allEvents.length > 0
+    ? Math.max(...allEvents.map((e) => e.startTimeInBeats + (e.duration || 0.25)), beatsPerBar)
+    : beatsPerBar;
+  const patternBars = Math.ceil(patternLengthBeats / beatsPerBar);
+  const patternBeats = patternBars * beatsPerBar;
+  const patternWidthPx = patternBeats * pixelsPerBeat;
+  const blockTotalBeats = block.durationBars * beatsPerBar;
+  const loopCount = block.loop ? Math.ceil(blockTotalBeats / patternBeats) : 1;
 
-  // Draw a single block
-  const drawBlock = useCallback((
-    ctx: CanvasRenderingContext2D,
-    block: Block,
-    track: Track,
-    trackTop: number,
-    _trackIndex: number
-  ) => {
-    const isAudioBlock = track.instrumentId === 'audio' && block.audioData;
-    const isSelected = selectedBlockIds.has(block.id);
-    const isHandleHovered = hoverBlockId === block.id && (hoverZone === 'right-loop' || hoverZone === 'right-extend');
+  // Create iteration shapes
+  const iterationMeshes = useMemo(() => {
+    const meshes: React.ReactNode[] = [];
 
-    const baseColor = getTrackColor(track);
-    const handleColor = darken(baseColor, 40);
-    const selectionColor = tintWhite(baseColor, 0.85);
-    const selectedHandleColor = tintWhite(baseColor, 0.5);
-
-    // Calculate position and size - round to pixel boundaries for sharp rendering
-    const fullBlockWidth = block.durationBars * barWidth;
-    const blockLeft = Math.round(block.startBar * barWidth);
-    const blockWidth = Math.round(Math.max(fullBlockWidth - 2, 20)); // -2 matches original DOM
-    const blockTop = Math.round(trackTop + 4);
-    const blockHeight = Math.round(trackHeight - 8);
-
-    // Calculate pattern info for looped blocks
-    const allEvents = block.streams?.flatMap((s) => s.events) || [];
-    const patternLengthBeats = allEvents.length > 0
-      ? Math.max(...allEvents.map((e) => e.startTimeInBeats + (e.duration || 0.25)), beatsPerBar)
-      : beatsPerBar;
-    const patternBars = Math.ceil(patternLengthBeats / beatsPerBar);
-    const patternBeats = patternBars * beatsPerBar;
-    const patternWidthPx = patternBeats * pixelsPerBeat;
-    const blockTotalBeats = block.durationBars * beatsPerBar;
-    const loopCount = block.loop ? Math.ceil(blockTotalBeats / patternBeats) : 1;
-
-    // Content area width (excluding handle)
-    const contentAreaWidth = Math.round(blockWidth - handleWidthPx);
-
-    // Draw iteration backgrounds
-    if (block.loop) {
+    if (block.loop && loopCount > 1) {
       for (let i = 0; i < loopCount; i++) {
-        const iterationLeftPx = Math.round(i * patternWidthPx);
+        const iterationLeftPx = i * patternWidthPx;
         const visibleBeats = Math.min(patternBeats, blockTotalBeats - i * patternBeats);
-        let iterationWidthPx = Math.round(visibleBeats * pixelsPerBeat);
+        let iterationWidthPx = visibleBeats * pixelsPerBeat;
         if (iterationWidthPx <= 0) continue;
 
         const isFirst = i === 0;
         const isLast = i === loopCount - 1;
 
-        // Clip last iteration to content area
         if (isLast) {
-          iterationWidthPx = Math.round(Math.min(iterationWidthPx, contentAreaWidth - iterationLeftPx));
+          iterationWidthPx = Math.min(iterationWidthPx, contentAreaWidth - iterationLeftPx);
         }
         if (iterationWidthPx <= 4) iterationWidthPx = 4;
 
         const iterColor = isFirst ? baseColor : darken(baseColor, 20);
-
-        // All iterations have left rounding, only non-last have right rounding
         const leftRadius = 6;
         const rightRadius = isLast ? 0 : 6;
 
-        // Draw iteration background
-        ctx.fillStyle = iterColor;
-        ctx.beginPath();
-        ctx.roundRect(
-          blockLeft + iterationLeftPx,
-          blockTop,
+        const shape = createRoundedRectShape(
           iterationWidthPx,
           blockHeight,
           [leftRadius, rightRadius, rightRadius, leftRadius]
         );
-        ctx.fill();
 
-        // First iteration gets 3px left accent border when not selected
-        if (isFirst && !isSelected) {
-          ctx.fillStyle = baseColor;
-          ctx.beginPath();
-          ctx.roundRect(blockLeft, blockTop, 3, blockHeight, [6, 0, 0, 6]);
-          ctx.fill();
-        }
+        meshes.push(
+          <mesh
+            key={`iter-${i}`}
+            position={[blockLeft + iterationLeftPx + iterationWidthPx / 2, -(blockTop + blockHeight / 2), 0]}
+          >
+            <shapeGeometry args={[shape]} />
+            <meshBasicMaterial color={iterColor} />
+          </mesh>
+        );
       }
     } else {
-      // Non-looped block: single solid background
-      ctx.fillStyle = baseColor;
-      ctx.beginPath();
-      ctx.roundRect(blockLeft, blockTop, Math.max(4, contentAreaWidth), blockHeight, [6, 0, 0, 6]);
-      ctx.fill();
+      // Non-looped: single block
+      const shape = createRoundedRectShape(
+        Math.max(4, contentAreaWidth),
+        blockHeight,
+        [6, 0, 0, 6]
+      );
 
-      // Accent border when not selected
-      if (!isSelected) {
-        ctx.fillStyle = baseColor;
-        ctx.beginPath();
-        ctx.roundRect(blockLeft, blockTop, 3, blockHeight, [6, 0, 0, 6]);
-        ctx.fill();
-      }
+      meshes.push(
+        <mesh
+          key="single"
+          position={[blockLeft + contentAreaWidth / 2, -(blockTop + blockHeight / 2), 0]}
+        >
+          <shapeGeometry args={[shape]} />
+          <meshBasicMaterial color={baseColor} />
+        </mesh>
+      );
     }
 
-    // Draw selection border following iteration contours (including divets)
-    if (isSelected) {
-      ctx.strokeStyle = selectionColor;
-      ctx.lineWidth = 2;
-      const r = 6; // Same radius as fill so arcs meet at divets
+    return meshes;
+  }, [block.loop, loopCount, patternWidthPx, patternBeats, blockTotalBeats, contentAreaWidth, baseColor, blockLeft, blockTop, blockHeight]);
 
-      if (block.loop && loopCount > 1) {
-        // Per-iteration borders following divets
-        for (let i = 0; i < loopCount; i++) {
-          const iterationLeftPx = Math.round(i * patternWidthPx);
-          const visibleBeats = Math.min(patternBeats, blockTotalBeats - i * patternBeats);
-          let iterationWidthPx = Math.round(visibleBeats * pixelsPerBeat);
-          if (iterationWidthPx <= 0) continue;
+  // Handle mesh
+  const handleLeft = blockLeft + blockWidth - handleWidthPx;
+  const handleShape = useMemo(() =>
+    createRoundedRectShape(handleWidthPx, blockHeight, [0, 6, 6, 0]),
+    [blockHeight]
+  );
 
-          const isFirst = i === 0;
-          const isLast = i === loopCount - 1;
+  const handleOpacity = isSelected ? 1.0 : (isHovered && (hoveredZone === 'right-loop' || hoveredZone === 'right-extend') ? 1.0 : 0.8);
 
-          if (isLast) {
-            iterationWidthPx = Math.round(Math.min(iterationWidthPx, contentAreaWidth - iterationLeftPx));
-          }
+  // Events rendering
+  const eventMeshes = useMemo(() => {
+    if (allEvents.length === 0) return null;
 
-          const iterLeft = blockLeft + iterationLeftPx;
-          const iterRight = iterLeft + iterationWidthPx;
-
-          // TOP EDGE with divet curves
-          ctx.beginPath();
-          if (isFirst) {
-            // Start after left corner curve
-            ctx.moveTo(iterLeft + r, blockTop);
-          } else {
-            // Start with curve coming UP out of divet (from previous iteration's down curve)
-            ctx.moveTo(iterLeft, blockTop + r);
-            ctx.arc(iterLeft + r, blockTop + r, r, Math.PI, Math.PI * 1.5); // Curve up to top edge
-          }
-          // Top edge line
-          if (isLast) {
-            ctx.lineTo(iterRight, blockTop); // Straight to handle
-          } else {
-            ctx.lineTo(iterRight - r, blockTop); // To before right curve
-            ctx.arc(iterRight - r, blockTop + r, r, Math.PI * 1.5, Math.PI * 2); // Curve down into divet
-          }
-          ctx.stroke();
-
-          // BOTTOM EDGE with divet curves
-          ctx.beginPath();
-          if (isFirst) {
-            // Start after left corner curve
-            ctx.moveTo(iterLeft + r, blockTop + blockHeight);
-          } else {
-            // Start with curve coming DOWN out of divet
-            ctx.moveTo(iterLeft, blockTop + blockHeight - r);
-            ctx.arc(iterLeft + r, blockTop + blockHeight - r, r, Math.PI, Math.PI * 0.5, true); // Curve down to bottom edge
-          }
-          // Bottom edge line
-          if (isLast) {
-            ctx.lineTo(iterRight, blockTop + blockHeight); // Straight to handle
-          } else {
-            ctx.lineTo(iterRight - r, blockTop + blockHeight); // To before right curve
-            ctx.arc(iterRight - r, blockTop + blockHeight - r, r, Math.PI * 0.5, 0, true); // Curve up into divet
-          }
-          ctx.stroke();
-
-          // LEFT EDGE - only for first iteration
-          if (isFirst) {
-            ctx.beginPath();
-            ctx.moveTo(iterLeft + r, blockTop);
-            ctx.arc(iterLeft + r, blockTop + r, r, Math.PI * 1.5, Math.PI, true);
-            ctx.lineTo(iterLeft, blockTop + blockHeight - r);
-            ctx.arc(iterLeft + r, blockTop + blockHeight - r, r, Math.PI, Math.PI * 0.5, true);
-            ctx.stroke();
-          }
-        }
-      } else {
-        // Non-looped or single iteration: simple border with rounded left corners
-        ctx.beginPath();
-        ctx.moveTo(blockLeft + r, blockTop);
-        ctx.arc(blockLeft + r, blockTop + r, r, Math.PI * 1.5, Math.PI, true);
-        ctx.lineTo(blockLeft, blockTop + blockHeight - r);
-        ctx.arc(blockLeft + r, blockTop + blockHeight - r, r, Math.PI, Math.PI * 0.5, true);
-        ctx.stroke();
-
-        // Top border
-        ctx.beginPath();
-        ctx.moveTo(blockLeft + r, blockTop);
-        ctx.lineTo(blockLeft + contentAreaWidth, blockTop);
-        ctx.stroke();
-
-        // Bottom border
-        ctx.beginPath();
-        ctx.moveTo(blockLeft + r, blockTop + blockHeight);
-        ctx.lineTo(blockLeft + contentAreaWidth, blockTop + blockHeight);
-        ctx.stroke();
-      }
-    }
-
-    // Draw right resize handle (at right edge of container)
-    const handleLeft = Math.round(blockLeft + blockWidth - handleWidthPx);
-    // Handle opacity: 0.8 default, 1.0 on hover (when not selected)
-    const handleOpacity = isSelected ? 1.0 : (isHandleHovered ? 1.0 : 0.8);
-    ctx.globalAlpha = handleOpacity;
-    ctx.fillStyle = isSelected ? selectedHandleColor : handleColor;
-    ctx.beginPath();
-    ctx.roundRect(handleLeft, blockTop, handleWidthPx, blockHeight, [0, 6, 6, 0]);
-    ctx.fill();
-    ctx.globalAlpha = 1.0;
-
-    // Selection border on handle (top, bottom, right - follows curves)
-    if (isSelected) {
-      ctx.strokeStyle = selectionColor;
-      ctx.lineWidth = 2;
-      const r = 5; // Radius - 1 for inset
-
-      // Top border with right curve
-      ctx.beginPath();
-      ctx.moveTo(handleLeft, blockTop + 1);
-      ctx.lineTo(handleLeft + handleWidthPx - 6, blockTop + 1);
-      ctx.arc(handleLeft + handleWidthPx - 6, blockTop + 6, r, Math.PI * 1.5, Math.PI * 2);
-      ctx.stroke();
-
-      // Bottom border with right curve
-      ctx.beginPath();
-      ctx.arc(handleLeft + handleWidthPx - 6, blockTop + blockHeight - 6, r, 0, Math.PI * 0.5);
-      ctx.lineTo(handleLeft, blockTop + blockHeight - 1);
-      ctx.stroke();
-
-      // Right border (connects the two curves)
-      ctx.beginPath();
-      ctx.moveTo(handleLeft + handleWidthPx - 1, blockTop + 6);
-      ctx.lineTo(handleLeft + handleWidthPx - 1, blockTop + blockHeight - 6);
-      ctx.stroke();
-    }
-
-    // Draw header background when selected
-    if (isSelected) {
-      ctx.fillStyle = selectionColor;
-      ctx.beginPath();
-      ctx.roundRect(blockLeft, blockTop, contentAreaWidth, 20, [4, 0, 0, 0]);
-      ctx.fill();
-    }
-
-    // Draw track name (with proper truncation, not compression)
-    ctx.font = '500 12px system-ui, -apple-system, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = isSelected ? baseColor : 'rgba(255, 255, 255, 0.9)';
-    const maxTextWidth = contentAreaWidth - 8 - (block.loop ? 16 : 0); // Leave room for loop indicator
-    const truncatedName = truncateText(ctx, track.name, maxTextWidth);
-    ctx.fillText(truncatedName, blockLeft + 4, blockTop + 10);
-
-    // Draw loop indicator
-    if (block.loop) {
-      ctx.font = '10px system-ui';
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-      ctx.textAlign = 'right';
-      ctx.fillText('⟳', blockLeft + contentAreaWidth - 4, blockTop + 10);
-    }
-
-    // Draw events or waveform
+    const meshes: React.ReactNode[] = [];
     const contentTop = blockTop + 24;
     const contentHeight = blockHeight - 28;
     const contentLeft = blockLeft + 3;
     const contentWidth = contentAreaWidth - 6;
 
-    if (isAudioBlock && block.audioData) {
-      drawWaveform(ctx, block, contentLeft, contentTop, contentWidth, contentHeight);
-    } else if (allEvents.length > 0) {
-      drawEvents(ctx, block, contentLeft, contentTop, contentWidth, contentHeight);
-    }
-  }, [selectedBlockIds, barWidth, trackHeight, handleWidthPx, pixelsPerBeat, beatsPerBar, bpm, hoverBlockId, hoverZone]);
-
-  // Draw MIDI events inside a block
-  const drawEvents = useCallback((
-    ctx: CanvasRenderingContext2D,
-    block: Block,
-    left: number,
-    top: number,
-    width: number,
-    height: number
-  ) => {
-    const allEvents = block.streams?.flatMap((s) => s.events) || [];
-    if (allEvents.length === 0) return;
-
-    const blockTotalBeats = block.durationBars * beatsPerBar;
-    const patternLengthBeats = Math.max(
-      ...allEvents.map((e) => e.startTimeInBeats + (e.duration || 0.25)),
-      beatsPerBar
-    );
-    const patternBars = Math.ceil(patternLengthBeats / beatsPerBar);
-    const patternBeats = patternBars * beatsPerBar;
-    const patternWidthPx = patternBeats * pixelsPerBeat;
-
-    // Find pitch range for vertical positioning
-    const pitches = allEvents.filter((e) => e.pitch !== undefined).map((e) => e.pitch);
+    const pitches = allEvents.filter((e) => e.pitch !== undefined).map((e) => e.pitch!);
     const minPitch = pitches.length > 0 ? Math.min(...pitches) : 60;
     const maxPitch = pitches.length > 0 ? Math.max(...pitches) : 72;
     const pitchRange = Math.max(maxPitch - minPitch + 1, 1);
 
-    // Calculate how many loop iterations we need
-    const loopCount = block.loop ? Math.ceil(blockTotalBeats / patternBeats) : 1;
-
-    // Draw all events (including loop repetitions)
     for (let loopIdx = 0; loopIdx < loopCount; loopIdx++) {
       const offsetPx = loopIdx * patternWidthPx;
 
-      for (const event of allEvents) {
+      for (let eventIdx = 0; eventIdx < allEvents.length; eventIdx++) {
+        const event = allEvents[eventIdx];
         const eventStartBeat = event.startTimeInBeats + loopIdx * patternBeats;
         if (eventStartBeat >= blockTotalBeats) continue;
 
@@ -544,18 +249,12 @@ export function TimelineCanvas({
         const duration = event.duration || 0.25;
         const eventWidthPx = Math.max(duration * pixelsPerBeat, 2);
 
-        // Calculate vertical position
         let topPercent: number;
         let heightPercent: number;
 
         const drumType = getDrumType(event.pitch);
         if (drumType) {
-          const drumLanes: Record<string, number> = {
-            hihat: 0,
-            clap: 1,
-            snare: 2,
-            kick: 3,
-          };
+          const drumLanes: Record<string, number> = { hihat: 0, clap: 1, snare: 2, kick: 3 };
           const laneCount = 4;
           const lane = drumLanes[drumType] ?? 2;
           heightPercent = (100 / laneCount - 4) / 100;
@@ -569,454 +268,532 @@ export function TimelineCanvas({
         const baseOpacity = Math.max((event.velocity || 100) / 127, 0.4);
         const opacity = loopIdx === 0 ? baseOpacity : baseOpacity * 0.85;
 
-        const y = top + topPercent * height;
-        const h = heightPercent * height;
-        const x = left + eventStartPx;
+        const y = contentTop + topPercent * contentHeight;
+        const h = heightPercent * contentHeight;
+        const x = contentLeft + eventStartPx;
 
-        // Clamp to content bounds
-        if (x >= left + width) continue;
-        const drawWidth = Math.min(eventWidthPx, left + width - x);
+        if (x >= contentLeft + contentWidth) continue;
+        const drawWidth = Math.min(eventWidthPx, contentLeft + contentWidth - x);
 
-        ctx.fillStyle = `rgba(255, 255, 255, ${0.8 * opacity})`;
-        ctx.beginPath();
-        ctx.roundRect(x, y, drawWidth, h, 2);
-        ctx.fill();
+        meshes.push(
+          <mesh
+            key={`event-${loopIdx}-${eventIdx}`}
+            position={[x + drawWidth / 2, -(y + h / 2), 0.1]}
+          >
+            <planeGeometry args={[drawWidth, h]} />
+            <meshBasicMaterial color="#ffffff" opacity={0.8 * opacity} transparent />
+          </mesh>
+        );
       }
     }
-  }, [beatsPerBar, pixelsPerBeat]);
 
-  // Draw waveform for audio blocks
-  const drawWaveform = useCallback((
-    ctx: CanvasRenderingContext2D,
+    return meshes;
+  }, [allEvents, loopCount, patternWidthPx, patternBeats, blockTotalBeats, pixelsPerBeat, blockTop, blockHeight, blockLeft, contentAreaWidth]);
+
+  // Selection border (simplified - just outline)
+  const selectionBorder = useMemo(() => {
+    if (!isSelected) return null;
+
+    const totalWidth = blockWidth;
+    const points = [
+      new THREE.Vector3(-totalWidth / 2, blockHeight / 2, 0.2),
+      new THREE.Vector3(totalWidth / 2, blockHeight / 2, 0.2),
+      new THREE.Vector3(totalWidth / 2, -blockHeight / 2, 0.2),
+      new THREE.Vector3(-totalWidth / 2, -blockHeight / 2, 0.2),
+    ];
+
+    const lineGeom = new THREE.BufferGeometry().setFromPoints(points);
+
+    return (
+      <lineLoop
+        position={[blockLeft + totalWidth / 2, -(blockTop + blockHeight / 2), 0]}
+        geometry={lineGeom}
+      >
+        <lineBasicMaterial color={selectionColor} linewidth={2} />
+      </lineLoop>
+    );
+  }, [isSelected, blockWidth, blockHeight, blockLeft, blockTop, selectionColor]);
+
+  // Header background when selected
+  const headerBg = isSelected ? (
+    <mesh position={[blockLeft + contentAreaWidth / 2, -(blockTop + 10), 0.05]}>
+      <planeGeometry args={[contentAreaWidth, 20]} />
+      <meshBasicMaterial color={selectionColor} />
+    </mesh>
+  ) : null;
+
+  // Invisible hit areas for interaction
+  const bodyHitArea = (
+    <mesh
+      position={[blockLeft + contentAreaWidth / 2, -(blockTop + blockHeight / 2), 0.5]}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        onPointerDown(e, block, track, trackIndex, 'body');
+      }}
+      onPointerOver={() => onPointerOver(block.id, 'body')}
+      onPointerOut={onPointerOut}
+    >
+      <planeGeometry args={[contentAreaWidth - 24, blockHeight]} />
+      <meshBasicMaterial transparent opacity={0} />
+    </mesh>
+  );
+
+  const leftEdgeHitArea = (
+    <mesh
+      position={[blockLeft + 6, -(blockTop + blockHeight / 2), 0.5]}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        onPointerDown(e, block, track, trackIndex, 'left-edge');
+      }}
+      onPointerOver={() => onPointerOver(block.id, 'left-edge')}
+      onPointerOut={onPointerOut}
+    >
+      <planeGeometry args={[12, blockHeight]} />
+      <meshBasicMaterial transparent opacity={0} />
+    </mesh>
+  );
+
+  const rightLoopHitArea = (
+    <mesh
+      position={[handleLeft + handleWidthPx / 2, -(blockTop + blockHeight / 4), 0.5]}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        onPointerDown(e, block, track, trackIndex, 'right-loop');
+      }}
+      onPointerOver={() => onPointerOver(block.id, 'right-loop')}
+      onPointerOut={onPointerOut}
+    >
+      <planeGeometry args={[handleWidthPx, blockHeight / 2]} />
+      <meshBasicMaterial transparent opacity={0} />
+    </mesh>
+  );
+
+  const rightExtendHitArea = (
+    <mesh
+      position={[handleLeft + handleWidthPx / 2, -(blockTop + blockHeight * 3 / 4), 0.5]}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        onPointerDown(e, block, track, trackIndex, 'right-extend');
+      }}
+      onPointerOver={() => onPointerOver(block.id, 'right-extend')}
+      onPointerOut={onPointerOut}
+    >
+      <planeGeometry args={[handleWidthPx, blockHeight / 2]} />
+      <meshBasicMaterial transparent opacity={0} />
+    </mesh>
+  );
+
+  return (
+    <group>
+      {/* Iteration backgrounds */}
+      {iterationMeshes}
+
+      {/* Handle */}
+      <mesh position={[handleLeft + handleWidthPx / 2, -(blockTop + blockHeight / 2), 0.02]}>
+        <shapeGeometry args={[handleShape]} />
+        <meshBasicMaterial
+          color={isSelected ? selectedHandleColor : handleColor}
+          opacity={handleOpacity}
+          transparent
+        />
+      </mesh>
+
+      {/* Header background */}
+      {headerBg}
+
+      {/* Events */}
+      {eventMeshes}
+
+      {/* Selection border */}
+      {selectionBorder}
+
+      {/* Hit areas */}
+      {bodyHitArea}
+      {leftEdgeHitArea}
+      {rightLoopHitArea}
+      {rightExtendHitArea}
+    </group>
+  );
+}
+
+// Marquee selection overlay
+interface MarqueeProps {
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+}
+
+function Marquee({ startX, startY, currentX, currentY }: MarqueeProps) {
+  const x1 = Math.min(startX, currentX);
+  const y1 = Math.min(startY, currentY);
+  const w = Math.abs(currentX - startX);
+  const h = Math.abs(currentY - startY);
+
+  const lineGeometry = useMemo(() => {
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute([
+      -w/2, h/2, 0,
+      w/2, h/2, 0,
+      w/2, -h/2, 0,
+      -w/2, -h/2, 0,
+    ], 3));
+    return geom;
+  }, [w, h]);
+
+  if (w < 2 || h < 2) return null;
+
+  return (
+    <group position={[x1 + w / 2, -(y1 + h / 2), 1]}>
+      <mesh>
+        <planeGeometry args={[w, h]} />
+        <meshBasicMaterial color="#3b82f6" opacity={0.15} transparent />
+      </mesh>
+      <lineLoop geometry={lineGeometry}>
+        <lineBasicMaterial color="#3b82f6" opacity={0.6} transparent />
+      </lineLoop>
+    </group>
+  );
+}
+
+// Main Scene Component
+interface TimelineSceneProps {
+  flatTracks: TrackNode[];
+  pixelsPerBeat: number;
+  beatsPerBar: number;
+  totalBars: number;
+  bpm: number;
+  trackHeight: number;
+  timelineWidth: number;
+  totalHeight: number;
+}
+
+function TimelineScene({
+  flatTracks,
+  pixelsPerBeat,
+  beatsPerBar,
+  totalBars,
+  bpm,
+  trackHeight,
+  timelineWidth,
+  totalHeight,
+}: TimelineSceneProps) {
+  const { selectedBlockIds, selectBlock, selectBlocks, clearBlockSelection } = useUIStore();
+  const { updateBlock, moveBlock } = useProjectStore();
+  const tracks = useProjectStore((state) => state.project.tracks);
+
+  const barWidth = beatsPerBar * pixelsPerBeat;
+
+  // Drag state
+  const [dragState, setDragState] = useState<{
+    type: 'none' | 'drag' | 'resize-left' | 'resize-right-loop' | 'resize-right-extend' | 'marquee';
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    block?: Block;
+    track?: Track;
+    trackIndex?: number;
+    originalPositions?: Map<string, { startBar: number; durationBars: number; trackId: string }>;
+  }>({
+    type: 'none',
+    startX: 0,
+    startY: 0,
+    currentX: 0,
+    currentY: 0,
+  });
+
+  // Hover state
+  const [hoverBlockId, setHoverBlockId] = useState<string | null>(null);
+  const [hoverZone, setHoverZone] = useState<string | null>(null);
+
+  const handleBlockPointerDown = useCallback((
+    e: ThreeEvent<PointerEvent>,
     block: Block,
-    left: number,
-    top: number,
-    width: number,
-    height: number
+    track: Track,
+    trackIndex: number,
+    zone: string
   ) => {
-    if (!block.audioData) return;
+    const point = e.point;
 
-    const peaks = block.audioData.waveformPeaks;
-    if (!peaks || peaks.length === 0) return;
-
-    const beatsPerSecond = bpm / 60;
-    const audioBeats = block.audioData.duration * beatsPerSecond;
-    const audioBars = audioBeats / beatsPerBar;
-    const audioWidthPx = audioBars * barWidth;
-
-    const centerY = top + height / 2;
-    const maxAmplitude = Math.max(1, height / 2 - 2);
-
-    const drawWaveformSegment = (offsetX: number, fadeOpacity: number = 1) => {
-      if (offsetX >= width) return;
-
-      const drawWidth = Math.min(audioWidthPx, width - offsetX);
-      if (drawWidth <= 0) return;
-
-      const samplesPerPixel = peaks.length / Math.max(1, audioWidthPx);
-
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-      ctx.globalAlpha = fadeOpacity;
-
-      for (let x = 0; x < drawWidth; x++) {
-        const sampleIndex = Math.floor(x * samplesPerPixel);
-        const peak = peaks[Math.min(sampleIndex, peaks.length - 1)] || 0;
-        const barHeight = Math.max(1, peak * maxAmplitude);
-
-        const drawX = left + offsetX + x;
-        if (drawX >= left && drawX < left + width) {
-          ctx.fillRect(drawX, centerY - barHeight, 1, barHeight * 2);
-        }
-      }
-    };
-
-    // Draw initial waveform
-    drawWaveformSegment(0, 1);
-
-    // If looping, draw repeated waveforms
-    if (block.loop && audioWidthPx > 0) {
-      let currentOffset = audioWidthPx;
-      let iteration = 1;
-
-      while (currentOffset < width && iteration < 50) {
-        const fadeOpacity = Math.max(0.4, 1 - iteration * 0.15);
-        drawWaveformSegment(currentOffset, fadeOpacity);
-
-        // Draw loop boundary line
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.lineWidth = 1;
-        ctx.globalAlpha = 1;
-        ctx.setLineDash([3, 3]);
-        ctx.beginPath();
-        ctx.moveTo(left + currentOffset, top);
-        ctx.lineTo(left + currentOffset, top + height);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        currentOffset += audioWidthPx;
-        iteration++;
-      }
-    }
-
-    ctx.globalAlpha = 1;
-  }, [bpm, beatsPerBar, barWidth]);
-
-  // Calculate which blocks are inside the marquee selection
-  const getBlocksInMarquee = useCallback(() => {
-    if (dragState.type !== 'marquee') return [];
-
-    const { startX, startY, currentX, currentY } = dragState;
-
-    const minX = Math.min(startX, currentX);
-    const maxX = Math.max(startX, currentX);
-    const minY = Math.min(startY, currentY);
-    const maxY = Math.max(startY, currentY);
-
-    const matchingBlockIds: string[] = [];
-
-    flatTracks.forEach((node, trackIndex) => {
-      const track = node.track;
-      const trackTop = trackIndex * trackHeight;
-      const trackBottom = trackTop + trackHeight;
-
-      if (maxY < trackTop || minY > trackBottom) return;
-
-      track.blocks.forEach((block) => {
-        const blockLeft = block.startBar * barWidth;
-        const blockRight = blockLeft + block.durationBars * barWidth;
-
-        if (maxX >= blockLeft && minX <= blockRight) {
-          matchingBlockIds.push(block.id);
-        }
-      });
-    });
-
-    return matchingBlockIds;
-  }, [dragState, flatTracks, trackHeight, barWidth]);
-
-  // Convert mouse event to canvas coordinates
-  const getCanvasCoords = useCallback((e: React.MouseEvent | MouseEvent) => {
-    const container = containerRef.current;
-    if (!container) return { x: 0, y: 0 };
-    const rect = container.getBoundingClientRect();
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    };
-  }, []);
-
-  // Mouse down handler
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button !== 0) return;
-
-    const { x, y } = getCanvasCoords(e);
-    const hit = hitTest(x, y);
-
-    if (hit) {
-      // Clicked on a block
-      e.preventDefault();
-
-      // Handle selection
-      if (e.shiftKey) {
-        // Toggle selection
-        const newSelection = new Set(selectedBlockIds);
-        if (newSelection.has(hit.block.id)) {
-          newSelection.delete(hit.block.id);
-        } else {
-          newSelection.add(hit.block.id);
-        }
-        selectBlocks(Array.from(newSelection));
-      } else if (!selectedBlockIds.has(hit.block.id)) {
-        // Select this block only
-        selectBlock(hit.block.id, hit.trackId, false);
-      }
-
-      // Start appropriate drag operation based on zone
-      if (hit.zone === 'left-edge') {
-        // Capture original positions for all selected blocks
-        const originalPositions = new Map<string, { startBar: number; durationBars: number; trackId: string }>();
-        for (const blockId of selectedBlockIds) {
-          const trackId = findTrackForBlock(tracks, blockId);
-          if (trackId) {
-            const foundBlock = tracks[trackId].blocks.find(b => b.id === blockId);
-            if (foundBlock) {
-              originalPositions.set(blockId, {
-                startBar: foundBlock.startBar,
-                durationBars: foundBlock.durationBars,
-                trackId,
-              });
-            }
-          }
-        }
-        // Include current hit block if not already selected
-        if (!originalPositions.has(hit.block.id)) {
-          originalPositions.set(hit.block.id, {
-            startBar: hit.block.startBar,
-            durationBars: hit.block.durationBars,
-            trackId: hit.trackId,
-          });
-        }
-
-        setDragState({
-          type: 'resize-left',
-          startX: x,
-          startY: y,
-          currentX: x,
-          currentY: y,
-          hit,
-          originalPositions,
-        });
-      } else if (hit.zone === 'right-loop' || hit.zone === 'right-extend') {
-        // Capture original positions for resize
-        const originalPositions = new Map<string, { startBar: number; durationBars: number; trackId: string }>();
-        for (const blockId of selectedBlockIds) {
-          const trackId = findTrackForBlock(tracks, blockId);
-          if (trackId) {
-            const foundBlock = tracks[trackId].blocks.find(b => b.id === blockId);
-            if (foundBlock) {
-              originalPositions.set(blockId, {
-                startBar: foundBlock.startBar,
-                durationBars: foundBlock.durationBars,
-                trackId,
-              });
-            }
-          }
-        }
-        if (!originalPositions.has(hit.block.id)) {
-          originalPositions.set(hit.block.id, {
-            startBar: hit.block.startBar,
-            durationBars: hit.block.durationBars,
-            trackId: hit.trackId,
-          });
-        }
-
-        setDragState({
-          type: hit.zone === 'right-loop' ? 'resize-right-loop' : 'resize-right-extend',
-          startX: x,
-          startY: y,
-          currentX: x,
-          currentY: y,
-          hit,
-          originalPositions,
-        });
+    // Handle selection
+    if (e.shiftKey) {
+      const newSelection = new Set(selectedBlockIds);
+      if (newSelection.has(block.id)) {
+        newSelection.delete(block.id);
       } else {
-        // Body - start drag
-        const originalPositions = new Map<string, { startBar: number; durationBars: number; trackId: string }>();
-        for (const blockId of selectedBlockIds) {
-          const trackId = findTrackForBlock(tracks, blockId);
-          if (trackId) {
-            const foundBlock = tracks[trackId].blocks.find(b => b.id === blockId);
-            if (foundBlock) {
-              originalPositions.set(blockId, {
-                startBar: foundBlock.startBar,
-                durationBars: foundBlock.durationBars,
-                trackId,
-              });
-            }
-          }
-        }
-        if (!originalPositions.has(hit.block.id)) {
-          originalPositions.set(hit.block.id, {
-            startBar: hit.block.startBar,
-            durationBars: hit.block.durationBars,
-            trackId: hit.trackId,
+        newSelection.add(block.id);
+      }
+      selectBlocks(Array.from(newSelection));
+    } else if (!selectedBlockIds.has(block.id)) {
+      selectBlock(block.id, track.id, false);
+    }
+
+    // Capture original positions
+    const originalPositions = new Map<string, { startBar: number; durationBars: number; trackId: string }>();
+    for (const blockId of selectedBlockIds) {
+      const trackId = findTrackForBlock(tracks, blockId);
+      if (trackId) {
+        const foundBlock = tracks[trackId].blocks.find(b => b.id === blockId);
+        if (foundBlock) {
+          originalPositions.set(blockId, {
+            startBar: foundBlock.startBar,
+            durationBars: foundBlock.durationBars,
+            trackId,
           });
         }
-
-        setDragState({
-          type: 'drag',
-          startX: x,
-          startY: y,
-          currentX: x,
-          currentY: y,
-          hit,
-          originalPositions,
-          startTrackIndex: hit.trackIndex,
-        });
       }
-    } else {
-      // Clicked on empty space - start marquee
-      e.preventDefault();
-      if (!e.shiftKey) {
-        clearBlockSelection();
-      }
-      setDragState({
-        type: 'marquee',
-        startX: x,
-        startY: y,
-        currentX: x,
-        currentY: y,
+    }
+    if (!originalPositions.has(block.id)) {
+      originalPositions.set(block.id, {
+        startBar: block.startBar,
+        durationBars: block.durationBars,
+        trackId: track.id,
       });
     }
-  }, [getCanvasCoords, hitTest, selectedBlockIds, selectBlock, selectBlocks, clearBlockSelection, tracks]);
 
-  // Mouse move handler
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (dragState.type === 'none') return;
+    let dragType: typeof dragState.type = 'none';
+    if (zone === 'left-edge') dragType = 'resize-left';
+    else if (zone === 'right-loop') dragType = 'resize-right-loop';
+    else if (zone === 'right-extend') dragType = 'resize-right-extend';
+    else dragType = 'drag';
 
-    const { x, y } = getCanvasCoords(e);
+    setDragState({
+      type: dragType,
+      startX: point.x,
+      startY: -point.y,
+      currentX: point.x,
+      currentY: -point.y,
+      block,
+      track,
+      trackIndex,
+      originalPositions,
+    });
+  }, [selectedBlockIds, selectBlock, selectBlocks, tracks]);
 
-    if (dragState.type === 'marquee') {
-      setDragState(prev => ({ ...prev, currentX: x, currentY: y }));
-    } else if (dragState.type === 'drag' && dragState.originalPositions && dragState.hit) {
-      // Block dragging - handle both horizontal and cross-track movement
-      const deltaX = x - dragState.startX;
-      const deltaBars = Math.round(deltaX / barWidth);
+  const handlePointerMissed = useCallback((e: MouseEvent) => {
+    if (dragState.type !== 'none') return;
 
-      // Calculate target track based on Y position
-      const targetTrackIndex = Math.floor(y / trackHeight);
-      const clampedTrackIndex = Math.max(0, Math.min(targetTrackIndex, flatTracks.length - 1));
-      const targetTrack = flatTracks[clampedTrackIndex]?.track;
+    // Start marquee selection on background click
+    const canvas = (e.target as HTMLElement).closest('canvas');
+    if (!canvas) return;
 
-      // For now, only move the primary dragged block across tracks (not multi-select)
-      // Multi-track drag gets complex with different target tracks for each block
-      const primaryBlockId = dragState.hit.block.id;
-      const primaryOriginal = dragState.originalPositions.get(primaryBlockId);
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
 
-      if (primaryOriginal && targetTrack) {
-        const currentTrackId = findTrackForBlock(tracks, primaryBlockId);
-
-        // Move to different track if needed
-        if (currentTrackId && currentTrackId !== targetTrack.id) {
-          moveBlock(currentTrackId, primaryBlockId, targetTrack.id);
-          // Update the original positions map with new track ID
-          dragState.originalPositions.set(primaryBlockId, {
-            ...primaryOriginal,
-            trackId: targetTrack.id,
-          });
-        }
-
-        // Update horizontal position
-        const newStartBar = Math.max(0, primaryOriginal.startBar + deltaBars);
-        const blockCurrentTrackId = findTrackForBlock(tracks, primaryBlockId) || targetTrack.id;
-        updateBlock(blockCurrentTrackId, primaryBlockId, { startBar: newStartBar });
-      }
-
-      // Handle other selected blocks (keep them on their original tracks, just move horizontally)
-      for (const [blockId, original] of dragState.originalPositions) {
-        if (blockId === primaryBlockId) continue;
-        const newStartBar = Math.max(0, original.startBar + deltaBars);
-        updateBlock(original.trackId, blockId, { startBar: newStartBar });
-      }
-    } else if (dragState.type === 'resize-left' && dragState.originalPositions) {
-      const deltaX = x - dragState.startX;
-      const deltaBars = Math.round(deltaX / barWidth);
-
-      for (const [blockId, original] of dragState.originalPositions) {
-        const newStartBar = Math.max(0, original.startBar + deltaBars);
-        const startDelta = newStartBar - original.startBar;
-        const newDuration = Math.max(1, original.durationBars - startDelta);
-        const originalEndBar = original.startBar + original.durationBars;
-        const clampedDuration = Math.min(newDuration, originalEndBar - newStartBar);
-
-        if (clampedDuration >= 1) {
-          updateBlock(original.trackId, blockId, {
-            startBar: newStartBar,
-            durationBars: clampedDuration,
-          });
-        }
-      }
-    } else if (dragState.type === 'resize-right-loop' && dragState.originalPositions) {
-      const deltaX = x - dragState.startX;
-      const deltaBars = Math.round(deltaX / barWidth);
-
-      for (const [blockId, original] of dragState.originalPositions) {
-        const newDuration = Math.max(1, original.durationBars + deltaBars);
-        const block = tracks[original.trackId]?.blocks.find(b => b.id === blockId);
-        if (block) {
-          const patternBars = getPatternBars(block, beatsPerBar);
-          const shouldLoop = newDuration > patternBars;
-          updateBlock(original.trackId, blockId, {
-            durationBars: newDuration,
-            loop: shouldLoop,
-          });
-        }
-      }
-    } else if (dragState.type === 'resize-right-extend' && dragState.originalPositions) {
-      const deltaX = x - dragState.startX;
-      const deltaBars = Math.round(deltaX / barWidth);
-
-      for (const [blockId, original] of dragState.originalPositions) {
-        const newDuration = Math.max(1, original.durationBars + deltaBars);
-        updateBlock(original.trackId, blockId, { durationBars: newDuration });
-      }
-    }
-  }, [dragState, getCanvasCoords, barWidth, updateBlock, tracks, beatsPerBar]);
-
-  // Mouse up handler
-  const handleMouseUp = useCallback(() => {
-    if (dragState.type === 'marquee') {
-      const blockIds = getBlocksInMarquee();
-      if (blockIds.length > 0) {
-        selectBlocks(blockIds);
-      }
+    if (!e.shiftKey) {
+      clearBlockSelection();
     }
 
     setDragState({
-      type: 'none',
-      startX: 0,
-      startY: 0,
-      currentX: 0,
-      currentY: 0,
+      type: 'marquee',
+      startX: x,
+      startY: y,
+      currentX: x,
+      currentY: y,
     });
-  }, [dragState.type, getBlocksInMarquee, selectBlocks]);
+  }, [dragState.type, clearBlockSelection]);
 
-  // Cursor management and hover state
-  const handleMouseMoveForCursor = useCallback((e: React.MouseEvent) => {
-    if (dragState.type !== 'none') return;
+  // Handle pointer move and up globally
+  useEffect(() => {
+    if (dragState.type === 'none') return;
 
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const handleMove = (e: PointerEvent) => {
+      const canvas = document.querySelector('canvas');
+      if (!canvas) return;
 
-    const { x, y } = getCanvasCoords(e);
-    const hit = hitTest(x, y);
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
 
-    if (hit) {
-      // Update hover state for handle highlighting
-      setHoverBlockId(hit.block.id);
-      setHoverZone(hit.zone);
+      if (dragState.type === 'marquee') {
+        setDragState(prev => ({ ...prev, currentX: x, currentY: y }));
+      } else if (dragState.type === 'drag' && dragState.originalPositions && dragState.block) {
+        const deltaX = x - dragState.startX;
+        const deltaBars = Math.round(deltaX / barWidth);
 
-      if (hit.zone === 'left-edge' || hit.zone === 'right-loop' || hit.zone === 'right-extend') {
-        canvas.style.cursor = 'ew-resize';
-      } else {
-        canvas.style.cursor = 'pointer';
+        for (const [blockId, original] of dragState.originalPositions) {
+          const newStartBar = Math.max(0, original.startBar + deltaBars);
+          updateBlock(original.trackId, blockId, { startBar: newStartBar });
+        }
+      } else if (dragState.type === 'resize-left' && dragState.originalPositions) {
+        const deltaX = x - dragState.startX;
+        const deltaBars = Math.round(deltaX / barWidth);
+
+        for (const [blockId, original] of dragState.originalPositions) {
+          const newStartBar = Math.max(0, original.startBar + deltaBars);
+          const startDelta = newStartBar - original.startBar;
+          const newDuration = Math.max(1, original.durationBars - startDelta);
+          const originalEndBar = original.startBar + original.durationBars;
+          const clampedDuration = Math.min(newDuration, originalEndBar - newStartBar);
+
+          if (clampedDuration >= 1) {
+            updateBlock(original.trackId, blockId, {
+              startBar: newStartBar,
+              durationBars: clampedDuration,
+            });
+          }
+        }
+      } else if ((dragState.type === 'resize-right-loop' || dragState.type === 'resize-right-extend') && dragState.originalPositions) {
+        const deltaX = x - dragState.startX;
+        const deltaBars = Math.round(deltaX / barWidth);
+
+        for (const [blockId, original] of dragState.originalPositions) {
+          const newDuration = Math.max(1, original.durationBars + deltaBars);
+          const block = tracks[original.trackId]?.blocks.find(b => b.id === blockId);
+
+          if (dragState.type === 'resize-right-loop' && block) {
+            const patternBars = getPatternBars(block, beatsPerBar);
+            const shouldLoop = newDuration > patternBars;
+            updateBlock(original.trackId, blockId, {
+              durationBars: newDuration,
+              loop: shouldLoop,
+            });
+          } else {
+            updateBlock(original.trackId, blockId, { durationBars: newDuration });
+          }
+        }
       }
-    } else {
-      setHoverBlockId(null);
-      setHoverZone(null);
-      canvas.style.cursor = 'default';
-    }
-  }, [dragState.type, getCanvasCoords, hitTest]);
+    };
 
-  // Global mouse event listeners
-  useEffect(() => {
-    if (dragState.type !== 'none') {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      return () => {
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-      };
-    }
-  }, [dragState.type, handleMouseMove, handleMouseUp]);
+    const handleUp = () => {
+      if (dragState.type === 'marquee') {
+        // Calculate blocks in marquee
+        const { startX, startY, currentX, currentY } = dragState;
+        const minX = Math.min(startX, currentX);
+        const maxX = Math.max(startX, currentX);
+        const minY = Math.min(startY, currentY);
+        const maxY = Math.max(startY, currentY);
 
-  // Redraw on changes
-  useLayoutEffect(() => {
-    draw();
-  }, [draw]);
+        const matchingBlockIds: string[] = [];
 
-  // Also redraw on window resize
-  useEffect(() => {
-    const handleResize = () => draw();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [draw]);
+        flatTracks.forEach((node, trackIndex) => {
+          const track = node.track;
+          const trackTop = trackIndex * trackHeight;
+          const trackBottom = trackTop + trackHeight;
 
-  // File drag handlers for audio drop zone
+          if (maxY < trackTop || minY > trackBottom) return;
+
+          track.blocks.forEach((block) => {
+            const blockLeft = block.startBar * barWidth;
+            const blockRight = blockLeft + block.durationBars * barWidth;
+
+            if (maxX >= blockLeft && minX <= blockRight) {
+              matchingBlockIds.push(block.id);
+            }
+          });
+        });
+
+        if (matchingBlockIds.length > 0) {
+          selectBlocks(matchingBlockIds);
+        }
+      }
+
+      setDragState({
+        type: 'none',
+        startX: 0,
+        startY: 0,
+        currentX: 0,
+        currentY: 0,
+      });
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+  }, [dragState, barWidth, trackHeight, flatTracks, updateBlock, selectBlocks, tracks, beatsPerBar]);
+
+  return (
+    <>
+      <OrthographicCamera
+        makeDefault
+        position={[timelineWidth / 2, -totalHeight / 2, 100]}
+        zoom={1}
+        near={0.1}
+        far={1000}
+      />
+
+      {/* Grid lines */}
+      <GridLines totalBars={totalBars} barWidth={barWidth} height={totalHeight} />
+
+      {/* Blocks */}
+      {flatTracks.map((node, trackIndex) => (
+        node.track.blocks.map((block) => (
+          <BlockMesh
+            key={block.id}
+            block={block}
+            track={node.track}
+            trackIndex={trackIndex}
+            pixelsPerBeat={pixelsPerBeat}
+            beatsPerBar={beatsPerBar}
+            trackHeight={trackHeight}
+            isSelected={selectedBlockIds.has(block.id)}
+            onPointerDown={handleBlockPointerDown}
+            onPointerOver={(blockId, zone) => {
+              setHoverBlockId(blockId);
+              setHoverZone(zone);
+            }}
+            onPointerOut={() => {
+              setHoverBlockId(null);
+              setHoverZone(null);
+            }}
+            isHovered={hoverBlockId === block.id}
+            hoveredZone={hoverBlockId === block.id ? hoverZone : null}
+          />
+        ))
+      ))}
+
+      {/* Marquee */}
+      {dragState.type === 'marquee' && (
+        <Marquee
+          startX={dragState.startX}
+          startY={dragState.startY}
+          currentX={dragState.currentX}
+          currentY={dragState.currentY}
+        />
+      )}
+
+      {/* Background for pointer miss detection */}
+      <mesh
+        position={[timelineWidth / 2, -totalHeight / 2, -1]}
+        onPointerMissed={handlePointerMissed}
+      >
+        <planeGeometry args={[timelineWidth, totalHeight]} />
+        <meshBasicMaterial transparent opacity={0} />
+      </mesh>
+    </>
+  );
+}
+
+// Main Component
+export function TimelineCanvas({
+  flatTracks,
+  pixelsPerBeat,
+  beatsPerBar,
+  totalBars,
+  bpm,
+}: TimelineCanvasProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { trackHeightScale } = useUIStore();
+  const { handleAudioFileDrop, isProcessingAudio } = useDragDrop();
+
+  const [isDraggingAudioFile, setIsDraggingAudioFile] = useState(false);
+  const dragCounter = useRef(0);
+
+  const trackHeight = Math.round(64 * trackHeightScale);
+  const barWidth = beatsPerBar * pixelsPerBeat;
+  const timelineWidth = totalBars * barWidth;
+  const totalHeight = Math.max(flatTracks.length * trackHeight, 400);
+
+  // File drag handlers
   const handleFileDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     dragCounter.current++;
-
     if (e.dataTransfer.types.includes('Files')) {
       setIsDraggingAudioFile(true);
     }
@@ -1025,7 +802,6 @@ export function TimelineCanvas({
   const handleFileDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     dragCounter.current--;
-
     if (dragCounter.current === 0) {
       setIsDraggingAudioFile(false);
     }
@@ -1063,23 +839,33 @@ export function TimelineCanvas({
   return (
     <div
       ref={containerRef}
-      className={`timeline-content relative overflow-hidden ${dragState.type !== 'none' ? 'select-none' : ''}`}
-      style={{ width: timelineWidth, minHeight: '100%' }}
+      className="timeline-content relative overflow-hidden"
+      style={{ width: timelineWidth, minHeight: '100%', height: totalHeight }}
       onDragEnter={handleFileDragEnter}
       onDragLeave={handleFileDragLeave}
       onDragOver={handleFileDragOver}
       onDrop={handleFileDrop}
     >
-      <canvas
-        ref={canvasRef}
-        className="block"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMoveForCursor}
-      />
+      <Canvas
+        style={{ width: timelineWidth, height: totalHeight }}
+        gl={{ antialias: true, alpha: true }}
+        dpr={window.devicePixelRatio || 1}
+      >
+        <TimelineScene
+          flatTracks={flatTracks}
+          pixelsPerBeat={pixelsPerBeat}
+          beatsPerBar={beatsPerBar}
+          totalBars={totalBars}
+          bpm={bpm}
+          trackHeight={trackHeight}
+          timelineWidth={timelineWidth}
+          totalHeight={totalHeight}
+        />
+      </Canvas>
 
       {/* Empty state */}
       {flatTracks.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center">
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <p className="text-muted-foreground">
             Add tracks from the Pattern Library
           </p>
