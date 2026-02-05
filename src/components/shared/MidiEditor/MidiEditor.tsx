@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, ThreeEvent } from '@react-three/fiber';
 import { OrthographicCamera, Html } from '@react-three/drei';
-import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { generateId } from '@/utils/id';
 
@@ -52,6 +51,45 @@ function lightenColor(hex: string, amount: number): string {
   const b = Math.min(255, (num & 0xff) + Math.round(255 * amount));
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
+
+// Glow shader material for rounded rectangle
+const glowVertexShader = `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const glowFragmentShader = `
+  uniform vec3 uColor;
+  uniform float uIntensity;
+  uniform vec2 uSize;
+  uniform float uRadius;
+  uniform float uGlowSize;
+  varying vec2 vUv;
+
+  // SDF for rounded rectangle (centered at origin)
+  float sdRoundedBox(vec2 p, vec2 b, float r) {
+    vec2 q = abs(p) - b + r;
+    return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+  }
+
+  void main() {
+    // Convert UV to local coordinates centered on the note
+    vec2 totalSize = uSize + uGlowSize * 2.0;
+    vec2 p = (vUv - 0.5) * totalSize;
+
+    // Calculate SDF to the inner rounded rectangle
+    float d = sdRoundedBox(p, uSize * 0.5, uRadius);
+
+    // Create smooth glow falloff
+    float glow = 1.0 - smoothstep(0.0, uGlowSize, d);
+    glow = pow(glow, 1.5); // Adjust falloff curve
+
+    gl_FragColor = vec4(uColor, glow * uIntensity);
+  }
+`;
 
 // Create a centered rounded rectangle shape
 function createRoundedRectShape(width: number, height: number, radius: number): THREE.Shape {
@@ -143,7 +181,48 @@ function RowDividers({ rows, rowHeight, labelWidth, width }: RowDividersProps) {
   );
 }
 
-// Selection Ring Component (glow comes from bloom on emissive note)
+// Glow Mesh Component using custom shader
+interface GlowMeshProps {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  color: string;
+  glowSize?: number;
+  intensity?: number;
+}
+
+function GlowMesh({ x, y, w, h, color, glowSize = 12, intensity = 0.8 }: GlowMeshProps) {
+  const shaderMaterial = useMemo(() => {
+    const threeColor = new THREE.Color(color);
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        uColor: { value: threeColor },
+        uIntensity: { value: intensity },
+        uSize: { value: new THREE.Vector2(w, h) },
+        uRadius: { value: 3 },
+        uGlowSize: { value: glowSize },
+      },
+      vertexShader: glowVertexShader,
+      fragmentShader: glowFragmentShader,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+  }, [color, w, h, glowSize, intensity]);
+
+  // Total size including glow
+  const totalW = w + glowSize * 2;
+  const totalH = h + glowSize * 2;
+
+  return (
+    <mesh position={[x + w / 2, -(y + h / 2), -0.05]} material={shaderMaterial}>
+      <planeGeometry args={[totalW, totalH]} />
+    </mesh>
+  );
+}
+
+// Selection Ring Component
 interface SelectionRingProps {
   x: number;
   y: number;
@@ -198,13 +277,16 @@ function NoteMesh({
   const h = rowHeight - 4;
 
   const noteColor = isSelected ? lightenColor(row.color, 0.3) : row.color;
-  const threeColor = useMemo(() => new THREE.Color(noteColor), [noteColor]);
-  const emissiveColor = useMemo(() => new THREE.Color(row.color), [row.color]);
 
   const shape = useMemo(() => createRoundedRectShape(w, h, 3), [w, h]);
 
   return (
     <group>
+      {/* Glow effect for selected notes */}
+      {isSelected && (
+        <GlowMesh x={x} y={y} w={w} h={h} color={row.color} glowSize={14} intensity={0.9} />
+      )}
+
       {/* Shadow (only for non-selected) */}
       {!isSelected && (
         <mesh position={[x + w / 2 + 1, -(y + h / 2 + 1), -0.1]}>
@@ -213,19 +295,10 @@ function NoteMesh({
         </mesh>
       )}
 
-      {/* Note body - uses emissive for bloom when selected */}
+      {/* Note body */}
       <mesh position={[x + w / 2, -(y + h / 2), 0]}>
         <shapeGeometry args={[shape]} />
-        {isSelected ? (
-          <meshStandardMaterial
-            color={threeColor}
-            emissive={emissiveColor}
-            emissiveIntensity={2}
-            toneMapped={false}
-          />
-        ) : (
-          <meshBasicMaterial color={noteColor} />
-        )}
+        <meshBasicMaterial color={noteColor} />
       </mesh>
 
       {/* Selection ring */}
@@ -599,9 +672,6 @@ function MidiScene({
         far={1000}
       />
 
-      {/* Ambient light for standard materials */}
-      <ambientLight intensity={1} />
-
       {/* Background */}
       <mesh position={[canvasWidth / 2, -canvasHeight / 2, -2]}>
         <planeGeometry args={[canvasWidth, canvasHeight]} />
@@ -690,15 +760,6 @@ function MidiScene({
         <meshBasicMaterial transparent opacity={0} />
       </mesh>
 
-      {/* Bloom effect for selected note glow */}
-      <EffectComposer>
-        <Bloom
-          intensity={0.5}
-          luminanceThreshold={0.9}
-          luminanceSmoothing={0.4}
-          mipmapBlur
-        />
-      </EffectComposer>
     </>
   );
 }
