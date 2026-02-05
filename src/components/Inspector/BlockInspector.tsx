@@ -150,16 +150,19 @@ export function BlockInspector({ block, track }: BlockInspectorProps) {
             Events Preview
           </h4>
           <div className="max-h-32 overflow-y-auto text-xs font-mono bg-background rounded-lg p-2 space-y-0.5">
-            {block.streams?.[0]?.events.slice(0, 10).map((event, i) => {
-              const drumType = getDrumType(event.pitch);
-              return (
-                <div key={i} className="text-muted-foreground">
-                  t:{event.startTimeInBeats.toFixed(2)}{' '}
-                  {drumType ? `d:${drumType}` : `p:${event.pitch}`}{' '}
-                  v:{event.velocity}
-                </div>
-              );
-            })}
+            {block.streams?.[0]?.events
+              .filter((event) => event && typeof event.startTimeInBeats === 'number')
+              .slice(0, 10)
+              .map((event, i) => {
+                const drumType = getDrumType(event.pitch);
+                return (
+                  <div key={i} className="text-muted-foreground">
+                    t:{event.startTimeInBeats.toFixed(2)}{' '}
+                    {drumType ? `d:${drumType}` : `p:${event.pitch}`}{' '}
+                    v:{event.velocity}
+                  </div>
+                );
+              })}
             {totalEvents > 10 && (
               <div className="text-muted-foreground/50">
                 ...and {totalEvents - 10} more

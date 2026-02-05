@@ -435,6 +435,7 @@ function BlockMesh({
         const iterLeft = i * patternWidthPx;
         const visibleBeats = Math.min(patternBeats, blockTotalBeats - i * patternBeats);
         let iterWidth = visibleBeats * pixelsPerBeat;
+        const isFirst = i === 0;
         const isLast = i === loopCount - 1;
 
         if (isLast) {
@@ -444,38 +445,31 @@ function BlockMesh({
 
         const iterRight = iterLeft + iterWidth;
 
-        if (i === loopCount - 1) {
-          // Last iteration (first in reverse)
-          if (!isLast) {
-            // Curve up into divet
-            points.push(...quadraticBezierPoints(
-              new THREE.Vector3(iterRight, -hh, z),
-              new THREE.Vector3(iterRight, -hh + radius, z),
-              new THREE.Vector3(iterRight - radius, -hh + radius, z),
-              curveSegments
-            ));
-          }
+        if (isLast) {
+          // Rightmost iteration (first in reverse) - straight segment only, divet is at left edge
           points.push(new THREE.Vector3(iterLeft + radius, -hh, z));
-        } else if (i === 0) {
-          // First iteration (last in reverse) - end with left corner
-          // Curve up from divet
-          points.push(...quadraticBezierPoints(
-            new THREE.Vector3(iterRight, -hh + radius, z),
-            new THREE.Vector3(iterRight, -hh, z),
-            new THREE.Vector3(iterRight - radius, -hh, z),
-            curveSegments
-          ));
-          points.push(new THREE.Vector3(radius, -hh, z));
         } else {
-          // Middle iterations
-          // Curve up from divet
+          // Divet exists at iterRight (between this iter and the one to our right)
+          // First: curve going UP into divet (right wall)
+          points.push(...quadraticBezierPoints(
+            new THREE.Vector3(iterRight + radius, -hh, z),
+            new THREE.Vector3(iterRight, -hh, z),
+            new THREE.Vector3(iterRight, -hh + radius, z),
+            curveSegments
+          ));
+          // Then: curve going DOWN from divet (left wall)
           points.push(...quadraticBezierPoints(
             new THREE.Vector3(iterRight, -hh + radius, z),
             new THREE.Vector3(iterRight, -hh, z),
             new THREE.Vector3(iterRight - radius, -hh, z),
             curveSegments
           ));
-          points.push(new THREE.Vector3(iterLeft + radius, -hh, z));
+          // Straight segment to this iter's left edge (or to corner if first)
+          if (isFirst) {
+            points.push(new THREE.Vector3(radius, -hh, z));
+          } else {
+            points.push(new THREE.Vector3(iterLeft + radius, -hh, z));
+          }
         }
       }
 
@@ -530,11 +524,14 @@ function BlockMesh({
   }, [isSelected, block.loop, loopCount, patternWidthPx, patternBeats, blockTotalBeats, contentAreaWidth, blockWidth, blockHeight, blockLeft, blockTop, selectionColor]);
 
   // Header background when selected - follows iteration contours with divets
+  // Shared radius constant for block corners (used by both border and header)
+  const blockRadius = 6;
+
   const headerBg = useMemo(() => {
     if (!isSelected) return null;
 
     const headerHeight = 20;
-    const radius = 4;
+    const radius = blockRadius; // Match block border radius
     const hh = headerHeight / 2;
 
     if (block.loop && loopCount > 1) {
@@ -554,9 +551,11 @@ function BlockMesh({
         if (iterWidth <= 4) iterWidth = 4;
 
         // Create header shape for this iteration
-        const leftRadius = isFirst ? radius : 0;
-        const rightRadius = isLast ? 0 : 0; // No right radius - square edges between iterations
-        const shape = createRoundedRectShape(iterWidth, headerHeight, [leftRadius, rightRadius, rightRadius, leftRadius]);
+        // Use divet radius (6px) to create visual gaps matching border divets
+        const divetRadius = 6;
+        const leftRadius = isFirst ? radius : divetRadius;   // Edge radius for first, divet radius otherwise
+        const rightRadius = isLast ? 0 : divetRadius;        // Square where handle connects, divet radius otherwise
+        const shape = createRoundedRectShape(iterWidth, headerHeight, [leftRadius, rightRadius, 0, 0]);
 
         meshes.push(
           <mesh
