@@ -83,6 +83,47 @@ function createRoundedRectShape(
   return shape;
 }
 
+// Generate points along a quadratic bezier curve
+function quadraticBezierPoints(
+  p0: THREE.Vector3,
+  p1: THREE.Vector3, // control point
+  p2: THREE.Vector3,
+  segments: number = 8
+): THREE.Vector3[] {
+  const points: THREE.Vector3[] = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const t1 = 1 - t;
+    const x = t1 * t1 * p0.x + 2 * t1 * t * p1.x + t * t * p2.x;
+    const y = t1 * t1 * p0.y + 2 * t1 * t * p1.y + t * t * p2.y;
+    const z = p0.z;
+    points.push(new THREE.Vector3(x, y, z));
+  }
+  return points;
+}
+
+// Get a readable text color for selection header (darker version of base color)
+function getSelectionTextColor(baseColor: string): string {
+  // Parse color
+  const hex = baseColor.replace('#', '');
+  const r = parseInt(hex.substr(0, 2), 16);
+  const g = parseInt(hex.substr(2, 2), 16);
+  const b = parseInt(hex.substr(4, 2), 16);
+
+  // Calculate luminance
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+  // For bright colors (like lime green #22c55e), darken significantly more
+  // For darker colors, standard darkening is fine
+  const darkenAmount = luminance > 0.5 ? 100 : 50;
+
+  const newR = Math.max(0, r - darkenAmount);
+  const newG = Math.max(0, g - darkenAmount);
+  const newB = Math.max(0, b - darkenAmount);
+
+  return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
+}
+
 // Grid Lines Component
 interface GridLinesProps {
   totalBars: number;
@@ -315,19 +356,25 @@ function BlockMesh({
     if (!isSelected) return null;
 
     const radius = 6;
-    const divetRadius = 6;
     const hh = blockHeight / 2;
     const z = 0.2;
+    const curveSegments = 6;
 
-    // Build a path that follows the outer contour of all iterations
+    // Build a path that follows the outer contour of all iterations with curved corners
     const points: THREE.Vector3[] = [];
 
     if (block.loop && loopCount > 1) {
-      // Multiple iterations - need divets between them
-      // Start at top-left after the corner
-      points.push(new THREE.Vector3(radius, hh, z));
+      // Multiple iterations - need curved divets between them
 
-      // Trace top edge with divets
+      // Top-left corner curve (going from left edge to top edge)
+      points.push(...quadraticBezierPoints(
+        new THREE.Vector3(0, hh - radius, z),
+        new THREE.Vector3(0, hh, z),
+        new THREE.Vector3(radius, hh, z),
+        curveSegments
+      ));
+
+      // Trace top edge with curved divets
       for (let i = 0; i < loopCount; i++) {
         const iterLeft = i * patternWidthPx;
         const visibleBeats = Math.min(patternBeats, blockTotalBeats - i * patternBeats);
@@ -340,31 +387,50 @@ function BlockMesh({
         if (iterWidth <= 4) iterWidth = 4;
 
         const iterRight = iterLeft + iterWidth;
-        const rightRadius = isLast ? 0 : radius;
 
         if (i === 0) {
-          // First iteration - continue to where the right corner starts
-          points.push(new THREE.Vector3(iterRight - rightRadius, hh, z));
+          // First iteration - go to right corner
           if (!isLast) {
-            // Top-right corner going down into divet
-            points.push(new THREE.Vector3(iterRight, hh - divetRadius, z));
+            points.push(new THREE.Vector3(iterRight - radius, hh, z));
+            // Curved corner going down into divet
+            points.push(...quadraticBezierPoints(
+              new THREE.Vector3(iterRight - radius, hh, z),
+              new THREE.Vector3(iterRight, hh, z),
+              new THREE.Vector3(iterRight, hh - radius, z),
+              curveSegments
+            ));
+          } else {
+            points.push(new THREE.Vector3(contentAreaWidth, hh, z));
           }
         } else {
-          // Subsequent iterations - come up from divet, go across, then down into next divet
-          points.push(new THREE.Vector3(iterLeft, hh - divetRadius, z));
-          points.push(new THREE.Vector3(iterLeft + radius, hh, z));
-          points.push(new THREE.Vector3(iterRight - rightRadius, hh, z));
+          // Subsequent iterations - curved divet up, across, then curved divet down
+          // Curve coming up from divet
+          points.push(...quadraticBezierPoints(
+            new THREE.Vector3(iterLeft, hh - radius, z),
+            new THREE.Vector3(iterLeft, hh, z),
+            new THREE.Vector3(iterLeft + radius, hh, z),
+            curveSegments
+          ));
+
           if (!isLast) {
-            points.push(new THREE.Vector3(iterRight, hh - divetRadius, z));
+            points.push(new THREE.Vector3(iterRight - radius, hh, z));
+            // Curve going down into next divet
+            points.push(...quadraticBezierPoints(
+              new THREE.Vector3(iterRight - radius, hh, z),
+              new THREE.Vector3(iterRight, hh, z),
+              new THREE.Vector3(iterRight, hh - radius, z),
+              curveSegments
+            ));
+          } else {
+            points.push(new THREE.Vector3(contentAreaWidth, hh, z));
           }
         }
       }
 
       // Right edge (handle area - straight down)
-      points.push(new THREE.Vector3(contentAreaWidth, hh, z));
       points.push(new THREE.Vector3(contentAreaWidth, -hh, z));
 
-      // Trace bottom edge with divets (going right to left)
+      // Trace bottom edge with curved divets (going right to left)
       for (let i = loopCount - 1; i >= 0; i--) {
         const iterLeft = i * patternWidthPx;
         const visibleBeats = Math.min(patternBeats, blockTotalBeats - i * patternBeats);
@@ -377,50 +443,74 @@ function BlockMesh({
         if (iterWidth <= 4) iterWidth = 4;
 
         const iterRight = iterLeft + iterWidth;
-        const rightRadius = isLast ? 0 : radius;
 
         if (i === loopCount - 1) {
-          // Last iteration (first in reverse) - start from right edge
+          // Last iteration (first in reverse)
           if (!isLast) {
-            points.push(new THREE.Vector3(iterRight, -hh + divetRadius, z));
+            // Curve up into divet
+            points.push(...quadraticBezierPoints(
+              new THREE.Vector3(iterRight, -hh, z),
+              new THREE.Vector3(iterRight, -hh + radius, z),
+              new THREE.Vector3(iterRight - radius, -hh + radius, z),
+              curveSegments
+            ));
           }
-          points.push(new THREE.Vector3(iterRight - rightRadius, -hh, z));
           points.push(new THREE.Vector3(iterLeft + radius, -hh, z));
         } else if (i === 0) {
           // First iteration (last in reverse) - end with left corner
-          points.push(new THREE.Vector3(iterRight, -hh + divetRadius, z));
-          points.push(new THREE.Vector3(iterRight - rightRadius, -hh, z));
+          // Curve up from divet
+          points.push(...quadraticBezierPoints(
+            new THREE.Vector3(iterRight, -hh + radius, z),
+            new THREE.Vector3(iterRight, -hh, z),
+            new THREE.Vector3(iterRight - radius, -hh, z),
+            curveSegments
+          ));
           points.push(new THREE.Vector3(radius, -hh, z));
         } else {
           // Middle iterations
-          points.push(new THREE.Vector3(iterRight, -hh + divetRadius, z));
-          points.push(new THREE.Vector3(iterRight - rightRadius, -hh, z));
+          // Curve up from divet
+          points.push(...quadraticBezierPoints(
+            new THREE.Vector3(iterRight, -hh + radius, z),
+            new THREE.Vector3(iterRight, -hh, z),
+            new THREE.Vector3(iterRight - radius, -hh, z),
+            curveSegments
+          ));
           points.push(new THREE.Vector3(iterLeft + radius, -hh, z));
         }
       }
 
-      // Left edge (going up) with rounded corner
-      points.push(new THREE.Vector3(0, -hh + radius, z));
-      points.push(new THREE.Vector3(0, hh - radius, z));
-      // Close with top-left corner
-      points.push(new THREE.Vector3(radius, hh, z));
+      // Bottom-left corner curve
+      points.push(...quadraticBezierPoints(
+        new THREE.Vector3(radius, -hh, z),
+        new THREE.Vector3(0, -hh, z),
+        new THREE.Vector3(0, -hh + radius, z),
+        curveSegments
+      ));
 
     } else {
       // Single block (no loop) - simple rounded rectangle on left, square on right
       const hw = contentAreaWidth / 2;
+
+      // Top-left corner curve
+      points.push(...quadraticBezierPoints(
+        new THREE.Vector3(-hw, hh - radius, z),
+        new THREE.Vector3(-hw, hh, z),
+        new THREE.Vector3(-hw + radius, hh, z),
+        curveSegments
+      ));
       // Top edge
-      points.push(new THREE.Vector3(-hw + radius, hh, z));
       points.push(new THREE.Vector3(hw, hh, z));
       // Right edge (square - connects to handle)
       points.push(new THREE.Vector3(hw, -hh, z));
       // Bottom edge
       points.push(new THREE.Vector3(-hw + radius, -hh, z));
-      // Bottom-left corner
-      points.push(new THREE.Vector3(-hw, -hh + radius, z));
-      // Left edge
-      points.push(new THREE.Vector3(-hw, hh - radius, z));
-      // Top-left corner (close)
-      points.push(new THREE.Vector3(-hw + radius, hh, z));
+      // Bottom-left corner curve
+      points.push(...quadraticBezierPoints(
+        new THREE.Vector3(-hw + radius, -hh, z),
+        new THREE.Vector3(-hw, -hh, z),
+        new THREE.Vector3(-hw, -hh + radius, z),
+        curveSegments
+      ));
     }
 
     const lineGeom = new THREE.BufferGeometry().setFromPoints(points);
@@ -439,17 +529,58 @@ function BlockMesh({
     );
   }, [isSelected, block.loop, loopCount, patternWidthPx, patternBeats, blockTotalBeats, contentAreaWidth, blockWidth, blockHeight, blockLeft, blockTop, selectionColor]);
 
-  // Header background when selected (rounded top corners)
-  const headerShape = useMemo(() =>
-    createRoundedRectShape(contentAreaWidth, 20, [4, 0, 0, 0]),
-    [contentAreaWidth]
-  );
-  const headerBg = isSelected ? (
-    <mesh position={[blockLeft + contentAreaWidth / 2, -(blockTop + 10), 0.05]}>
-      <shapeGeometry args={[headerShape]} />
-      <meshBasicMaterial color={selectionColor} />
-    </mesh>
-  ) : null;
+  // Header background when selected - follows iteration contours with divets
+  const headerBg = useMemo(() => {
+    if (!isSelected) return null;
+
+    const headerHeight = 20;
+    const radius = 4;
+    const hh = headerHeight / 2;
+
+    if (block.loop && loopCount > 1) {
+      // Create individual header pieces for each iteration to follow divets
+      const meshes: React.ReactNode[] = [];
+
+      for (let i = 0; i < loopCount; i++) {
+        const iterLeft = i * patternWidthPx;
+        const visibleBeats = Math.min(patternBeats, blockTotalBeats - i * patternBeats);
+        let iterWidth = visibleBeats * pixelsPerBeat;
+        const isFirst = i === 0;
+        const isLast = i === loopCount - 1;
+
+        if (isLast) {
+          iterWidth = Math.min(iterWidth, contentAreaWidth - iterLeft);
+        }
+        if (iterWidth <= 4) iterWidth = 4;
+
+        // Create header shape for this iteration
+        const leftRadius = isFirst ? radius : 0;
+        const rightRadius = isLast ? 0 : 0; // No right radius - square edges between iterations
+        const shape = createRoundedRectShape(iterWidth, headerHeight, [leftRadius, rightRadius, rightRadius, leftRadius]);
+
+        meshes.push(
+          <mesh
+            key={`header-${i}`}
+            position={[blockLeft + iterLeft + iterWidth / 2, -(blockTop + hh), 0.05]}
+          >
+            <shapeGeometry args={[shape]} />
+            <meshBasicMaterial color={selectionColor} />
+          </mesh>
+        );
+      }
+
+      return <>{meshes}</>;
+    } else {
+      // Non-looped: simple header
+      const shape = createRoundedRectShape(contentAreaWidth, headerHeight, [radius, 0, 0, 0]);
+      return (
+        <mesh position={[blockLeft + contentAreaWidth / 2, -(blockTop + hh), 0.05]}>
+          <shapeGeometry args={[shape]} />
+          <meshBasicMaterial color={selectionColor} />
+        </mesh>
+      );
+    }
+  }, [isSelected, block.loop, loopCount, patternWidthPx, patternBeats, blockTotalBeats, contentAreaWidth, blockLeft, blockTop, selectionColor]);
 
   // Invisible hit areas for interaction
   const bodyHitArea = (
@@ -598,7 +729,7 @@ function BlockMesh({
         >
           <span
             style={{
-              color: isSelected ? darken(baseColor, 30) : 'rgba(255,255,255,0.9)',
+              color: isSelected ? getSelectionTextColor(baseColor) : 'rgba(255,255,255,0.9)',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
             }}
@@ -606,7 +737,7 @@ function BlockMesh({
             {track.name}
           </span>
           {block.loop && (
-            <span style={{ color: isSelected ? darken(baseColor, 30) : 'rgba(255,255,255,0.7)', fontSize: '10px', marginLeft: '4px', opacity: isSelected ? 0.7 : 1 }}>
+            <span style={{ color: isSelected ? getSelectionTextColor(baseColor) : 'rgba(255,255,255,0.7)', fontSize: '10px', marginLeft: '4px', opacity: isSelected ? 0.7 : 1 }}>
               ⟳
             </span>
           )}
