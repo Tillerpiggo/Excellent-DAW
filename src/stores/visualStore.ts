@@ -1,32 +1,17 @@
 import { create } from 'zustand';
-import { VisualInstrumentState } from '@/core/visualTypes';
 
 interface VisualState {
-  // Track states indexed by trackId
-  trackStates: Map<string, VisualInstrumentState>;
+  // Track IDs that have active visual instruments (structural only, not per-frame state)
+  activeTrackIds: string[];
 
   // Actions
-  updateTrackStates: (states: Map<string, VisualInstrumentState>) => void;
-  clearStates: () => void;
+  setActiveTrackIds: (trackIds: string[]) => void;
 }
 
 export const useVisualStore = create<VisualState>((set) => ({
-  trackStates: new Map(),
+  activeTrackIds: [],
 
-  updateTrackStates: (states) => {
-    // Create a new Map with cloned states to ensure React detects the change
-    const newStates = new Map<string, VisualInstrumentState>();
-    for (const [trackId, state] of states) {
-      newStates.set(trackId, {
-        ...state,
-        activeNotes: new Map(state.activeNotes),
-        params: { ...state.params }, // Clone params to ensure updates propagate
-      });
-    }
-    set({ trackStates: newStates });
-  },
-
-  clearStates: () => {
-    set({ trackStates: new Map() });
+  setActiveTrackIds: (trackIds) => {
+    set({ activeTrackIds: trackIds });
   },
 }));

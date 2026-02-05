@@ -6,7 +6,8 @@ import { ResolvedTrack } from './resolution';
 import { createVisualInstrumentState } from './visualInstruments';
 
 export interface VisualPlaybackCallbacks {
-  onStateUpdate?: (states: Map<string, VisualInstrumentState>) => void;
+  // Called only when track structure changes (not every frame)
+  onTracksChanged?: (trackIds: string[]) => void;
   onNoteOn?: (trackId: string, pitch: number, velocity: number, duration: number) => void;
   onNoteOff?: (trackId: string, pitch: number) => void;
 }
@@ -74,6 +75,9 @@ export class VisualPlaybackEngine {
 
     // Sort events by start time
     this.scheduledEvents.sort((a, b) => a.startTimeInBeats - b.startTimeInBeats);
+
+    // Notify about track structure change (not per-frame)
+    this.callbacks.onTracksChanged?.(Array.from(this.trackStates.keys()));
   }
 
   start(): void {
@@ -93,13 +97,14 @@ export class VisualPlaybackEngine {
     }
 
     // Clear all active notes and reset states
-    for (const [trackId, state] of this.trackStates) {
+    for (const [, state] of this.trackStates) {
       state.activeNotes.clear();
       state.bloom = 0;
       state.colorShift = 0;
     }
 
-    this.callbacks.onStateUpdate?.(this.trackStates);
+    // Notify about track structure change
+    this.callbacks.onTracksChanged?.([]);
   }
 
   // Seek to a specific beat - recalculates what should be active at that position
@@ -130,8 +135,6 @@ export class VisualPlaybackEngine {
 
     // Update lastProcessedBeat so the frame loop continues from here
     this.lastProcessedBeat = beat;
-
-    this.callbacks.onStateUpdate?.(this.trackStates);
   }
 
   private frameLoop = (): void => {
@@ -163,8 +166,7 @@ export class VisualPlaybackEngine {
     // Update active notes and decay visual states
     this.updateStates(currentBeat);
 
-    // Notify listeners
-    this.callbacks.onStateUpdate?.(this.trackStates);
+    // Note: No React state update here - visual instruments read directly via getTrackState()
 
     this.animationFrame = requestAnimationFrame(this.frameLoop);
   };

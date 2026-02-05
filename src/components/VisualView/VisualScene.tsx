@@ -1,24 +1,16 @@
 'use client';
 
 import { OrbitControls } from '@react-three/drei';
-import { useVisualStore } from '@/stores/visualStore';
 import { SilkSymmetry } from './instruments/SilkSymmetry';
 import { HexagonDots } from './instruments/HexagonDots';
 import { FractalTunnel } from './instruments/FractalTunnel';
+import { VisualTrackInfo } from './VisualView';
 
 interface VisualSceneProps {
-  trackIds: string[];
+  tracks: VisualTrackInfo[];
 }
 
-export function VisualScene({ trackIds }: VisualSceneProps) {
-  const trackStates = useVisualStore((state) => state.trackStates);
-
-  // Render all tracks that have states (includes inherited visual instruments)
-  // Fall back to trackIds if no states yet (before playback starts)
-  const trackIdsToRender = trackStates.size > 0
-    ? Array.from(trackStates.keys())
-    : trackIds;
-
+export function VisualScene({ tracks }: VisualSceneProps) {
   return (
     <>
       {/* Lighting */}
@@ -36,24 +28,19 @@ export function VisualScene({ trackIds }: VisualSceneProps) {
       />
 
       {/* Render visual instruments - all centered, overlapping */}
-      {trackIdsToRender.map((trackId) => {
-        const state = trackStates.get(trackId);
-        if (!state) return null;
-
-        return (
-          <group key={trackId} position={[0, 0, 0]}>
-            {state.instrumentId === 'silkSymmetry' && (
-              <SilkSymmetry state={state} />
-            )}
-            {state.instrumentId === 'hexagonDots' && (
-              <HexagonDots state={state} />
-            )}
-            {state.instrumentId === 'fractalTunnel' && (
-              <FractalTunnel state={state} />
-            )}
-          </group>
-        );
-      })}
+      {tracks.map((track) => (
+        <group key={track.id} position={[0, 0, 0]}>
+          {track.instrumentId === 'silkSymmetry' && (
+            <SilkSymmetry trackId={track.id} />
+          )}
+          {track.instrumentId === 'hexagonDots' && (
+            <HexagonDots trackId={track.id} />
+          )}
+          {track.instrumentId === 'fractalTunnel' && (
+            <FractalTunnel trackId={track.id} />
+          )}
+        </group>
+      ))}
     </>
   );
 }

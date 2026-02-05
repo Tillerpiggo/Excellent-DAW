@@ -3,11 +3,11 @@
 import { useRef, useEffect, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { VisualInstrumentState } from '@/core/visualTypes';
 import { useProjectStore } from '@/stores/projectStore';
+import { getVisualPlaybackEngine } from '@/core/visualPlayback';
 
 interface SilkSymmetryProps {
-  state: VisualInstrumentState;
+  trackId: string;
 }
 
 interface Point {
@@ -254,13 +254,14 @@ function renderVignette(ctx: CanvasRenderingContext2D, width: number, height: nu
   ctx.fillRect(0, 0, width, height);
 }
 
-export function SilkSymmetry({ state }: SilkSymmetryProps) {
+export function SilkSymmetry({ trackId }: SilkSymmetryProps) {
   const { viewport } = useThree();
   const bpm = useProjectStore((s) => s.project.bpm);
   const meshRef = useRef<THREE.Mesh>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textureRef = useRef<THREE.CanvasTexture | null>(null);
   const beatsRef = useRef(0);
+  const engineRef = useRef(getVisualPlaybackEngine());
 
   const oscillators = useMemo(() => {
     return Array.from({ length: 12 }, (_, i) => createOscillator(i * 17.3));
@@ -291,7 +292,9 @@ export function SilkSymmetry({ state }: SilkSymmetryProps) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const hasActiveNotes = state.activeNotes.size > 0;
+    // Read state directly from engine (not via React state)
+    const state = engineRef.current.getTrackState(trackId);
+    const hasActiveNotes = state ? state.activeNotes.size > 0 : false;
     const spiralDirection = hasActiveNotes ? -1 : 1;
 
     const beatsPerSecond = bpm / 60;

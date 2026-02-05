@@ -3,12 +3,18 @@
 import { Canvas } from '@react-three/fiber';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import { VisualScene } from './VisualScene';
+import { VisualInstrumentId } from '@/core/types';
 
-interface VisualViewProps {
-  trackIds: string[];
+export interface VisualTrackInfo {
+  id: string;
+  instrumentId: VisualInstrumentId;
 }
 
-export function VisualView({ trackIds }: VisualViewProps) {
+interface VisualViewProps {
+  tracks: VisualTrackInfo[];
+}
+
+export function VisualView({ tracks }: VisualViewProps) {
   return (
     <div className="w-full h-full bg-black/90">
       <Canvas
@@ -17,7 +23,7 @@ export function VisualView({ trackIds }: VisualViewProps) {
       >
         <color attach="background" args={['#0a0a0f']} />
         <fog attach="fog" args={['#0a0a0f', 10, 30]} />
-        <VisualScene trackIds={trackIds} />
+        <VisualScene tracks={tracks} />
         <EffectComposer>
           <Bloom
             intensity={1.5}

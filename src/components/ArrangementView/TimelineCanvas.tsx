@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, ThreeEvent } from '@react-three/fiber';
 import { OrthographicCamera, Html } from '@react-three/drei';
-import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { TrackNode } from '@/utils/tree';
 import { Block, Track, getDrumType } from '@/core/types';
@@ -972,7 +971,6 @@ interface PlayheadMeshProps {
   pixelsPerBeat: number;
   totalHeight: number;
   onScrubStart: () => void;
-  isScrubbing: boolean;
 }
 
 function PlayheadMesh({
@@ -980,7 +978,6 @@ function PlayheadMesh({
   pixelsPerBeat,
   totalHeight,
   onScrubStart,
-  isScrubbing,
 }: PlayheadMeshProps) {
   const xPosition = currentBeat * pixelsPerBeat;
   const lineWidth = 2;
@@ -990,9 +987,8 @@ function PlayheadMesh({
   const triangleHeight = 12;
   const cornerRadius = 3;
 
-  // Bright color for bloom effect - brighter when scrubbing
+  // Playhead color
   const baseColor = '#ffd93d';
-  const bloomColor = isScrubbing ? '#ffee88' : baseColor;
 
   // Triangle sits at bottom of ruler
   const headCenterY = -RULER_HEIGHT + triangleHeight / 2;
@@ -1077,19 +1073,19 @@ function PlayheadMesh({
       {/* Main line - content area only (starts at bottom of ruler) */}
       <mesh position={[0, lineCenterY, 0]}>
         <planeGeometry args={[lineWidth, lineHeight]} />
-        <meshBasicMaterial color={bloomColor} />
+        <meshBasicMaterial color={baseColor} />
       </mesh>
 
       {/* Stem - top half of rounded rectangle connecting to triangle */}
       <mesh position={[0, stemCenterY, 0.02]}>
         <shapeGeometry args={[stemShape]} />
-        <meshBasicMaterial color={bloomColor} />
+        <meshBasicMaterial color={baseColor} />
       </mesh>
 
       {/* Head - rounded downward triangle at bottom of ruler */}
       <mesh position={[0, headCenterY, 0.02]}>
         <shapeGeometry args={[headShape]} />
-        <meshBasicMaterial color={bloomColor} />
+        <meshBasicMaterial color={baseColor} />
       </mesh>
 
       {/* Invisible hit area for dragging - covers the triangle */}
@@ -1572,7 +1568,6 @@ function TimelineScene({
         pixelsPerBeat={pixelsPerBeat}
         totalHeight={totalHeight}
         onScrubStart={handleScrubStart}
-        isScrubbing={isScrubbing}
       />
 
       {/* Background for marquee selection - content area only (below ruler) */}
@@ -1723,14 +1718,6 @@ export function TimelineCanvas({
               scrollLeft={canvasOffsetX}
               scrollTop={canvasOffsetY}
             />
-            <EffectComposer>
-              <Bloom
-                intensity={0.4}
-                luminanceThreshold={0.9}
-                luminanceSmoothing={0.4}
-                mipmapBlur
-              />
-            </EffectComposer>
           </Canvas>
         </div>
       )}

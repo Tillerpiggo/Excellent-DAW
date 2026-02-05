@@ -1,12 +1,12 @@
 'use client';
 
-import { useRef, useState, useMemo } from 'react';
+import { useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { VisualInstrumentState } from '@/core/visualTypes';
+import { getVisualPlaybackEngine } from '@/core/visualPlayback';
 
 interface HexagonDotsProps {
-  state: VisualInstrumentState;
+  trackId: string;
 }
 
 interface DotInstance {
@@ -97,11 +97,12 @@ function GlowingDot({ instance }: { instance: DotInstance }) {
   );
 }
 
-export function HexagonDots({ state }: HexagonDotsProps) {
+export function HexagonDots({ trackId }: HexagonDotsProps) {
   const [dots, setDots] = useState<DotInstance[]>([]);
   // Track by "pitch:startTime" to detect truly new note events
   const seenNotesRef = useRef<Set<string>>(new Set());
   const dotsRef = useRef<DotInstance[]>([]);
+  const engineRef = useRef(getVisualPlaybackEngine());
   const { camera } = useThree();
 
   const hexagonRadius = 4; // Radius of the hexagon
@@ -110,6 +111,10 @@ export function HexagonDots({ state }: HexagonDotsProps) {
   const cameraZThreshold = camera.position.z + 2; // Dots disappear past this
 
   useFrame((_, delta) => {
+    // Read state directly from engine (not via React state)
+    const state = engineRef.current.getTrackState(trackId);
+    if (!state) return;
+
     // Detect new notes and spawn dots
     for (const [pitch, note] of state.activeNotes) {
       const noteKey = `${pitch}:${note.startTimeInBeats}`;

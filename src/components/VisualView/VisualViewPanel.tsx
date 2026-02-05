@@ -12,13 +12,13 @@ export function VisualViewPanel() {
   useVisualPlayback();
 
   // Find all tracks with visual instruments
-  const visualTrackIds = useMemo(() => {
+  const visualTracks = useMemo(() => {
     return Object.values(project.tracks)
       .filter((track) => track.visualInstrumentId && !track.muted)
-      .map((track) => track.id);
+      .map((track) => ({ id: track.id, instrumentId: track.visualInstrumentId! }));
   }, [project.tracks]);
 
-  if (visualTrackIds.length === 0) {
+  if (visualTracks.length === 0) {
     return (
       <div className="h-full flex items-center justify-center text-muted">
         <p className="text-sm">No tracks with visual instruments</p>
@@ -28,7 +28,7 @@ export function VisualViewPanel() {
 
   return (
     <div className="h-full flex flex-col">
-      <VisualView trackIds={visualTrackIds} />
+      <VisualView tracks={visualTracks} />
     </div>
   );
 }

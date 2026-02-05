@@ -1,13 +1,13 @@
 'use client';
 
-import { useRef, useEffect, useMemo } from 'react';
+import { useRef, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { VisualInstrumentState } from '@/core/visualTypes';
 import { useProjectStore } from '@/stores/projectStore';
+import { getVisualPlaybackEngine } from '@/core/visualPlayback';
 
 interface FractalTunnelProps {
-  state: VisualInstrumentState;
+  trackId: string;
 }
 
 interface Point3D {
@@ -275,7 +275,7 @@ function renderEndpointDots(
 }
 
 
-export function FractalTunnel({ state }: FractalTunnelProps) {
+export function FractalTunnel({ trackId }: FractalTunnelProps) {
   const { viewport } = useThree();
   const bpm = useProjectStore((s) => s.project.bpm);
   const meshRef = useRef<THREE.Mesh>(null);
@@ -291,6 +291,7 @@ export function FractalTunnel({ state }: FractalTunnelProps) {
   // Color pulses - expanding rings of inverted color
   const pulsesRef = useRef<ColorPulse[]>([]);
   const pulseIdRef = useRef(0);
+  const engineRef = useRef(getVisualPlaybackEngine());
 
   useEffect(() => {
     const canvas = document.createElement('canvas');
@@ -327,6 +328,10 @@ export function FractalTunnel({ state }: FractalTunnelProps) {
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    // Read state directly from engine (not via React state)
+    const state = engineRef.current.getTrackState(trackId);
+    if (!state) return;
 
     elapsedRef.current += delta;
     const elapsed = elapsedRef.current;
