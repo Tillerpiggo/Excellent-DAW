@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, ThreeEvent } from '@react-three/fiber';
 import { OrthographicCamera, Html } from '@react-three/drei';
+import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { TrackNode } from '@/utils/tree';
 import { Block, Track, getDrumType } from '@/core/types';
@@ -971,6 +972,7 @@ interface PlayheadMeshProps {
   pixelsPerBeat: number;
   totalHeight: number;
   onScrubStart: () => void;
+  isScrubbing: boolean;
 }
 
 function PlayheadMesh({
@@ -978,30 +980,62 @@ function PlayheadMesh({
   pixelsPerBeat,
   totalHeight,
   onScrubStart,
+  isScrubbing,
 }: PlayheadMeshProps) {
   const xPosition = currentBeat * pixelsPerBeat;
   const lineWidth = 2;
-  const glowWidth = 8;
 
   // Playhead triangle dimensions
-  const triangleWidth = 14;
+  const triangleWidth = 20;
   const triangleHeight = 12;
   const cornerRadius = 3;
 
-  // Accent gradient colors
-  const accentFrom = '#ff6b6b';
-  const accentTo = '#ffd93d';
-  const accentMid = '#ff9f43';
+  // Bright color for bloom effect - brighter when scrubbing
+  const baseColor = '#ffd93d';
+  const bloomColor = isScrubbing ? '#ffee88' : baseColor;
 
-  // Triangle tip is at the bottom of the ruler
-  // Head sits above the bottom of ruler, with tip pointing down
-  const tipY = -RULER_HEIGHT;
-  const headCenterY = tipY + triangleHeight / 2;
+  // Triangle sits at bottom of ruler
+  const headCenterY = -RULER_HEIGHT + triangleHeight / 2;
+  const triangleTopY = headCenterY + triangleHeight / 2;
 
-  // Line extends from bottom of ruler to bottom of content
-  const lineStartY = -RULER_HEIGHT;
-  const lineHeight = totalHeight;
-  const lineCenterY = lineStartY - lineHeight / 2;
+  // Stem extends from ruler midpoint down to top of triangle
+  const stemWidth = triangleWidth;
+  const stemTopY = -RULER_HEIGHT / 2;
+  const stemBottomY = triangleTopY;
+  const stemHeight = stemTopY - stemBottomY;
+  const stemCenterY = (stemTopY + stemBottomY) / 2;
+
+  // Line extends from center of triangle down to bottom of content
+  const lineStartY = headCenterY;
+  const lineEndY = -RULER_HEIGHT - totalHeight;
+  const lineHeight = lineStartY - lineEndY;
+  const lineCenterY = (lineStartY + lineEndY) / 2;
+
+  // Create stem shape (top half of rounded rectangle - rounded top, flat bottom)
+  const stemShape = useMemo(() => {
+    const shape = new THREE.Shape();
+    const hw = stemWidth / 2;
+    const hh = stemHeight / 2;
+    const r = Math.min(cornerRadius, hw); // radius can't exceed half width
+
+    // Start at bottom-left, go clockwise
+    shape.moveTo(-hw, -hh);
+    // Left edge going up
+    shape.lineTo(-hw, hh - r);
+    // Top-left corner (rounded)
+    shape.quadraticCurveTo(-hw, hh, -hw + r, hh);
+    // Top edge
+    shape.lineTo(hw - r, hh);
+    // Top-right corner (rounded)
+    shape.quadraticCurveTo(hw, hh, hw, hh - r);
+    // Right edge going down
+    shape.lineTo(hw, -hh);
+    // Bottom edge (flat, connects to triangle)
+    shape.lineTo(-hw, -hh);
+
+    shape.closePath();
+    return shape;
+  }, [stemHeight]);
 
   // Create head shape (rounded downward-pointing triangle)
   const headShape = useMemo(() => {
@@ -1040,40 +1074,22 @@ function PlayheadMesh({
 
   return (
     <group position={[xPosition, 0, 5]}>
-      {/* Outer glow - content area only */}
-      <mesh position={[0, lineCenterY, -0.02]}>
-        <planeGeometry args={[glowWidth, lineHeight]} />
-        <meshBasicMaterial color={accentFrom} opacity={0.15} transparent />
-      </mesh>
-
-      {/* Inner glow - content area only */}
-      <mesh position={[0, lineCenterY, -0.01]}>
-        <planeGeometry args={[glowWidth / 2, lineHeight]} />
-        <meshBasicMaterial color={accentMid} opacity={0.25} transparent />
-      </mesh>
-
       {/* Main line - content area only (starts at bottom of ruler) */}
       <mesh position={[0, lineCenterY, 0]}>
         <planeGeometry args={[lineWidth, lineHeight]} />
-        <meshBasicMaterial color={accentTo} />
+        <meshBasicMaterial color={bloomColor} />
       </mesh>
 
-      {/* Head glow - at bottom of ruler */}
-      <mesh position={[0, headCenterY, 0.01]}>
-        <circleGeometry args={[triangleWidth * 0.7, 16]} />
-        <meshBasicMaterial color={accentFrom} opacity={0.3} transparent />
+      {/* Stem - top half of rounded rectangle connecting to triangle */}
+      <mesh position={[0, stemCenterY, 0.02]}>
+        <shapeGeometry args={[stemShape]} />
+        <meshBasicMaterial color={bloomColor} />
       </mesh>
 
       {/* Head - rounded downward triangle at bottom of ruler */}
       <mesh position={[0, headCenterY, 0.02]}>
         <shapeGeometry args={[headShape]} />
-        <meshBasicMaterial color={accentTo} />
-      </mesh>
-
-      {/* Head highlight - near top of triangle */}
-      <mesh position={[0, headCenterY + triangleHeight * 0.2, 0.03]}>
-        <circleGeometry args={[2, 12]} />
-        <meshBasicMaterial color="#ffffff" opacity={0.4} transparent />
+        <meshBasicMaterial color={bloomColor} />
       </mesh>
 
       {/* Invisible hit area for dragging - covers the triangle */}
@@ -1227,17 +1243,15 @@ function TimelineScene({
     });
   }, [selectedBlockIds, selectBlock, selectBlocks, tracks]);
 
-  const handlePointerMissed = useCallback((e: MouseEvent) => {
+  const handleBackgroundPointerDown = useCallback((e: ThreeEvent<PointerEvent>) => {
     if (dragState.type !== 'none') return;
 
-    // Start marquee selection on background click
-    const canvas = (e.target as HTMLElement).closest('canvas');
-    if (!canvas) return;
+    e.stopPropagation();
 
-    const rect = canvas.getBoundingClientRect();
-    // Convert canvas-local coordinates to world coordinates by adding scroll offset
-    const x = e.clientX - rect.left + scrollLeft;
-    const y = e.clientY - rect.top + scrollTop;
+    // e.point gives world coordinates directly
+    // Y is negative in Three.js (goes down), so negate it to get our coordinate system
+    const x = e.point.x;
+    const y = -e.point.y;
 
     if (!e.shiftKey) {
       clearBlockSelection();
@@ -1250,7 +1264,7 @@ function TimelineScene({
       currentX: x,
       currentY: y,
     });
-  }, [dragState.type, clearBlockSelection, scrollLeft, scrollTop]);
+  }, [dragState.type, clearBlockSelection]);
 
   // Handle pointer move and up globally
   useEffect(() => {
@@ -1558,12 +1572,13 @@ function TimelineScene({
         pixelsPerBeat={pixelsPerBeat}
         totalHeight={totalHeight}
         onScrubStart={handleScrubStart}
+        isScrubbing={isScrubbing}
       />
 
-      {/* Background for pointer miss detection - below ruler */}
+      {/* Background for marquee selection - content area only (below ruler) */}
       <mesh
         position={[timelineWidth / 2, -RULER_HEIGHT - totalHeight / 2, -1]}
-        onPointerMissed={handlePointerMissed}
+        onPointerDown={handleBackgroundPointerDown}
       >
         <planeGeometry args={[timelineWidth, totalHeight]} />
         <meshBasicMaterial transparent opacity={0} />
@@ -1708,6 +1723,14 @@ export function TimelineCanvas({
               scrollLeft={canvasOffsetX}
               scrollTop={canvasOffsetY}
             />
+            <EffectComposer>
+              <Bloom
+                intensity={0.4}
+                luminanceThreshold={0.9}
+                luminanceSmoothing={0.4}
+                mipmapBlur
+              />
+            </EffectComposer>
           </Canvas>
         </div>
       )}

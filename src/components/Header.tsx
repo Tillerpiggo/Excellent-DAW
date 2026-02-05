@@ -7,7 +7,8 @@ import { useUIStore } from '@/stores/uiStore';
 import { UndoRedoButtons } from './UndoRedoButtons';
 
 export function Header() {
-  const { isPlaying, toggle, setBpm } = usePlayback();
+  const { isPlaying, play, pause, seekTo, setBpm } = usePlayback();
+  const currentBeat = useUIStore((state) => state.currentBeat);
   // Granular selectors - only re-render when specific values change
   const projectId = useProjectStore((state) => state.project.id);
   const projectName = useProjectStore((state) => state.project.name);
@@ -15,7 +16,7 @@ export function Header() {
   const totalBars = useProjectStore((state) => state.project.totalBars);
   const beatsPerBar = useProjectStore((state) => state.project.beatsPerBar);
   const { setTotalBars, renameProject } = useProjectStore();
-  const { currentBeat, toggleLibrary, toggleInspector, showLibrary, showInspector, setCurrentView } = useUIStore();
+  const { toggleLibrary, toggleInspector, showLibrary, showInspector, setCurrentView } = useUIStore();
 
   // Local state for inputs to allow free typing without immediate clamping
   const [bpmInput, setBpmInput] = useState(String(bpm));
@@ -112,18 +113,56 @@ export function Header() {
 
       {/* Center Section - Transport */}
       <div className="flex items-center gap-6">
-        {/* Play/Stop Button */}
-        <button
-          onClick={toggle}
-          className={`w-14 h-14 rounded-full flex items-center justify-center text-2xl transition-all transform hover:scale-105 active:scale-95 ${
-            isPlaying
-              ? 'bg-red-500 hover:bg-red-600 text-white'
-              : 'bg-gradient-to-r from-accent-from to-accent-to hover:opacity-90 text-white'
-          }`}
-          aria-label={isPlaying ? 'Stop' : 'Play'}
-        >
-          {isPlaying ? '■' : '▶'}
-        </button>
+        {/* Transport Control - Stop/Rewind + Play */}
+        <div className="flex rounded-lg bg-muted/50 p-1 my-1">
+          {/* Stop / Rewind Button */}
+          <button
+            onClick={() => {
+              if (isPlaying) {
+                pause();
+              } else if (currentBeat > 0) {
+                seekTo(0);
+              }
+            }}
+            className={`w-12 h-12 rounded-l-md flex items-center justify-center text-lg transition-all active:bg-muted/80 active:scale-95 ${
+              isPlaying
+                ? 'bg-surface hover:bg-muted text-foreground'
+                : currentBeat > 0
+                  ? 'bg-surface hover:bg-muted text-foreground'
+                  : 'bg-surface hover:bg-muted text-muted-foreground/50'
+            }`}
+            aria-label={isPlaying ? 'Pause' : currentBeat > 0 ? 'Rewind' : 'Stop'}
+          >
+            {!isPlaying && currentBeat > 0 ? (
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="4" y="5" width="4" height="14" />
+                <polygon points="20,5 20,19 9,12" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="4" y="4" width="16" height="16" rx="2" />
+              </svg>
+            )}
+          </button>
+          {/* Play Button */}
+          <button
+            onClick={() => {
+              if (!isPlaying) {
+                play();
+              }
+            }}
+            className={`w-12 h-12 rounded-r-md flex items-center justify-center text-lg transition-all active:scale-95 ${
+              isPlaying
+                ? 'bg-gradient-to-r from-accent-from to-accent-to text-white shadow-sm'
+                : 'bg-surface hover:bg-muted text-foreground active:bg-muted/80'
+            }`}
+            aria-label="Play"
+          >
+            <svg className="w-4 h-4 ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5,3 19,12 5,21" />
+            </svg>
+          </button>
+        </div>
 
         {/* Position Display */}
         <div className="bg-background rounded-lg px-4 py-2 font-mono text-lg w-20 text-center">

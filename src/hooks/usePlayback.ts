@@ -51,8 +51,12 @@ export function usePlayback() {
 
   const play = useCallback(async () => {
     const engine = engineRef.current;
-    await engine.play(project);
-    // Apply loop region after playback starts if enabled
+    const startBeat = useUIStore.getState().currentBeat;
+
+    // Play from current playhead position
+    await engine.playFrom(project, startBeat);
+
+    // Apply loop region if enabled
     if (loopEnabled && loopStart !== null && loopEnd !== null && loopStart !== loopEnd) {
       engine.setLoopRegion(loopStart, loopEnd, project.beatsPerBar);
     }

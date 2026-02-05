@@ -36,13 +36,16 @@ export class PlaybackEngine {
   }
 
   async play(project: Project): Promise<void> {
+    await this.playFrom(project, 0);
+  }
+
+  async playFrom(project: Project, startBeat: number): Promise<void> {
     if (!this.isInitialized) {
       await this.initialize();
     }
 
-    if (this.state === 'playing') {
-      this.stop();
-    }
+    // Clean up any existing playback without resetting beat position
+    this.cleanupPlayback();
 
     this.project = project;
     this.state = 'playing';
@@ -50,6 +53,11 @@ export class PlaybackEngine {
 
     // Set BPM
     Tone.getTransport().bpm.value = project.bpm;
+
+    // Set starting position before scheduling
+    const bars = Math.floor(startBeat / project.beatsPerBar);
+    const beats = startBeat % project.beatsPerBar;
+    Tone.getTransport().position = `${bars}:${beats}:0`;
 
     // Resolve project to get all playable events
     const resolvedTracks = resolveProject(project);
@@ -71,8 +79,40 @@ export class PlaybackEngine {
     // Start transport
     Tone.getTransport().start();
 
+    // Start any audio that should already be playing at this position
+    if (startBeat > 0) {
+      this.startAudioAtPosition(startBeat, project.beatsPerBar);
+    }
+
     // Start beat tracking
     this.startBeatTracking(project);
+  }
+
+  private cleanupPlayback(): void {
+    // Stop transport
+    Tone.getTransport().stop();
+
+    // Stop all audio players
+    if (this.instruments) {
+      stopAudioPlayers(this.instruments);
+    }
+
+    // Dispose all parts
+    for (const part of this.parts) {
+      part.dispose();
+    }
+    this.parts = [];
+
+    // Stop visual playback
+    if (this.visualEngine) {
+      this.visualEngine.stop();
+    }
+
+    // Stop beat tracking
+    if (this.animationFrame !== null) {
+      cancelAnimationFrame(this.animationFrame);
+      this.animationFrame = null;
+    }
   }
 
   private async scheduleEvents(resolvedTracks: ResolvedTrack[], project: Project): Promise<void> {
