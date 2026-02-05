@@ -4,6 +4,7 @@ import { OrbitControls } from '@react-three/drei';
 import { SilkSymmetry } from './instruments/SilkSymmetry';
 import { HexagonDots } from './instruments/HexagonDots';
 import { FractalTunnel } from './instruments/FractalTunnel';
+import { RadialWave } from './instruments/RadialWave';
 import { VisualTrackInfo } from './VisualView';
 
 interface VisualSceneProps {
@@ -38,6 +39,9 @@ export function VisualScene({ tracks }: VisualSceneProps) {
           )}
           {track.instrumentId === 'fractalTunnel' && (
             <FractalTunnel trackId={track.id} />
+          )}
+          {track.instrumentId === 'radialWave' && (
+            <RadialWave trackId={track.id} />
           )}
         </group>
       ))}

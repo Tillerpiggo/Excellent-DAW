@@ -100,7 +100,7 @@ export interface AudioData {
   waveformPeaks: number[];
 }
 
-export type VisualInstrumentId = 'silkSymmetry' | 'hexagonDots' | 'fractalTunnel';
+export type VisualInstrumentId = 'silkSymmetry' | 'hexagonDots' | 'fractalTunnel' | 'radialWave';
 
 export interface Track {
   id: string;

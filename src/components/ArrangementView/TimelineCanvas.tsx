@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, ThreeEvent } from '@react-three/fiber';
+import React, { useCallback, useEffect, useMemo, useRef, useState, RefObject } from 'react';
+import { Canvas, ThreeEvent, useFrame, useThree } from '@react-three/fiber';
 import { OrthographicCamera, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { TrackNode } from '@/utils/tree';
@@ -24,8 +24,7 @@ interface TimelineCanvasProps {
   bpm: number;
   viewportWidth: number;
   viewportHeight: number;
-  scrollLeft: number;
-  scrollTop: number;
+  scrollContainerRef: RefObject<HTMLDivElement | null>;
 }
 
 // Helper to find track ID for a given block ID
@@ -1116,8 +1115,9 @@ interface TimelineSceneProps {
   currentBeat: number;
   viewportWidth: number;
   viewportHeight: number;
-  scrollLeft: number;
-  scrollTop: number;
+  scrollContainerRef: RefObject<HTMLDivElement | null>;
+  canvasWrapperRef: RefObject<HTMLDivElement | null>;
+  scrollBuffer: number;
 }
 
 function TimelineScene({
@@ -1132,9 +1132,41 @@ function TimelineScene({
   currentBeat,
   viewportWidth,
   viewportHeight,
-  scrollLeft,
-  scrollTop,
+  scrollContainerRef,
+  canvasWrapperRef,
+  scrollBuffer,
 }: TimelineSceneProps) {
+  const { camera } = useThree();
+
+  // Helper to get current scroll values directly from DOM
+  const getScrollValues = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return { scrollLeft: 0, scrollTop: 0 };
+    return { scrollLeft: container.scrollLeft, scrollTop: container.scrollTop };
+  }, [scrollContainerRef]);
+
+  // Lusion scroll sync: Update camera and canvas position every frame
+  // This reads scroll directly from DOM, bypassing React state for perfect sync
+  useFrame(() => {
+    const { scrollLeft, scrollTop } = getScrollValues();
+
+    // Calculate canvas offset (with buffer)
+    const canvasOffsetX = Math.max(0, scrollLeft - scrollBuffer);
+    const canvasOffsetY = Math.max(0, scrollTop - scrollBuffer);
+
+    // Update camera position to match scroll
+    const cameraX = canvasOffsetX + viewportWidth / 2;
+    const cameraY = -(canvasOffsetY + viewportHeight / 2);
+    camera.position.set(cameraX, cameraY, 100);
+
+    // Lusion technique: Update canvas wrapper position with top/left
+    // This allows the canvas to physically scroll with the page between frames
+    if (canvasWrapperRef.current) {
+      canvasWrapperRef.current.style.top = `${canvasOffsetY}px`;
+      canvasWrapperRef.current.style.left = `${canvasOffsetX}px`;
+    }
+  });
+
   const {
     selectedBlockIds, selectBlock, selectBlocks, clearBlockSelection,
     setIsScrubbing, setCurrentBeat,
@@ -1271,6 +1303,8 @@ function TimelineScene({
       if (!canvas) return;
 
       const rect = canvas.getBoundingClientRect();
+      // Read scroll directly from DOM for accurate coordinates
+      const { scrollLeft, scrollTop } = getScrollValues();
       // Convert canvas-local coordinates to world coordinates by adding scroll offset
       const x = e.clientX - rect.left + scrollLeft;
       const y = e.clientY - rect.top + scrollTop;
@@ -1375,7 +1409,7 @@ function TimelineScene({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [dragState, barWidth, trackHeight, flatTracks, updateBlock, selectBlocks, tracks, beatsPerBar, scrollLeft, scrollTop]);
+  }, [dragState, barWidth, trackHeight, flatTracks, updateBlock, selectBlocks, tracks, beatsPerBar, getScrollValues]);
 
   // Scrubbing handlers
   const totalBeats = totalBars * beatsPerBar;
@@ -1433,6 +1467,7 @@ function TimelineScene({
       if (!canvas) return;
 
       const rect = canvas.getBoundingClientRect();
+      const { scrollLeft } = getScrollValues();
       const x = e.clientX - rect.left + scrollLeft;
       const currentBeat = pixelToBar(x);
 
@@ -1452,7 +1487,7 @@ function TimelineScene({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [isLoopDragging, loopDragStart, pixelToBar, setLoopRegion, scrollLeft]);
+  }, [isLoopDragging, loopDragStart, pixelToBar, setLoopRegion, getScrollValues]);
 
   // Handle scrubbing pointer move and up
   useEffect(() => {
@@ -1463,6 +1498,7 @@ function TimelineScene({
       if (!canvas) return;
 
       const rect = canvas.getBoundingClientRect();
+      const { scrollLeft } = getScrollValues();
       // Convert canvas-local coordinates to world coordinates by adding scroll offset
       const x = e.clientX - rect.left + scrollLeft;
       const beat = pixelToBeat(x);
@@ -1486,17 +1522,15 @@ function TimelineScene({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [isScrubbing, pixelToBeat, isPlaying, seekTo, setCurrentBeat, setIsScrubbing, scrollLeft]);
+  }, [isScrubbing, pixelToBeat, isPlaying, seekTo, setCurrentBeat, setIsScrubbing, getScrollValues]);
 
-  // Camera position based on scroll - center of visible viewport
-  const cameraX = scrollLeft + viewportWidth / 2;
-  const cameraY = -(scrollTop + viewportHeight / 2);
-
+  // Camera position is now updated in useFrame for perfect scroll sync
+  // Initial position will be set on first frame
   return (
     <>
       <OrthographicCamera
         makeDefault
-        position={[cameraX, cameraY, 100]}
+        position={[viewportWidth / 2, -viewportHeight / 2, 100]}
         zoom={1}
         near={0.1}
         far={1000}
@@ -1591,10 +1625,10 @@ export function TimelineCanvas({
   bpm,
   viewportWidth,
   viewportHeight,
-  scrollLeft,
-  scrollTop,
+  scrollContainerRef,
 }: TimelineCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const canvasWrapperRef = useRef<HTMLDivElement>(null);
   const trackHeightScale = useUIStore((state) => state.trackHeightScale);
   const currentBeat = useUIStore((state) => state.currentBeat);
   const { handleAudioFileDrop, isProcessingAudio } = useDragDrop();
@@ -1622,9 +1656,12 @@ export function TimelineCanvas({
   const canvasWidth = Math.max(viewportWidth + SCROLL_BUFFER * 2, 100);
   const canvasHeight = Math.max(viewportHeight + SCROLL_BUFFER * 2, 100);
 
-  // Offset for the canvas position - starts before the scroll position to include buffer
-  const canvasOffsetX = Math.max(0, scrollLeft - SCROLL_BUFFER);
-  const canvasOffsetY = Math.max(0, scrollTop - SCROLL_BUFFER);
+  // Helper to get scroll values from container ref
+  const getScrollValues = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return { scrollLeft: 0, scrollTop: 0 };
+    return { scrollLeft: container.scrollLeft, scrollTop: container.scrollTop };
+  }, [scrollContainerRef]);
 
   // File drag handlers
   const handleFileDragEnter = useCallback((e: React.DragEvent) => {
@@ -1662,6 +1699,9 @@ export function TimelineCanvas({
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
 
+    // Read scroll directly from DOM
+    const { scrollLeft, scrollTop } = getScrollValues();
+
     // Convert canvas-local coordinates to world coordinates by adding scroll offset
     const x = e.clientX - rect.left + scrollLeft;
     const bar = Math.max(0, Math.floor(x / barWidth));
@@ -1672,7 +1712,7 @@ export function TimelineCanvas({
     const targetTrack = trackIndex >= 0 ? flatTracks[trackIndex]?.track : undefined;
 
     await handleAudioFileDrop(file, targetTrack?.id || null, bar);
-  }, [barWidth, trackHeight, flatTracks, handleAudioFileDrop, scrollLeft, scrollTop]);
+  }, [barWidth, trackHeight, flatTracks, handleAudioFileDrop, getScrollValues]);
 
   return (
     <div
@@ -1684,18 +1724,26 @@ export function TimelineCanvas({
       onDragOver={handleFileDragOver}
       onDrop={handleFileDrop}
     >
-      {/* Canvas uses transform to stay in viewport - includes buffer for smooth scrolling */}
+      {/*
+        Lusion scroll sync technique:
+        - Canvas wrapper uses position: absolute with top/left (not transform)
+        - Position is updated every frame in useFrame, reading scroll directly from DOM
+        - Between frames, canvas physically scrolls with the page, keeping visuals in sync
+        - This eliminates the lag from React state updates
+      */}
       {isMounted && (
         <div
+          ref={canvasWrapperRef}
           style={{
             position: 'absolute',
+            // Initial position at 0,0 - useFrame will update top/left each frame
             left: 0,
             top: 0,
             width: canvasWidth,
             height: canvasHeight,
             pointerEvents: 'auto',
-            transform: `translate(${canvasOffsetX}px, ${canvasOffsetY}px)`,
-            willChange: 'transform',
+            // willChange hints to browser for optimization
+            willChange: 'top, left',
           }}
         >
           <Canvas
@@ -1715,24 +1763,24 @@ export function TimelineCanvas({
               currentBeat={currentBeat}
               viewportWidth={canvasWidth}
               viewportHeight={canvasHeight}
-              scrollLeft={canvasOffsetX}
-              scrollTop={canvasOffsetY}
+              scrollContainerRef={scrollContainerRef}
+              canvasWrapperRef={canvasWrapperRef}
+              scrollBuffer={SCROLL_BUFFER}
             />
           </Canvas>
         </div>
       )}
 
-      {/* Empty state - sized to viewport, not buffered canvas */}
+      {/* Empty state - uses sticky positioning to stay in viewport */}
       {flatTracks.length === 0 && (
         <div
           className="flex items-center justify-center pointer-events-none"
           style={{
-            position: 'absolute',
+            position: 'sticky',
             left: 0,
             top: 0,
             width: viewportWidth,
             height: viewportHeight,
-            transform: `translate(${scrollLeft}px, ${scrollTop}px)`,
           }}
         >
           <p className="text-muted-foreground">
@@ -1741,17 +1789,16 @@ export function TimelineCanvas({
         </div>
       )}
 
-      {/* Audio file drop zone overlay - sized to viewport */}
+      {/* Audio file drop zone overlay - uses sticky positioning */}
       {isDraggingAudioFile && (
         <div
           className="z-50 flex items-center justify-center pointer-events-none"
           style={{
-            position: 'absolute',
+            position: 'sticky',
             left: 0,
             top: 0,
             width: viewportWidth,
             height: viewportHeight,
-            transform: `translate(${scrollLeft}px, ${scrollTop}px)`,
             backgroundColor: 'rgba(34, 197, 94, 0.1)',
             border: '2px dashed rgba(34, 197, 94, 0.6)',
           }}

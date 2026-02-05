@@ -153,8 +153,7 @@ export function ArrangementView() {
             bpm={bpm}
             viewportWidth={viewportSize.width}
             viewportHeight={viewportSize.height}
-            scrollLeft={scrollLeft}
-            scrollTop={scrollTop}
+            scrollContainerRef={containerRef}
           />
         </div>
       </div>
