@@ -25,6 +25,10 @@ interface AudioPlayerState {
   blobUrl: string;
 }
 
+// Lookahead configuration for tight audio-visual sync
+// Lower values = tighter sync but more CPU usage
+const AUDIO_LOOKAHEAD_SECONDS = 0.05; // 50ms lookahead for audio scheduling
+
 export class PlaybackEngine {
   private trackAudioStates: Map<string, TrackAudioState> = new Map();
   private audioPlayers: Map<string, AudioPlayerState> = new Map();
@@ -40,6 +44,10 @@ export class PlaybackEngine {
     if (this.isInitialized) return;
 
     await Tone.start();
+
+    // Configure Tone.js lookahead for tighter sync
+    Tone.getContext().lookAhead = AUDIO_LOOKAHEAD_SECONDS;
+
     this.isInitialized = true;
   }
 
@@ -80,7 +88,7 @@ export class PlaybackEngine {
     // Schedule all events (including audio tracks)
     await this.scheduleEvents(resolvedTracks, project);
 
-    // Initialize and start visual playback engine (synced with Tone.js transport)
+    // Initialize visual playback engine (synced with Tone.js transport)
     this.visualEngine = getVisualPlaybackEngine();
     this.visualEngine.initialize(
       resolvedTracks,
@@ -89,10 +97,16 @@ export class PlaybackEngine {
       project.totalBars,
       () => this.getCurrentBeat()
     );
-    this.visualEngine.start();
 
-    // Start transport
+    // Prepare visual engine before starting - pre-calculates initial state
+    this.visualEngine.prepare(startBeat);
+
+    // Ensure all audio buffers are loaded before starting
+    await Tone.loaded();
+
+    // Start transport and visual engine together for tight sync
     Tone.getTransport().start();
+    this.visualEngine.start();
 
     // Start any audio that should already be playing at this position
     if (startBeat > 0) {

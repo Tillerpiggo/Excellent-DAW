@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, ReactNode, cloneElement, isValidElement, Children } from 'react';
+import React, { useMemo, useRef, ReactNode } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { PluginInstance } from '@/core/types';
@@ -104,6 +104,17 @@ export function CloneWrapper({ plugins, children }: CloneWrapperProps) {
     return <>{children}</>;
   }
 
+  // Clone children for each copy - must create separate React elements
+  // so React Three Fiber creates separate Three.js objects
+  const cloneChildren = (children: ReactNode, cloneIndex: number): ReactNode => {
+    return React.Children.map(children, (child, childIndex) => {
+      if (!React.isValidElement(child)) return child;
+      return React.cloneElement(child, {
+        key: `clone-${cloneIndex}-${childIndex}`,
+      } as React.Attributes);
+    });
+  };
+
   // Render multiple copies
   return (
     <>
@@ -114,7 +125,7 @@ export function CloneWrapper({ plugins, children }: CloneWrapperProps) {
             groupRefs.current[index] = el;
           }}
         >
-          {children}
+          {cloneChildren(children, index)}
         </group>
       ))}
     </>

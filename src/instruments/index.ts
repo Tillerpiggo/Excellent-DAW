@@ -15,6 +15,7 @@ import { SilkSymmetry } from './visual/SilkSymmetry';
 import { HexagonDots } from './visual/HexagonDots';
 import { FractalTunnel } from './visual/FractalTunnel';
 import { CircleGrid } from './visual/CircleGrid';
+import { NeonPolar } from './visual/NeonPolar';
 
 // Flat registry for quick lookup by ID
 export const INSTRUMENTS: Record<string, Instrument> = {
@@ -30,6 +31,7 @@ export const INSTRUMENTS: Record<string, Instrument> = {
   hexagonDots: HexagonDots,
   fractalTunnel: FractalTunnel,
   circleGrid: CircleGrid,
+  neonPolar: NeonPolar,
 };
 
 // Get instrument by ID
@@ -73,7 +75,7 @@ export function getInstrumentFolderTree(): InstrumentFolder {
       },
       {
         name: 'Visual',
-        instruments: ['silkSymmetry', 'hexagonDots', 'fractalTunnel', 'circleGrid'],
+        instruments: ['silkSymmetry', 'hexagonDots', 'fractalTunnel', 'circleGrid', 'neonPolar'],
       },
     ],
   };

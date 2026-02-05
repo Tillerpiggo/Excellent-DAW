@@ -84,7 +84,8 @@ export function TrackRenderer({
   }, []);
 
   useFrame(() => {
-    if (!hasShaderPlugins) return;
+    // Only render to FBO when we're actually using shaders (no clones)
+    if (!hasShaderPlugins || hasClonePlugins) return;
     if (!isGroup && !Component) return;
 
     // Render instrument scene to FBO
@@ -135,8 +136,8 @@ export function TrackRenderer({
     return null;
   }
 
-  // Build the content element (single instrument or group of children)
-  const buildContentElement = () => {
+  // Build the base content element (instrument only, no clone wrapper)
+  const buildBaseContentElement = () => {
     let element: React.ReactNode;
 
     if (isGroup) {
@@ -160,7 +161,15 @@ export function TrackRenderer({
       element = <TransformWrapper plugins={plugins}>{element}</TransformWrapper>;
     }
 
-    // Wrap with CloneWrapper if we have clone plugins
+    return element;
+  };
+
+  // Build content with optional clone wrapper (for non-shader path)
+  const buildContentElement = () => {
+    let element = buildBaseContentElement();
+    if (!element) return null;
+
+    // Wrap with CloneWrapper if we have clone plugins (and no shaders)
     if (hasClonePlugins) {
       element = <CloneWrapper plugins={plugins}>{element}</CloneWrapper>;
     }
@@ -188,12 +197,14 @@ export function TrackRenderer({
   }
 
   // Has shader plugins - render to FBO and apply shader chain
-  if (hasShaderPlugins) {
-    return (
+  // Skip shaders if clone plugins are present (clones need 3D objects, not flat planes)
+  if (hasShaderPlugins && !hasClonePlugins) {
+    // Build the shader-processed result (a textured plane)
+    const shaderResult = (
       <group>
-        {/* Render content to offscreen scene (portal) */}
+        {/* Render base content to offscreen scene (portal) - no clone wrapper here */}
         {createPortal(
-          <group position={[0, 0, 0]}>{buildContentElement()}</group>,
+          <group position={[0, 0, 0]}>{buildBaseContentElement()}</group>,
           instrumentScene
         )}
 
@@ -201,6 +212,8 @@ export function TrackRenderer({
         <ShaderChain inputTexture={fbo.texture} plugins={plugins} />
       </group>
     );
+
+    return shaderResult;
   }
 
   // Only transform/clone plugins (no shaders) - no need for FBO

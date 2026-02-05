@@ -179,16 +179,19 @@ const toggleModes: Record<string, ToggleFn> = {
   none: () => true, // All dots always visible
 
   cycle: (index, total, noteOnCount) => {
-    // One dot toggles per hit: fill up, then empty out
+    // One dot toggles per hit: fill up (inside→out), then empty out (outside→in)
     const cycleLength = total * 2;
     const pos = noteOnCount % cycleLength;
 
     if (pos < total) {
-      // Filling up: dot i is visible if i < pos
+      // Filling up (inside to outside): dot i is visible if i < pos
       return index < pos;
     } else {
-      // Emptying: dot i is visible if i >= (pos - total)
-      return index >= (pos - total);
+      // Emptying (outside to inside): hide from the end first
+      // At pos=total: all visible, at pos=2*total: none visible
+      // Hide index (total-1) first, then (total-2), etc.
+      const hiddenCount = pos - total;
+      return index < (total - hiddenCount);
     }
   },
 
@@ -305,14 +308,10 @@ function PlatonicSolidsVisual({ trackId }: CircleGridProps) {
     const hueRange = (params.hueRange as number) ?? 0.2;
     const toggleModeName = (params.toggleMode as string) ?? 'none';
     const layers = (params.concentricLayers as number) ?? 5;
+    const phaseOffsetAmount = (params.phaseOffset as number) ?? 0.2;
 
     timeRef.current += delta;
     const time = timeRef.current;
-
-    // Rotate the whole group
-    groupRef.current.rotation.x = time * rotationSpeed * 0.5;
-    groupRef.current.rotation.y = time * rotationSpeed;
-    groupRef.current.rotation.z = time * rotationSpeed * 0.3;
 
     // Update each layer
     const toggleFn = toggleModes[toggleModeName] ?? toggleModes.none;
@@ -337,9 +336,11 @@ function PlatonicSolidsVisual({ trackId }: CircleGridProps) {
         const pulseFactor = 0.7 + 0.3 * Math.sin(time * 3 + i);
         material.opacity = pulseFactor;
 
-        // Slight individual rotation for each layer
-        line.rotation.x = time * (0.1 + i * 0.02);
-        line.rotation.y = time * (0.15 + i * 0.015);
+        // Same rotation speed for all layers, but with cascading phase offset
+        const layerPhase = i * phaseOffsetAmount;
+        line.rotation.x = time * rotationSpeed * 0.7 + layerPhase;
+        line.rotation.y = time * rotationSpeed + layerPhase * 0.8;
+        line.rotation.z = time * rotationSpeed * 0.5 + layerPhase * 0.6;
       }
     });
   });
@@ -508,7 +509,8 @@ export const CircleGrid: Instrument = {
     toggleMode: 'cycle',
     baseHue: 0.55,
     hueRange: 0.2,
-    rotationSpeed: 0,
+    rotationSpeed: 0.3,
+    phaseOffset: 0.2,
   },
 
   settingsSchema: {
@@ -548,6 +550,7 @@ export const CircleGrid: Instrument = {
     baseHue: { type: 'number', label: 'Base Hue', min: 0, max: 1, step: 0.05, default: 0.55 },
     hueRange: { type: 'number', label: 'Hue Range', min: 0, max: 1, step: 0.05, default: 0.2 },
     rotationSpeed: { type: 'number', label: 'Rotation Speed', min: 0, max: 2, step: 0.1, default: 0.3 },
+    phaseOffset: { type: 'number', label: 'Phase Offset', min: 0, max: 1, step: 0.05, default: 0.2 },
   },
 
   VisualComponent: CircleGridVisual,

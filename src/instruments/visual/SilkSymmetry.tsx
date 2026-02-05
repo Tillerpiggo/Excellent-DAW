@@ -95,28 +95,44 @@ function smoothField(x: number, y: number, z: number, t: number, seed: number): 
   ) / 2.5;
 }
 
+interface GenerateParams {
+  lineCount: number;
+  pointsPerLine: number;
+  globalSpeed: number;
+  morphSpeed: number;
+  metaDepth: number;
+  weaveFactor: number;
+  depthFactor: number;
+  baseHue: number;
+  hueRange: number;
+  roseK: number;
+  lissA: number;
+  lissB: number;
+}
+
 function generateLines(
   beats: number,
   oscillators: Oscillator[],
-  spiralDirection: number
+  spiralDirection: number,
+  genParams: GenerateParams
 ): Line[] {
   const lines: Line[] = [];
-  const morphT = beats * CONFIG.morphSpeed;
-  const speed = CONFIG.globalSpeed * spiralDirection;
+  const morphT = beats * genParams.morphSpeed;
+  const speed = genParams.globalSpeed * spiralDirection;
 
-  const weaveFactor = CONFIG.weaveFactor + oscillate(oscillators[0], beats, speed) * CONFIG.metaDepth * 0.3;
-  const depthFactor = CONFIG.depthFactor + oscillate(oscillators[1], beats, speed) * CONFIG.metaDepth * 0.2;
-  const hue = CONFIG.baseHue + oscillate(oscillators[3], beats, speed) * 0.15;
-  const roseK = CONFIG.roseK + oscillate(oscillators[6], beats, speed) * 2;
-  const lissA = CONFIG.lissA + oscillate(oscillators[7], beats, speed) * 1.5;
-  const lissB = CONFIG.lissB + oscillate(oscillators[8], beats, speed) * 1.5;
+  const weaveFactor = genParams.weaveFactor + oscillate(oscillators[0], beats, speed) * genParams.metaDepth * 0.3;
+  const depthFactor = genParams.depthFactor + oscillate(oscillators[1], beats, speed) * genParams.metaDepth * 0.2;
+  const hue = genParams.baseHue + oscillate(oscillators[3], beats, speed) * 0.15;
+  const roseK = genParams.roseK + oscillate(oscillators[6], beats, speed) * 2;
+  const lissA = genParams.lissA + oscillate(oscillators[7], beats, speed) * 1.5;
+  const lissB = genParams.lissB + oscillate(oscillators[8], beats, speed) * 1.5;
   const spread = 0.5 + oscillate(oscillators[9], beats, speed) * 0.3;
   const startRadiusMod = oscillate(oscillators[10], beats, speed);
   const phaseShift = oscillate(oscillators[11], beats, speed) * Math.PI;
 
-  for (let i = 0; i < CONFIG.lineCount; i++) {
+  for (let i = 0; i < genParams.lineCount; i++) {
     const points: Point[] = [];
-    const lineIndex = i / CONFIG.lineCount;
+    const lineIndex = i / genParams.lineCount;
 
     const angleOffset = smoothRandom(i * 100, morphT, 0.5) * spread;
     const startAngle = lineIndex * Math.PI * 2 + angleOffset + phaseShift * 0.1;
@@ -132,8 +148,8 @@ function generateLines(
     const lineLissB = lissB + smoothRandom(i * 600, morphT, 0.22) * 1.0;
     const lineLissPhase = smoothRandom(i * 700, morphT, 0.18) * Math.PI + phaseShift;
 
-    for (let j = 0; j < CONFIG.pointsPerLine; j++) {
-      const t = j / CONFIG.pointsPerLine;
+    for (let j = 0; j < genParams.pointsPerLine; j++) {
+      const t = j / genParams.pointsPerLine;
 
       const roseAngle = Math.atan2(y, x);
       const roseInfluence = Math.sin(lineRoseK * roseAngle) * 0.3;
@@ -168,7 +184,7 @@ function generateLines(
       points.push({ x, y, z });
     }
 
-    const lineHueOffset = smoothRandom(i * 800, morphT * 0.5, 0.1) * CONFIG.hueRange;
+    const lineHueOffset = smoothRandom(i * 800, morphT * 0.5, 0.1) * genParams.hueRange;
     const lineHue = hue + lineHueOffset;
     const lineOpacity = 0.35 + smoothRandom(i * 900, morphT * 0.3, 0.15) * 0.3;
 
@@ -191,6 +207,7 @@ function renderLines(
   const baseScaleVal = Math.min(width, height) * 0.4;
   const symmetryFolds = (params.symmetryFolds as number) ?? CONFIG.symmetryFolds;
   const glowIntensity = (params.glowIntensity as number) ?? CONFIG.glowIntensity;
+  const depthFactor = (params.depthFactor as number) ?? CONFIG.depthFactor;
 
   ctx.globalCompositeOperation = 'lighter';
 
@@ -211,7 +228,7 @@ function renderLines(
         const rotatedX = px * Math.cos(angle) - py * Math.sin(angle);
         const rotatedY = px * Math.sin(angle) + py * Math.cos(angle);
 
-        const depthScale = 1 + point.z * CONFIG.depthFactor * 0.3;
+        const depthScale = 1 + point.z * depthFactor * 0.3;
         const screenX = centerX + rotatedX * baseScaleVal * depthScale * scale;
         const screenY = centerY + rotatedY * baseScaleVal * depthScale * scale;
 
@@ -307,8 +324,24 @@ function SilkSymmetryVisual({ trackId }: SilkSymmetryProps) {
     ctx.fillStyle = '#050508';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    // Build generation params from settings
+    const genParams: GenerateParams = {
+      lineCount: (params.lineCount as number) ?? CONFIG.lineCount,
+      pointsPerLine: (params.pointsPerLine as number) ?? CONFIG.pointsPerLine,
+      globalSpeed: (params.globalSpeed as number) ?? CONFIG.globalSpeed,
+      morphSpeed: (params.morphSpeed as number) ?? CONFIG.morphSpeed,
+      metaDepth: (params.metaDepth as number) ?? CONFIG.metaDepth,
+      weaveFactor: (params.weaveFactor as number) ?? CONFIG.weaveFactor,
+      depthFactor: (params.depthFactor as number) ?? CONFIG.depthFactor,
+      baseHue: (params.baseHue as number) ?? CONFIG.baseHue,
+      hueRange: (params.hueRange as number) ?? CONFIG.hueRange,
+      roseK: (params.roseK as number) ?? CONFIG.roseK,
+      lissA: (params.lissA as number) ?? CONFIG.lissA,
+      lissB: (params.lissB as number) ?? CONFIG.lissB,
+    };
+
     const rotation = beatsRef.current * 0.05 * spiralDirection;
-    const lines = generateLines(beatsRef.current, oscillators, spiralDirection);
+    const lines = generateLines(beatsRef.current, oscillators, spiralDirection, genParams);
     renderLines(ctx, lines, canvas.width, canvas.height, rotation, 1.0, params);
     renderVignette(ctx, canvas.width, canvas.height);
 
@@ -345,12 +378,35 @@ export const SilkSymmetry: Instrument = {
   defaultSettings: {
     symmetryFolds: 8,
     lineCount: 12,
+    pointsPerLine: 200,
+    globalSpeed: 0.3,
+    morphSpeed: 0.15,
+    metaDepth: 0.6,
+    weaveFactor: 0.4,
+    depthFactor: 0.6,
     glowIntensity: 0.7,
+    baseHue: 0.6,
+    hueRange: 0.3,
+    roseK: 4,
+    lissA: 3,
+    lissB: 4,
   },
 
   settingsSchema: {
-    symmetryFolds: { type: 'number', label: 'Symmetry Folds', min: 2, max: 16, step: 1, default: 8 },
+    symmetryFolds: { type: 'number', label: 'Symmetry', min: 2, max: 16, step: 1, default: 8 },
+    lineCount: { type: 'number', label: 'Lines', min: 4, max: 24, step: 1, default: 12 },
+    pointsPerLine: { type: 'number', label: 'Detail', min: 50, max: 400, step: 25, default: 200 },
+    globalSpeed: { type: 'number', label: 'Speed', min: 0.1, max: 1, step: 0.05, default: 0.3 },
+    morphSpeed: { type: 'number', label: 'Morph Speed', min: 0.05, max: 0.5, step: 0.05, default: 0.15 },
+    metaDepth: { type: 'number', label: 'Meta Depth', min: 0, max: 1, step: 0.1, default: 0.6 },
+    weaveFactor: { type: 'number', label: 'Weave', min: 0, max: 1, step: 0.1, default: 0.4 },
+    depthFactor: { type: 'number', label: 'Depth', min: 0, max: 1, step: 0.1, default: 0.6 },
     glowIntensity: { type: 'number', label: 'Glow', min: 0, max: 1, step: 0.1, default: 0.7 },
+    baseHue: { type: 'number', label: 'Base Hue', min: 0, max: 1, step: 0.05, default: 0.6 },
+    hueRange: { type: 'number', label: 'Hue Range', min: 0, max: 0.5, step: 0.05, default: 0.3 },
+    roseK: { type: 'number', label: 'Rose K', min: 1, max: 8, step: 0.5, default: 4 },
+    lissA: { type: 'number', label: 'Lissajous A', min: 1, max: 8, step: 0.5, default: 3 },
+    lissB: { type: 'number', label: 'Lissajous B', min: 1, max: 8, step: 0.5, default: 4 },
   },
 
   VisualComponent: SilkSymmetryVisual,

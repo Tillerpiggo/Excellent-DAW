@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState, RefObject } from 'react';
 import { Canvas, ThreeEvent, useFrame, useThree } from '@react-three/fiber';
-import { OrthographicCamera, Html } from '@react-three/drei';
+import { OrthographicCamera, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { TrackNode } from '@/utils/tree';
 import { Block, Track, getDrumType } from '@/core/types';
@@ -232,30 +232,21 @@ function RulerMesh({
     );
   }, [loopStart, loopEnd, pixelsPerBeat]);
 
-  // Bar numbers using Html overlay - centered in top half of ruler
+  // Bar numbers using Three.js Text - centered in top half of ruler
   const barNumbers = useMemo(() => {
     const topHalfCenter = -RULER_HEIGHT / 4; // Center of top half (0 to -24)
     return Array.from({ length: totalBars }).map((_, i) => (
-      <Html
+      <Text
         key={i}
         position={[i * barWidth + 8, topHalfCenter, 0]}
-        style={{ pointerEvents: 'none' }}
-        transform={false}
-        zIndexRange={[0, 0]}
+        fontSize={11}
+        color="#9ca3af"
+        fillOpacity={0.9}
+        anchorX="left"
+        anchorY="middle"
       >
-        <span
-          style={{
-            fontSize: '11px',
-            fontFamily: 'monospace',
-            color: 'rgba(156, 163, 175, 0.9)',
-            userSelect: 'none',
-            transform: 'translateY(-50%)',
-            display: 'block',
-          }}
-        >
-          {i + 1}
-        </span>
-      </Html>
+        {String(i + 1)}
+      </Text>
     ));
   }, [totalBars, barWidth]);
 
@@ -870,44 +861,30 @@ function BlockMesh({
       {/* Header background */}
       {headerBg}
 
-      {/* Track name and loop indicator using Html overlay */}
-      <Html
-        position={[blockLeft + 4, -(blockTop + 10), 0.1]}
-        style={{
-          width: contentAreaWidth - 16,
-          pointerEvents: 'none',
-        }}
-        transform={false}
-        zIndexRange={[0, 0]}
+      {/* Track name and loop indicator */}
+      <Text
+        position={[blockLeft + 8, -(blockTop + 10), 0.15]}
+        fontSize={11}
+        color={isSelected ? getSelectionTextColor(baseColor) : 'white'}
+        fillOpacity={isSelected ? 1 : 0.9}
+        anchorX="left"
+        anchorY="middle"
+        maxWidth={contentAreaWidth - (block.loop ? 32 : 16)}
       >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            fontSize: '11px',
-            fontWeight: 500,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            transform: 'translateY(-50%)',
-          }}
+        {track.name}
+      </Text>
+      {block.loop && (
+        <Text
+          position={[blockLeft + contentAreaWidth - 12, -(blockTop + 10), 0.15]}
+          fontSize={10}
+          color={isSelected ? getSelectionTextColor(baseColor) : 'white'}
+          fillOpacity={isSelected ? 0.7 : 0.7}
+          anchorX="right"
+          anchorY="middle"
         >
-          <span
-            style={{
-              color: isSelected ? getSelectionTextColor(baseColor) : 'rgba(255,255,255,0.9)',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {track.name}
-          </span>
-          {block.loop && (
-            <span style={{ color: isSelected ? getSelectionTextColor(baseColor) : 'rgba(255,255,255,0.7)', fontSize: '10px', marginLeft: '4px', opacity: isSelected ? 0.7 : 1 }}>
-              ⟳
-            </span>
-          )}
-        </div>
-      </Html>
+          ⟳
+        </Text>
+      )}
 
       {/* Events or Waveform */}
       {isAudioBlock ? waveformMesh : eventMeshes}

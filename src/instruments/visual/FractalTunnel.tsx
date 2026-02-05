@@ -358,15 +358,27 @@ function FractalTunnelVisual({ trackId }: FractalTunnelProps) {
     virtualBeatRef.current += deltaBeat;
     const beat = virtualBeatRef.current;
 
+    // Read settings from params
+    const symmetry = (visualParams.symmetry as number) ?? CONFIG.symmetry;
+    const branchCount = (visualParams.branchCount as number) ?? CONFIG.branchCount;
+    const generations = (visualParams.generations as number) ?? CONFIG.generations;
+    const spiralAmount = (visualParams.spiralAmount as number) ?? CONFIG.spiralAmount;
+    const lengthDecay = (visualParams.lengthDecay as number) ?? CONFIG.lengthDecay;
+    const spreadAngle = (visualParams.spreadAngle as number) ?? CONFIG.spreadAngle;
+    const hueShift = (visualParams.hueShift as number) ?? CONFIG.hueShift;
+    const baseHue = (visualParams.baseHue as number) ?? CONFIG.baseHue;
+    const lineWidth = (visualParams.lineWidth as number) ?? CONFIG.lineWidth;
+    const glowIntensity = (visualParams.glowIntensity as number) ?? CONFIG.glowIntensity;
+
     const params: BranchParams = {
-      symmetry: CONFIG.symmetry,
-      branchCount: CONFIG.branchCount,
-      generations: CONFIG.generations,
-      spiralAmount: CONFIG.spiralAmount + Math.sin(beat * Math.PI / 4) * 0.3,
-      lengthDecay: CONFIG.lengthDecay + Math.sin(beat * Math.PI / 16 + 2) * 0.15,
-      spreadAngle: CONFIG.spreadAngle + Math.sin(beat * Math.PI / 8 + 1) * 0.4,
-      hueShift: CONFIG.hueShift,
-      baseHue: (CONFIG.baseHue + beat / 64 + hueOffsetRef.current / 360) % 1,
+      symmetry,
+      branchCount,
+      generations,
+      spiralAmount: spiralAmount + Math.sin(beat * Math.PI / 4) * 0.3,
+      lengthDecay: lengthDecay + Math.sin(beat * Math.PI / 16 + 2) * 0.15,
+      spreadAngle: spreadAngle + Math.sin(beat * Math.PI / 8 + 1) * 0.4,
+      hueShift,
+      baseHue: (baseHue + beat / 64 + hueOffsetRef.current / 360) % 1,
     };
 
     if (colorPulse && newNoteCount > 0) {
@@ -397,8 +409,8 @@ function FractalTunnelVisual({ trackId }: FractalTunnelProps) {
       CONFIG.baseLength, CONFIG.backFlowerZ, CONFIG.backFlowerScale, params, 1
     );
 
-    const frontEndpoints = getEndpoints(frontBranches, CONFIG.generations);
-    const backEndpoints = getEndpoints(backBranches, CONFIG.generations);
+    const frontEndpoints = getEndpoints(frontBranches, generations);
+    const backEndpoints = getEndpoints(backBranches, generations);
 
     const centerX = canvas.width / 2;
     const centerY = canvas.height / 2;
@@ -413,23 +425,23 @@ function FractalTunnelVisual({ trackId }: FractalTunnelProps) {
     if (hasPulses && offscreenNormal && offscreenInverted && normalCtx && invertedCtx) {
       normalCtx.clearRect(0, 0, offscreenNormal.width, offscreenNormal.height);
       renderTunnelLines(normalCtx, frontEndpoints, backEndpoints, centerX, centerY,
-        CONFIG.focalLength, CONFIG.tunnelLineOpacity, CONFIG.glowIntensity);
+        CONFIG.focalLength, CONFIG.tunnelLineOpacity, glowIntensity);
       renderBranches(normalCtx, backBranches, centerX, centerY,
-        CONFIG.focalLength, CONFIG.lineWidth, CONFIG.glowIntensity, 0);
+        CONFIG.focalLength, lineWidth, glowIntensity, 0);
       renderBranches(normalCtx, frontBranches, centerX, centerY,
-        CONFIG.focalLength, CONFIG.lineWidth, CONFIG.glowIntensity, 0);
-      renderEndpointDots(normalCtx, frontBranches, CONFIG.generations, centerX, centerY,
+        CONFIG.focalLength, lineWidth, glowIntensity, 0);
+      renderEndpointDots(normalCtx, frontBranches, generations, centerX, centerY,
         CONFIG.focalLength, elapsed);
       normalCtx.shadowBlur = 0;
 
       invertedCtx.clearRect(0, 0, offscreenInverted.width, offscreenInverted.height);
       renderTunnelLines(invertedCtx, frontEndpoints, backEndpoints, centerX, centerY,
-        CONFIG.focalLength, CONFIG.tunnelLineOpacity, CONFIG.glowIntensity);
+        CONFIG.focalLength, CONFIG.tunnelLineOpacity, glowIntensity);
       renderBranches(invertedCtx, backBranches, centerX, centerY,
-        CONFIG.focalLength, CONFIG.lineWidth, CONFIG.glowIntensity, 0.5);
+        CONFIG.focalLength, lineWidth, glowIntensity, 0.5);
       renderBranches(invertedCtx, frontBranches, centerX, centerY,
-        CONFIG.focalLength, CONFIG.lineWidth, CONFIG.glowIntensity, 0.5);
-      renderEndpointDots(invertedCtx, frontBranches, CONFIG.generations, centerX, centerY,
+        CONFIG.focalLength, lineWidth, glowIntensity, 0.5);
+      renderEndpointDots(invertedCtx, frontBranches, generations, centerX, centerY,
         CONFIG.focalLength, elapsed);
       invertedCtx.shadowBlur = 0;
 
@@ -443,12 +455,12 @@ function FractalTunnelVisual({ trackId }: FractalTunnelProps) {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       renderTunnelLines(ctx, frontEndpoints, backEndpoints, centerX, centerY,
-        CONFIG.focalLength, CONFIG.tunnelLineOpacity, CONFIG.glowIntensity);
+        CONFIG.focalLength, CONFIG.tunnelLineOpacity, glowIntensity);
       renderBranches(ctx, backBranches, centerX, centerY,
-        CONFIG.focalLength, CONFIG.lineWidth, CONFIG.glowIntensity);
+        CONFIG.focalLength, lineWidth, glowIntensity);
       renderBranches(ctx, frontBranches, centerX, centerY,
-        CONFIG.focalLength, CONFIG.lineWidth, CONFIG.glowIntensity);
-      renderEndpointDots(ctx, frontBranches, CONFIG.generations, centerX, centerY,
+        CONFIG.focalLength, lineWidth, glowIntensity);
+      renderEndpointDots(ctx, frontBranches, generations, centerX, centerY,
         CONFIG.focalLength, elapsed);
 
       ctx.shadowBlur = 0;
@@ -486,7 +498,14 @@ export const FractalTunnel: Instrument = {
 
   defaultSettings: {
     symmetry: 6,
+    branchCount: 3,
     generations: 3,
+    spiralAmount: 0.9,
+    lengthDecay: 0.8,
+    spreadAngle: 1.6,
+    hueShift: 0.09,
+    baseHue: 0.48,
+    lineWidth: 4,
     glowIntensity: 0.9,
     colorPulse: false,
     pulseSpeed: 200,
@@ -495,6 +514,16 @@ export const FractalTunnel: Instrument = {
   },
 
   settingsSchema: {
+    symmetry: { type: 'number', label: 'Symmetry', min: 2, max: 12, step: 1, default: 6 },
+    branchCount: { type: 'number', label: 'Branches', min: 1, max: 5, step: 1, default: 3 },
+    generations: { type: 'number', label: 'Generations', min: 1, max: 5, step: 1, default: 3 },
+    spiralAmount: { type: 'number', label: 'Spiral', min: 0, max: 2, step: 0.1, default: 0.9 },
+    lengthDecay: { type: 'number', label: 'Length Decay', min: 0.4, max: 1, step: 0.05, default: 0.8 },
+    spreadAngle: { type: 'number', label: 'Spread Angle', min: 0.5, max: 3, step: 0.1, default: 1.6 },
+    hueShift: { type: 'number', label: 'Hue Shift', min: 0, max: 0.3, step: 0.01, default: 0.09 },
+    baseHue: { type: 'number', label: 'Base Hue', min: 0, max: 1, step: 0.05, default: 0.48 },
+    lineWidth: { type: 'number', label: 'Line Width', min: 1, max: 10, step: 0.5, default: 4 },
+    glowIntensity: { type: 'number', label: 'Glow', min: 0, max: 1, step: 0.1, default: 0.9 },
     colorPulse: { type: 'boolean', label: 'Color Pulse', default: false },
     pulseSpeed: { type: 'number', label: 'Pulse Speed', min: 50, max: 500, step: 10, default: 200 },
     pulseBandWidth: { type: 'number', label: 'Band Width', min: 10, max: 100, step: 5, default: 40 },

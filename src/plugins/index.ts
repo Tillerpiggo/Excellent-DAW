@@ -4,11 +4,12 @@ import { VisualPlugin, PluginCategory } from './types';
 import { RotatePlugin } from './transforms/rotate';
 import { ScalePlugin } from './transforms/scale';
 import { KaleidoscopePlugin } from './shaders/kaleidoscope';
-import { RadialSymmetryPlugin } from './shaders/radialSymmetry';
 import { PixelatePlugin } from './shaders/pixelate';
 import { ChromaticAberrationPlugin } from './shaders/chromaticAberration';
 import { EchoPlugin } from './clones/echo';
 import { TilePlugin } from './clones/tile';
+import { RotationalSymmetryPlugin } from './clones/rotationalSymmetry';
+import { RadialSymmetryPlugin } from './clones/radialSymmetry';
 
 // Plugin registry - populated with all plugins
 export const VISUAL_PLUGINS: Record<string, VisualPlugin> = {
@@ -17,12 +18,13 @@ export const VISUAL_PLUGINS: Record<string, VisualPlugin> = {
   [ScalePlugin.id]: ScalePlugin,
   // Shaders
   [KaleidoscopePlugin.id]: KaleidoscopePlugin,
-  [RadialSymmetryPlugin.id]: RadialSymmetryPlugin,
   [PixelatePlugin.id]: PixelatePlugin,
   [ChromaticAberrationPlugin.id]: ChromaticAberrationPlugin,
   // Clones
   [EchoPlugin.id]: EchoPlugin,
   [TilePlugin.id]: TilePlugin,
+  [RotationalSymmetryPlugin.id]: RotationalSymmetryPlugin,
+  [RadialSymmetryPlugin.id]: RadialSymmetryPlugin,
 };
 
 export function getPlugin(id: string): VisualPlugin | undefined {
