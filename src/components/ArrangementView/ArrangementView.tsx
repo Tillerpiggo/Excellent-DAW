@@ -1,14 +1,12 @@
 'use client';
 
-import { useRef, useCallback, useEffect, useState } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import { TimelineRuler } from '../Timeline/TimelineRuler';
 import { TimelineCanvas } from './TimelineCanvas';
 import { TrackLabels } from './TrackLabels';
-import { Playhead } from '../Timeline/Playhead';
 import { ZoomControls } from './ZoomControls';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
-import { usePlayback } from '@/hooks/usePlayback';
 import { flattenTracks } from '@/utils/tree';
 
 export function ArrangementView() {
@@ -25,35 +23,19 @@ export function ArrangementView() {
     pixelsPerBeat,
     trackHeightScale,
     scrollLeft,
-    currentBeat,
-    isScrubbing,
     setScrollLeft,
     setScrollTop,
     setPixelsPerBeat,
     setTrackHeightScale,
   } = useUIStore();
-  const { isPlaying } = usePlayback();
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const [viewportWidth, setViewportWidth] = useState(0);
   // Create minimal project-like object for flattenTracks
   const flatTracks = flattenTracks({ tracks, rootTracks } as Parameters<typeof flattenTracks>[0], collapsedTrackIds);
 
   const totalBeats = totalBars * beatsPerBar;
   const timelineWidth = totalBeats * pixelsPerBeat;
   const trackLabelWidth = 256;
-
-  // Track viewport width for visibility calculations
-  useEffect(() => {
-    const updateViewportWidth = () => {
-      if (containerRef.current) {
-        setViewportWidth(containerRef.current.clientWidth);
-      }
-    };
-    updateViewportWidth();
-    window.addEventListener('resize', updateViewportWidth);
-    return () => window.removeEventListener('resize', updateViewportWidth);
-  }, []);
 
   // Restore scroll position when layout changes (e.g., bottom panel opens/closes)
   useEffect(() => {
@@ -160,22 +142,6 @@ export function ArrangementView() {
             bpm={bpm}
           />
         </div>
-      </div>
-
-      {/* Fixed Playhead - positioned outside scroll container, starts at bottom half of ruler */}
-      <div
-        className="absolute top-6 bottom-0 pointer-events-none z-40"
-        style={{
-          left: trackLabelWidth,
-          right: 0,
-          overflow: 'hidden',
-        }}
-      >
-        <Playhead
-          currentBeat={currentBeat}
-          pixelsPerBeat={pixelsPerBeat}
-          scrollLeft={scrollLeft}
-        />
       </div>
 
       {/* Zoom Controls */}

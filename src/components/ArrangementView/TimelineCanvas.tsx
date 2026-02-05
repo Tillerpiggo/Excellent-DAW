@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, useThree, ThreeEvent } from '@react-three/fiber';
+import { Canvas, ThreeEvent } from '@react-three/fiber';
 import { OrthographicCamera, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { TrackNode } from '@/utils/tree';
 import { Block, Track, getDrumType } from '@/core/types';
 import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { usePlayback } from '@/hooks/usePlayback';
 import { useDragDrop } from '@/hooks/useDragDrop';
 import { isAudioFile } from '@/core/audio';
 import { INSTRUMENT_COLORS, TRACK_TYPE_COLORS, darken, tintWhite } from '@/utils/colors';
@@ -18,11 +19,6 @@ interface TimelineCanvasProps {
   beatsPerBar: number;
   totalBars: number;
   bpm: number;
-}
-
-// Convert hex color to THREE.Color
-function hexToThreeColor(hex: string): THREE.Color {
-  return new THREE.Color(hex);
 }
 
 // Helper to find track ID for a given block ID
@@ -798,6 +794,101 @@ function Marquee({ startX, startY, currentX, currentY }: MarqueeProps) {
   );
 }
 
+// Playhead Component
+interface PlayheadMeshProps {
+  currentBeat: number;
+  pixelsPerBeat: number;
+  totalHeight: number;
+  onScrubStart: () => void;
+}
+
+function PlayheadMesh({
+  currentBeat,
+  pixelsPerBeat,
+  totalHeight,
+  onScrubStart,
+}: PlayheadMeshProps) {
+  const xPosition = currentBeat * pixelsPerBeat;
+  const headRadius = 6;
+  const lineWidth = 2;
+  const glowWidth = 8;
+
+  // Accent gradient colors
+  const accentFrom = '#ff6b6b';
+  const accentTo = '#ffd93d';
+  const accentMid = '#ff9f43';
+
+  // Create head shape (rounded pill)
+  const headShape = useMemo(() => {
+    const shape = new THREE.Shape();
+    const h = headRadius * 2.5;
+    const r = headRadius;
+
+    // Pill shape centered at origin
+    shape.moveTo(-r, h/2 - r);
+    shape.quadraticCurveTo(-r, h/2, 0, h/2);
+    shape.quadraticCurveTo(r, h/2, r, h/2 - r);
+    shape.lineTo(r, -h/2 + r);
+    shape.quadraticCurveTo(r, -h/2, 0, -h/2);
+    shape.quadraticCurveTo(-r, -h/2, -r, -h/2 + r);
+    shape.closePath();
+
+    return shape;
+  }, []);
+
+  return (
+    <group position={[xPosition, 0, 5]}>
+      {/* Outer glow */}
+      <mesh position={[0, -totalHeight / 2, -0.02]}>
+        <planeGeometry args={[glowWidth, totalHeight]} />
+        <meshBasicMaterial color={accentFrom} opacity={0.15} transparent />
+      </mesh>
+
+      {/* Inner glow */}
+      <mesh position={[0, -totalHeight / 2, -0.01]}>
+        <planeGeometry args={[glowWidth / 2, totalHeight]} />
+        <meshBasicMaterial color={accentMid} opacity={0.25} transparent />
+      </mesh>
+
+      {/* Main line */}
+      <mesh position={[0, -totalHeight / 2, 0]}>
+        <planeGeometry args={[lineWidth, totalHeight]} />
+        <meshBasicMaterial color={accentTo} />
+      </mesh>
+
+      {/* Head glow */}
+      <mesh position={[0, -headRadius * 1.25, 0.01]}>
+        <circleGeometry args={[headRadius * 1.8, 16]} />
+        <meshBasicMaterial color={accentFrom} opacity={0.3} transparent />
+      </mesh>
+
+      {/* Head */}
+      <mesh position={[0, -headRadius * 1.25, 0.02]}>
+        <shapeGeometry args={[headShape]} />
+        <meshBasicMaterial color={accentTo} />
+      </mesh>
+
+      {/* Head highlight */}
+      <mesh position={[0, -headRadius * 0.8, 0.03]}>
+        <circleGeometry args={[headRadius * 0.4, 12]} />
+        <meshBasicMaterial color="#ffffff" opacity={0.4} transparent />
+      </mesh>
+
+      {/* Invisible hit area for dragging */}
+      <mesh
+        position={[0, -headRadius * 1.25, 0.1]}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          onScrubStart();
+        }}
+      >
+        <circleGeometry args={[headRadius * 2.5, 16]} />
+        <meshBasicMaterial transparent opacity={0} />
+      </mesh>
+    </group>
+  );
+}
+
 // Main Scene Component
 interface TimelineSceneProps {
   flatTracks: TrackNode[];
@@ -808,6 +899,7 @@ interface TimelineSceneProps {
   trackHeight: number;
   timelineWidth: number;
   totalHeight: number;
+  currentBeat: number;
 }
 
 function TimelineScene({
@@ -819,10 +911,15 @@ function TimelineScene({
   trackHeight,
   timelineWidth,
   totalHeight,
+  currentBeat,
 }: TimelineSceneProps) {
-  const { selectedBlockIds, selectBlock, selectBlocks, clearBlockSelection } = useUIStore();
-  const { updateBlock, moveBlock } = useProjectStore();
+  const { selectedBlockIds, selectBlock, selectBlocks, clearBlockSelection, setIsScrubbing, setCurrentBeat } = useUIStore();
+  const { updateBlock } = useProjectStore();
   const tracks = useProjectStore((state) => state.project.tracks);
+  const { isPlaying, seekTo } = usePlayback();
+
+  // Scrubbing state
+  const [isScrubbing, setLocalScrubbing] = useState(false);
 
   const barWidth = beatsPerBar * pixelsPerBeat;
 
@@ -1050,6 +1147,54 @@ function TimelineScene({
     };
   }, [dragState, barWidth, trackHeight, flatTracks, updateBlock, selectBlocks, tracks, beatsPerBar]);
 
+  // Scrubbing handlers
+  const totalBeats = totalBars * beatsPerBar;
+
+  const handleScrubStart = useCallback(() => {
+    setLocalScrubbing(true);
+    setIsScrubbing(true);
+  }, [setIsScrubbing]);
+
+  const pixelToBeat = useCallback((pixelX: number) => {
+    const beat = pixelX / pixelsPerBeat;
+    const quantize = 0.25; // 1/16th note
+    const quantized = Math.round(beat / quantize) * quantize;
+    return Math.max(0, Math.min(totalBeats - quantize, quantized));
+  }, [pixelsPerBeat, totalBeats]);
+
+  // Handle scrubbing pointer move and up
+  useEffect(() => {
+    if (!isScrubbing) return;
+
+    const handleMove = (e: PointerEvent) => {
+      const canvas = document.querySelector('canvas');
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const beat = pixelToBeat(x);
+
+      if (isPlaying) {
+        seekTo(beat);
+      } else {
+        setCurrentBeat(beat);
+      }
+    };
+
+    const handleUp = () => {
+      setLocalScrubbing(false);
+      setIsScrubbing(false);
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+  }, [isScrubbing, pixelToBeat, isPlaying, seekTo, setCurrentBeat, setIsScrubbing]);
+
   return (
     <>
       <OrthographicCamera
@@ -1101,6 +1246,14 @@ function TimelineScene({
         />
       )}
 
+      {/* Playhead */}
+      <PlayheadMesh
+        currentBeat={currentBeat}
+        pixelsPerBeat={pixelsPerBeat}
+        totalHeight={totalHeight}
+        onScrubStart={handleScrubStart}
+      />
+
       {/* Background for pointer miss detection */}
       <mesh
         position={[timelineWidth / 2, -totalHeight / 2, -1]}
@@ -1122,7 +1275,8 @@ export function TimelineCanvas({
   bpm,
 }: TimelineCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { trackHeightScale } = useUIStore();
+  const trackHeightScale = useUIStore((state) => state.trackHeightScale);
+  const currentBeat = useUIStore((state) => state.currentBeat);
   const { handleAudioFileDrop, isProcessingAudio } = useDragDrop();
 
   const [isDraggingAudioFile, setIsDraggingAudioFile] = useState(false);
@@ -1210,6 +1364,7 @@ export function TimelineCanvas({
             trackHeight={trackHeight}
             timelineWidth={timelineWidth}
             totalHeight={totalHeight}
+            currentBeat={currentBeat}
           />
         </Canvas>
       )}
