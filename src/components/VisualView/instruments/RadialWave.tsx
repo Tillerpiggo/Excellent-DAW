@@ -111,7 +111,7 @@ export function RadialWave({ trackId }: RadialWaveProps) {
   const timeRef = useRef(0);
   const rotationRef = useRef(0);
   const engineRef = useRef(getVisualPlaybackEngine());
-  const prevNoteKeysRef = useRef(new Set<string>());
+  const prevNoteOnCountRef = useRef(0);
 
   useEffect(() => {
     const canvas = document.createElement('canvas');
@@ -140,30 +140,33 @@ export function RadialWave({ trackId }: RadialWaveProps) {
 
     // Read state from engine
     const state = engineRef.current.getTrackState(trackId);
+    // Debug: log state on first frame only
+    if (timeRef.current === 0) {
+      console.log('[RadialWave] Initial state check - trackId:', trackId, 'state:', state, 'noteOnCount:', state?.noteOnCount);
+    }
     const params = state?.params ?? {};
     const rotationAmount = ((params.rotationAmount as number) ?? CONFIG.rotationAmount) * (Math.PI / 180);
 
-    // Detect new notes by comparing keys
+    // Use noteOnCount - a counter that increments for EVERY note trigger (never throttled)
     if (state) {
-      const currentNoteKeys = new Set<string>();
-      state.activeNotes.forEach((event, pitch) => {
-        currentNoteKeys.add(`${pitch}:${event.startTimeInBeats}`);
-      });
+      const currentNoteOnCount = state.noteOnCount;
+      let newNotes = currentNoteOnCount - prevNoteOnCountRef.current;
 
-      // Count new notes
-      let newNoteCount = 0;
-      currentNoteKeys.forEach((key) => {
-        if (!prevNoteKeysRef.current.has(key)) {
-          newNoteCount++;
-        }
-      });
-
-      // Rotate by the set amount for each new note
-      if (newNoteCount > 0) {
-        rotationRef.current += rotationAmount * newNoteCount;
+      // Handle engine reinitialization (count reset to 0)
+      if (newNotes < 0) {
+        // Engine was reinitialized, reset our tracking
+        newNotes = currentNoteOnCount; // Count all notes since reset
       }
 
-      prevNoteKeysRef.current = currentNoteKeys;
+      // Rotate by the set amount for each new note
+      if (newNotes > 0) {
+        console.log('[RadialWave] noteOnCount:', currentNoteOnCount, 'new:', newNotes, 'rotating by', rotationAmount * newNotes * (180 / Math.PI), 'degrees');
+        rotationRef.current += rotationAmount * newNotes;
+      }
+
+      prevNoteOnCountRef.current = currentNoteOnCount;
+    } else {
+      console.log('[RadialWave] No state found for track:', trackId);
     }
 
     timeRef.current += delta;

@@ -1113,8 +1113,9 @@ interface TimelineSceneProps {
   timelineWidth: number;
   totalHeight: number;
   currentBeat: number;
-  viewportWidth: number;
-  viewportHeight: number;
+  // Canvas dimensions (includes buffer)
+  canvasWidth: number;
+  canvasHeight: number;
   scrollContainerRef: RefObject<HTMLDivElement | null>;
   canvasWrapperRef: RefObject<HTMLDivElement | null>;
   scrollBuffer: number;
@@ -1130,8 +1131,8 @@ function TimelineScene({
   timelineWidth,
   totalHeight,
   currentBeat,
-  viewportWidth,
-  viewportHeight,
+  canvasWidth,
+  canvasHeight,
   scrollContainerRef,
   canvasWrapperRef,
   scrollBuffer,
@@ -1145,18 +1146,26 @@ function TimelineScene({
     return { scrollLeft: container.scrollLeft, scrollTop: container.scrollTop };
   }, [scrollContainerRef]);
 
+  // Total scrollable content height (including ruler)
+  const totalContentHeight = RULER_HEIGHT + totalHeight;
+
   // Lusion scroll sync: Update camera and canvas position every frame
   // This reads scroll directly from DOM, bypassing React state for perfect sync
   useFrame(() => {
     const { scrollLeft, scrollTop } = getScrollValues();
 
-    // Calculate canvas offset (with buffer)
-    const canvasOffsetX = Math.max(0, scrollLeft - scrollBuffer);
-    const canvasOffsetY = Math.max(0, scrollTop - scrollBuffer);
+    // Calculate canvas offset with proper edge clamping
+    // At minimum: offset should be 0 (can't go before start)
+    // At maximum: offset should ensure canvas covers to the end of content
+    const maxOffsetX = Math.max(0, timelineWidth - canvasWidth);
+    const maxOffsetY = Math.max(0, totalContentHeight - canvasHeight);
+
+    const canvasOffsetX = Math.max(0, Math.min(scrollLeft - scrollBuffer, maxOffsetX));
+    const canvasOffsetY = Math.max(0, Math.min(scrollTop - scrollBuffer, maxOffsetY));
 
     // Update camera position to match scroll
-    const cameraX = canvasOffsetX + viewportWidth / 2;
-    const cameraY = -(canvasOffsetY + viewportHeight / 2);
+    const cameraX = canvasOffsetX + canvasWidth / 2;
+    const cameraY = -(canvasOffsetY + canvasHeight / 2);
     camera.position.set(cameraX, cameraY, 100);
 
     // Lusion technique: Update canvas wrapper position with top/left
@@ -1530,7 +1539,7 @@ function TimelineScene({
     <>
       <OrthographicCamera
         makeDefault
-        position={[viewportWidth / 2, -viewportHeight / 2, 100]}
+        position={[canvasWidth / 2, -canvasHeight / 2, 100]}
         zoom={1}
         near={0.1}
         far={1000}
@@ -1761,8 +1770,8 @@ export function TimelineCanvas({
               timelineWidth={timelineWidth}
               totalHeight={contentHeight}
               currentBeat={currentBeat}
-              viewportWidth={canvasWidth}
-              viewportHeight={canvasHeight}
+              canvasWidth={canvasWidth}
+              canvasHeight={canvasHeight}
               scrollContainerRef={scrollContainerRef}
               canvasWrapperRef={canvasWrapperRef}
               scrollBuffer={SCROLL_BUFFER}

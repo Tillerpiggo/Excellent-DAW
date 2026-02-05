@@ -76,6 +76,9 @@ export class VisualPlaybackEngine {
     // Sort events by start time
     this.scheduledEvents.sort((a, b) => a.startTimeInBeats - b.startTimeInBeats);
 
+    console.log('[VisualPlayback] Scheduled events count:', this.scheduledEvents.length);
+    console.log('[VisualPlayback] First 20 event times:', this.scheduledEvents.slice(0, 20).map(e => e.startTimeInBeats.toFixed(3)));
+
     // Notify about track structure change (not per-frame)
     this.callbacks.onTracksChanged?.(Array.from(this.trackStates.keys()));
   }
@@ -183,6 +186,10 @@ export class VisualPlaybackEngine {
     };
 
     state.activeNotes.set(event.pitch, activeNote);
+
+    // Increment note-on counter (NEVER throttled - counts every trigger)
+    state.noteOnCount++;
+    console.log('[VisualPlayback] triggerNoteOn - track:', event.trackId, 'eventBeat:', event.startTimeInBeats.toFixed(3), 'currentBeat:', currentBeat.toFixed(3), 'noteOnCount:', state.noteOnCount);
 
     // Update visual state based on note
     const velocityNorm = event.velocity / 127;

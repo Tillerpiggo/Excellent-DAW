@@ -17,6 +17,7 @@ export interface VisualInstrumentState {
   bloom: number;
   colorShift: number;
   params: Record<string, unknown>; // Merged: instrument defaults + track overrides
+  noteOnCount: number; // Increments for EVERY note-on trigger (never throttled)
 }
 
 export interface VisualEvent {

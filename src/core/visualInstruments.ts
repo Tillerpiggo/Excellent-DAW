@@ -69,6 +69,7 @@ export function createVisualInstrumentState(
     bloom: 0,
     colorShift: 0,
     params: { ...defaultParams, ...params },
+    noteOnCount: 0,
   };
 }
 

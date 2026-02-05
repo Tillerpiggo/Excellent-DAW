@@ -318,8 +318,10 @@ export class PlaybackEngine {
     if (!this.project) return 0;
 
     const position = Tone.getTransport().position;
-    const [bars, beats] = String(position).split(':').map(Number);
-    return (bars || 0) * this.project.beatsPerBar + (beats || 0);
+    // Position format is "bars:beats:sixteenths" - must include sixteenths for sub-beat precision
+    const [bars, beats, sixteenths] = String(position).split(':').map(Number);
+    // 4 sixteenths per beat in standard time
+    return (bars || 0) * this.project.beatsPerBar + (beats || 0) + (sixteenths || 0) / 4;
   }
 
   setBpm(bpm: number): void {
