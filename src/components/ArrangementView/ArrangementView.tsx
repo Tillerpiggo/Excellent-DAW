@@ -75,30 +75,30 @@ export function ArrangementView() {
     [setScrollLeft, setScrollTop]
   );
 
-  // Handle wheel zoom
-  const handleWheel = useCallback(
-    (e: React.WheelEvent<HTMLDivElement>) => {
+  // Handle wheel zoom with native event listener (passive: false to allow preventDefault)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleWheel = (e: WheelEvent) => {
       // Option/Alt + scroll: Zoom mode
       // deltaX controls horizontal zoom, deltaY controls vertical zoom
       if (e.altKey) {
         e.preventDefault();
+        e.stopPropagation();
 
         // Horizontal zoom from deltaX - centered on playhead
         if (Math.abs(e.deltaX) > 2) {
           const hDelta = -e.deltaX * 0.02;
           const newPixelsPerBeat = Math.max(2, Math.min(100, pixelsPerBeat + hDelta));
 
-          if (containerRef.current) {
-            const playheadX = currentBeat * pixelsPerBeat;
-            const newPlayheadX = currentBeat * newPixelsPerBeat;
-            const playheadViewportOffset = playheadX - scrollLeft;
-            const newScrollLeft = newPlayheadX - playheadViewportOffset;
+          const playheadX = currentBeat * pixelsPerBeat;
+          const newPlayheadX = currentBeat * newPixelsPerBeat;
+          const playheadViewportOffset = playheadX - scrollLeft;
+          const newScrollLeft = newPlayheadX - playheadViewportOffset;
 
-            setPixelsPerBeat(newPixelsPerBeat);
-            setScrollLeft(Math.max(0, newScrollLeft));
-          } else {
-            setPixelsPerBeat(newPixelsPerBeat);
-          }
+          setPixelsPerBeat(newPixelsPerBeat);
+          setScrollLeft(Math.max(0, newScrollLeft));
         }
 
         // Vertical zoom from deltaY
@@ -107,9 +107,11 @@ export function ArrangementView() {
           setTrackHeightScale(Math.max(0.5, Math.min(2.0, trackHeightScale + vDelta)));
         }
       }
-    },
-    [pixelsPerBeat, trackHeightScale, scrollLeft, currentBeat, setPixelsPerBeat, setTrackHeightScale, setScrollLeft]
-  );
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
+  }, [pixelsPerBeat, trackHeightScale, scrollLeft, currentBeat, setPixelsPerBeat, setTrackHeightScale, setScrollLeft]);
 
   return (
     <div className="h-full relative">
@@ -118,7 +120,6 @@ export function ArrangementView() {
         ref={containerRef}
         className="h-full overflow-auto bg-background"
         onScroll={handleScroll}
-        onWheel={handleWheel}
       >
         <div
           className="grid timeline-content"
