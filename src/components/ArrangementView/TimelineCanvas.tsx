@@ -13,12 +13,19 @@ import { useDragDrop } from '@/hooks/useDragDrop';
 import { isAudioFile } from '@/core/audio';
 import { INSTRUMENT_COLORS, TRACK_TYPE_COLORS, darken, tintWhite } from '@/utils/colors';
 
+// Ruler height constant - used for positioning content below the ruler
+const RULER_HEIGHT = 48;
+
 interface TimelineCanvasProps {
   flatTracks: TrackNode[];
   pixelsPerBeat: number;
   beatsPerBar: number;
   totalBars: number;
   bpm: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  scrollLeft: number;
+  scrollTop: number;
 }
 
 // Helper to find track ID for a given block ID
@@ -132,7 +139,8 @@ function GridLines({ totalBars, barWidth, height }: GridLinesProps) {
     const positions: number[] = [];
     for (let i = 0; i <= totalBars; i++) {
       const x = i * barWidth;
-      positions.push(x, 0, 0, x, -height, 0);
+      // Grid lines start below the ruler
+      positions.push(x, -RULER_HEIGHT, 0, x, -RULER_HEIGHT - height, 0);
     }
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -143,6 +151,169 @@ function GridLines({ totalBars, barWidth, height }: GridLinesProps) {
     <lineSegments geometry={geometry}>
       <lineBasicMaterial color="#ffffff" opacity={0.1} transparent />
     </lineSegments>
+  );
+}
+
+// Ruler Component - renders bar numbers, tick marks, loop region
+interface RulerMeshProps {
+  totalBars: number;
+  barWidth: number;
+  beatsPerBar: number;
+  pixelsPerBeat: number;
+  timelineWidth: number;
+  loopStart: number | null;
+  loopEnd: number | null;
+  onLoopDragStart: (e: ThreeEvent<PointerEvent>) => void;
+  onScrubStart: (e: ThreeEvent<PointerEvent>) => void;
+}
+
+function RulerMesh({
+  totalBars,
+  barWidth,
+  beatsPerBar,
+  pixelsPerBeat,
+  timelineWidth,
+  loopStart,
+  loopEnd,
+  onLoopDragStart,
+  onScrubStart,
+}: RulerMeshProps) {
+  // Bar divider lines
+  const barLinesGeometry = useMemo(() => {
+    const positions: number[] = [];
+    for (let i = 0; i <= totalBars; i++) {
+      const x = i * barWidth;
+      // Full height dividers
+      positions.push(x, 0, 0, x, -RULER_HEIGHT, 0);
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    return geom;
+  }, [totalBars, barWidth]);
+
+  // Beat tick marks (in bottom half of ruler)
+  const tickGeometry = useMemo(() => {
+    const positions: number[] = [];
+    const tickHeight = 8;
+    const bottomY = -RULER_HEIGHT;
+
+    for (let bar = 0; bar < totalBars; bar++) {
+      for (let beat = 1; beat < beatsPerBar; beat++) {
+        const x = bar * barWidth + beat * pixelsPerBeat;
+        positions.push(x, bottomY + tickHeight + 4, 0, x, bottomY + 4, 0);
+      }
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    return geom;
+  }, [totalBars, barWidth, beatsPerBar, pixelsPerBeat]);
+
+  // Loop region overlay
+  const loopRegion = useMemo(() => {
+    if (loopStart === null || loopEnd === null || loopStart === loopEnd) return null;
+
+    const startX = loopStart * pixelsPerBeat;
+    const endX = loopEnd * pixelsPerBeat;
+    const width = endX - startX;
+    const height = RULER_HEIGHT / 2; // Top half of ruler
+
+    return (
+      <group>
+        {/* Loop region fill */}
+        <mesh position={[startX + width / 2, -height / 2, 0.1]}>
+          <planeGeometry args={[width, height]} />
+          <meshBasicMaterial color="#fbbf24" opacity={0.3} transparent />
+        </mesh>
+        {/* Loop region top border */}
+        <mesh position={[startX + width / 2, -1, 0.2]}>
+          <planeGeometry args={[width, 2]} />
+          <meshBasicMaterial color="#fbbf24" />
+        </mesh>
+      </group>
+    );
+  }, [loopStart, loopEnd, pixelsPerBeat]);
+
+  // Bar numbers using Html overlay - centered in top half of ruler
+  const barNumbers = useMemo(() => {
+    const topHalfCenter = -RULER_HEIGHT / 4; // Center of top half (0 to -24)
+    return Array.from({ length: totalBars }).map((_, i) => (
+      <Html
+        key={i}
+        position={[i * barWidth + 8, topHalfCenter, 0]}
+        style={{ pointerEvents: 'none' }}
+        transform={false}
+        zIndexRange={[0, 0]}
+      >
+        <span
+          style={{
+            fontSize: '11px',
+            fontFamily: 'monospace',
+            color: 'rgba(156, 163, 175, 0.9)',
+            userSelect: 'none',
+            transform: 'translateY(-50%)',
+            display: 'block',
+          }}
+        >
+          {i + 1}
+        </span>
+      </Html>
+    ));
+  }, [totalBars, barWidth]);
+
+  return (
+    <group>
+      {/* Ruler background */}
+      <mesh position={[timelineWidth / 2, -RULER_HEIGHT / 2, -0.5]}>
+        <planeGeometry args={[timelineWidth, RULER_HEIGHT]} />
+        <meshBasicMaterial color="#1a1a1a" />
+      </mesh>
+
+      {/* Divider between ruler halves */}
+      <mesh position={[timelineWidth / 2, -RULER_HEIGHT / 2, 0.05]}>
+        <planeGeometry args={[timelineWidth, 1]} />
+        <meshBasicMaterial color="#333333" opacity={0.5} transparent />
+      </mesh>
+
+      {/* Bottom border of ruler */}
+      <mesh position={[timelineWidth / 2, -RULER_HEIGHT + 0.5, 0.05]}>
+        <planeGeometry args={[timelineWidth, 1]} />
+        <meshBasicMaterial color="#333333" />
+      </mesh>
+
+      {/* Bar divider lines */}
+      <lineSegments geometry={barLinesGeometry}>
+        <lineBasicMaterial color="#333333" />
+      </lineSegments>
+
+      {/* Beat tick marks */}
+      <lineSegments geometry={tickGeometry}>
+        <lineBasicMaterial color="#444444" />
+      </lineSegments>
+
+      {/* Loop region */}
+      {loopRegion}
+
+      {/* Bar numbers */}
+      {barNumbers}
+
+      {/* Top half hit area - loop region dragging */}
+      <mesh
+        position={[timelineWidth / 2, -RULER_HEIGHT / 4, 0.5]}
+        onPointerDown={onLoopDragStart}
+      >
+        <planeGeometry args={[timelineWidth, RULER_HEIGHT / 2]} />
+        <meshBasicMaterial transparent opacity={0} />
+      </mesh>
+
+      {/* Bottom half hit area - scrubbing */}
+      <mesh
+        position={[timelineWidth / 2, -RULER_HEIGHT * 3 / 4, 0.5]}
+        onPointerDown={onScrubStart}
+      >
+        <planeGeometry args={[timelineWidth, RULER_HEIGHT / 2]} />
+        <meshBasicMaterial transparent opacity={0} />
+      </mesh>
+    </group>
   );
 }
 
@@ -182,11 +353,11 @@ function BlockMesh({
   const barWidth = beatsPerBar * pixelsPerBeat;
   const handleWidthPx = 12;
 
-  // Calculate position and size
+  // Calculate position and size (offset by ruler height)
   const blockLeft = block.startBar * barWidth;
   const fullBlockWidth = block.durationBars * barWidth;
   const blockWidth = Math.max(fullBlockWidth - 2, 20);
-  const blockTop = trackIndex * trackHeight + 4;
+  const blockTop = RULER_HEIGHT + trackIndex * trackHeight + 4;
   const blockHeight = trackHeight - 8;
   const contentAreaWidth = blockWidth - handleWidthPx;
 
@@ -809,80 +980,111 @@ function PlayheadMesh({
   onScrubStart,
 }: PlayheadMeshProps) {
   const xPosition = currentBeat * pixelsPerBeat;
-  const headRadius = 6;
   const lineWidth = 2;
   const glowWidth = 8;
+
+  // Playhead triangle dimensions
+  const triangleWidth = 14;
+  const triangleHeight = 12;
+  const cornerRadius = 3;
 
   // Accent gradient colors
   const accentFrom = '#ff6b6b';
   const accentTo = '#ffd93d';
   const accentMid = '#ff9f43';
 
-  // Create head shape (rounded pill)
+  // Triangle tip is at the bottom of the ruler
+  // Head sits above the bottom of ruler, with tip pointing down
+  const tipY = -RULER_HEIGHT;
+  const headCenterY = tipY + triangleHeight / 2;
+
+  // Line extends from bottom of ruler to bottom of content
+  const lineStartY = -RULER_HEIGHT;
+  const lineHeight = totalHeight;
+  const lineCenterY = lineStartY - lineHeight / 2;
+
+  // Create head shape (rounded downward-pointing triangle)
   const headShape = useMemo(() => {
     const shape = new THREE.Shape();
-    const h = headRadius * 2.5;
-    const r = headRadius;
+    const hw = triangleWidth / 2;
+    const hh = triangleHeight / 2;
+    const r = cornerRadius;
 
-    // Pill shape centered at origin
-    shape.moveTo(-r, h/2 - r);
-    shape.quadraticCurveTo(-r, h/2, 0, h/2);
-    shape.quadraticCurveTo(r, h/2, r, h/2 - r);
-    shape.lineTo(r, -h/2 + r);
-    shape.quadraticCurveTo(r, -h/2, 0, -h/2);
-    shape.quadraticCurveTo(-r, -h/2, -r, -h/2 + r);
+    // Start at left corner (top-left of triangle), going clockwise
+    // The triangle points down: flat top, pointed bottom
+
+    // Top-left corner (rounded)
+    shape.moveTo(-hw + r, hh);
+
+    // Top edge to top-right corner
+    shape.lineTo(hw - r, hh);
+
+    // Top-right corner (rounded)
+    shape.quadraticCurveTo(hw, hh, hw - r * 0.3, hh - r * 0.7);
+
+    // Right edge going down to bottom point
+    shape.lineTo(r * 0.5, -hh + r);
+
+    // Bottom point (rounded)
+    shape.quadraticCurveTo(0, -hh, -r * 0.5, -hh + r);
+
+    // Left edge going up
+    shape.lineTo(-hw + r * 0.3, hh - r * 0.7);
+
+    // Top-left corner (rounded)
+    shape.quadraticCurveTo(-hw, hh, -hw + r, hh);
+
     shape.closePath();
-
     return shape;
   }, []);
 
   return (
     <group position={[xPosition, 0, 5]}>
-      {/* Outer glow */}
-      <mesh position={[0, -totalHeight / 2, -0.02]}>
-        <planeGeometry args={[glowWidth, totalHeight]} />
+      {/* Outer glow - content area only */}
+      <mesh position={[0, lineCenterY, -0.02]}>
+        <planeGeometry args={[glowWidth, lineHeight]} />
         <meshBasicMaterial color={accentFrom} opacity={0.15} transparent />
       </mesh>
 
-      {/* Inner glow */}
-      <mesh position={[0, -totalHeight / 2, -0.01]}>
-        <planeGeometry args={[glowWidth / 2, totalHeight]} />
+      {/* Inner glow - content area only */}
+      <mesh position={[0, lineCenterY, -0.01]}>
+        <planeGeometry args={[glowWidth / 2, lineHeight]} />
         <meshBasicMaterial color={accentMid} opacity={0.25} transparent />
       </mesh>
 
-      {/* Main line */}
-      <mesh position={[0, -totalHeight / 2, 0]}>
-        <planeGeometry args={[lineWidth, totalHeight]} />
+      {/* Main line - content area only (starts at bottom of ruler) */}
+      <mesh position={[0, lineCenterY, 0]}>
+        <planeGeometry args={[lineWidth, lineHeight]} />
         <meshBasicMaterial color={accentTo} />
       </mesh>
 
-      {/* Head glow */}
-      <mesh position={[0, -headRadius * 1.25, 0.01]}>
-        <circleGeometry args={[headRadius * 1.8, 16]} />
+      {/* Head glow - at bottom of ruler */}
+      <mesh position={[0, headCenterY, 0.01]}>
+        <circleGeometry args={[triangleWidth * 0.7, 16]} />
         <meshBasicMaterial color={accentFrom} opacity={0.3} transparent />
       </mesh>
 
-      {/* Head */}
-      <mesh position={[0, -headRadius * 1.25, 0.02]}>
+      {/* Head - rounded downward triangle at bottom of ruler */}
+      <mesh position={[0, headCenterY, 0.02]}>
         <shapeGeometry args={[headShape]} />
         <meshBasicMaterial color={accentTo} />
       </mesh>
 
-      {/* Head highlight */}
-      <mesh position={[0, -headRadius * 0.8, 0.03]}>
-        <circleGeometry args={[headRadius * 0.4, 12]} />
+      {/* Head highlight - near top of triangle */}
+      <mesh position={[0, headCenterY + triangleHeight * 0.2, 0.03]}>
+        <circleGeometry args={[2, 12]} />
         <meshBasicMaterial color="#ffffff" opacity={0.4} transparent />
       </mesh>
 
-      {/* Invisible hit area for dragging */}
+      {/* Invisible hit area for dragging - covers the triangle */}
       <mesh
-        position={[0, -headRadius * 1.25, 0.1]}
+        position={[0, headCenterY, 0.1]}
         onPointerDown={(e) => {
           e.stopPropagation();
           onScrubStart();
         }}
       >
-        <circleGeometry args={[headRadius * 2.5, 16]} />
+        <circleGeometry args={[triangleWidth, 16]} />
         <meshBasicMaterial transparent opacity={0} />
       </mesh>
     </group>
@@ -900,6 +1102,10 @@ interface TimelineSceneProps {
   timelineWidth: number;
   totalHeight: number;
   currentBeat: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  scrollLeft: number;
+  scrollTop: number;
 }
 
 function TimelineScene({
@@ -912,14 +1118,25 @@ function TimelineScene({
   timelineWidth,
   totalHeight,
   currentBeat,
+  viewportWidth,
+  viewportHeight,
+  scrollLeft,
+  scrollTop,
 }: TimelineSceneProps) {
-  const { selectedBlockIds, selectBlock, selectBlocks, clearBlockSelection, setIsScrubbing, setCurrentBeat } = useUIStore();
+  const {
+    selectedBlockIds, selectBlock, selectBlocks, clearBlockSelection,
+    setIsScrubbing, setCurrentBeat,
+    loopStart, loopEnd, setLoopEnabled
+  } = useUIStore();
   const { updateBlock } = useProjectStore();
   const tracks = useProjectStore((state) => state.project.tracks);
-  const { isPlaying, seekTo } = usePlayback();
+  const { isPlaying, seekTo, setLoopRegion } = usePlayback();
 
   // Scrubbing state
   const [isScrubbing, setLocalScrubbing] = useState(false);
+  // Loop dragging state
+  const [isLoopDragging, setIsLoopDragging] = useState(false);
+  const [loopDragStart, setLoopDragStart] = useState(0);
 
   const barWidth = beatsPerBar * pixelsPerBeat;
 
@@ -1018,8 +1235,9 @@ function TimelineScene({
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    // Convert canvas-local coordinates to world coordinates by adding scroll offset
+    const x = e.clientX - rect.left + scrollLeft;
+    const y = e.clientY - rect.top + scrollTop;
 
     if (!e.shiftKey) {
       clearBlockSelection();
@@ -1032,7 +1250,7 @@ function TimelineScene({
       currentX: x,
       currentY: y,
     });
-  }, [dragState.type, clearBlockSelection]);
+  }, [dragState.type, clearBlockSelection, scrollLeft, scrollTop]);
 
   // Handle pointer move and up globally
   useEffect(() => {
@@ -1043,8 +1261,9 @@ function TimelineScene({
       if (!canvas) return;
 
       const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+      // Convert canvas-local coordinates to world coordinates by adding scroll offset
+      const x = e.clientX - rect.left + scrollLeft;
+      const y = e.clientY - rect.top + scrollTop;
 
       if (dragState.type === 'marquee') {
         setDragState(prev => ({ ...prev, currentX: x, currentY: y }));
@@ -1109,7 +1328,8 @@ function TimelineScene({
 
         flatTracks.forEach((node, trackIndex) => {
           const track = node.track;
-          const trackTop = trackIndex * trackHeight;
+          // Track positions are offset by RULER_HEIGHT
+          const trackTop = RULER_HEIGHT + trackIndex * trackHeight;
           const trackBottom = trackTop + trackHeight;
 
           if (maxY < trackTop || minY > trackBottom) return;
@@ -1145,7 +1365,7 @@ function TimelineScene({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [dragState, barWidth, trackHeight, flatTracks, updateBlock, selectBlocks, tracks, beatsPerBar]);
+  }, [dragState, barWidth, trackHeight, flatTracks, updateBlock, selectBlocks, tracks, beatsPerBar, scrollLeft, scrollTop]);
 
   // Scrubbing handlers
   const totalBeats = totalBars * beatsPerBar;
@@ -1162,6 +1382,68 @@ function TimelineScene({
     return Math.max(0, Math.min(totalBeats - quantize, quantized));
   }, [pixelsPerBeat, totalBeats]);
 
+  // Convert pixel to bar-aligned beat (for loop region)
+  const pixelToBar = useCallback((pixelX: number) => {
+    const beat = pixelX / pixelsPerBeat;
+    const bar = Math.round(beat / beatsPerBar);
+    return Math.max(0, Math.min(totalBars, bar)) * beatsPerBar;
+  }, [pixelsPerBeat, beatsPerBar, totalBars]);
+
+  // Ruler loop drag handler
+  const handleRulerLoopDragStart = useCallback((e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
+    const x = e.point.x;
+    const startBeat = pixelToBar(x);
+    setIsLoopDragging(true);
+    setLoopDragStart(startBeat);
+    setLoopRegion(startBeat, startBeat);
+    setLoopEnabled(true);
+  }, [pixelToBar, setLoopRegion, setLoopEnabled]);
+
+  // Ruler scrub handler
+  const handleRulerScrubStart = useCallback((e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
+    const x = e.point.x;
+    const beat = pixelToBeat(x);
+    setLocalScrubbing(true);
+    setIsScrubbing(true);
+    if (isPlaying) {
+      seekTo(beat);
+    } else {
+      setCurrentBeat(beat);
+    }
+  }, [pixelToBeat, setIsScrubbing, isPlaying, seekTo, setCurrentBeat]);
+
+  // Handle loop drag move and up
+  useEffect(() => {
+    if (!isLoopDragging) return;
+
+    const handleMove = (e: PointerEvent) => {
+      const canvas = document.querySelector('canvas');
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left + scrollLeft;
+      const currentBeat = pixelToBar(x);
+
+      const loopStartBeat = Math.min(loopDragStart, currentBeat);
+      const loopEndBeat = Math.max(loopDragStart, currentBeat);
+      setLoopRegion(loopStartBeat, loopEndBeat);
+    };
+
+    const handleUp = () => {
+      setIsLoopDragging(false);
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+  }, [isLoopDragging, loopDragStart, pixelToBar, setLoopRegion, scrollLeft]);
+
   // Handle scrubbing pointer move and up
   useEffect(() => {
     if (!isScrubbing) return;
@@ -1171,7 +1453,8 @@ function TimelineScene({
       if (!canvas) return;
 
       const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
+      // Convert canvas-local coordinates to world coordinates by adding scroll offset
+      const x = e.clientX - rect.left + scrollLeft;
       const beat = pixelToBeat(x);
 
       if (isPlaying) {
@@ -1193,16 +1476,39 @@ function TimelineScene({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [isScrubbing, pixelToBeat, isPlaying, seekTo, setCurrentBeat, setIsScrubbing]);
+  }, [isScrubbing, pixelToBeat, isPlaying, seekTo, setCurrentBeat, setIsScrubbing, scrollLeft]);
+
+  // Camera position based on scroll - center of visible viewport
+  const cameraX = scrollLeft + viewportWidth / 2;
+  const cameraY = -(scrollTop + viewportHeight / 2);
 
   return (
     <>
       <OrthographicCamera
         makeDefault
-        position={[timelineWidth / 2, -totalHeight / 2, 100]}
+        position={[cameraX, cameraY, 100]}
         zoom={1}
         near={0.1}
         far={1000}
+      />
+
+      {/* Content area background - matches ruler background */}
+      <mesh position={[timelineWidth / 2, -RULER_HEIGHT - totalHeight / 2, -0.6]}>
+        <planeGeometry args={[timelineWidth, totalHeight]} />
+        <meshBasicMaterial color="#1a1a1a" />
+      </mesh>
+
+      {/* Ruler */}
+      <RulerMesh
+        totalBars={totalBars}
+        barWidth={barWidth}
+        beatsPerBar={beatsPerBar}
+        pixelsPerBeat={pixelsPerBeat}
+        timelineWidth={timelineWidth}
+        loopStart={loopStart}
+        loopEnd={loopEnd}
+        onLoopDragStart={handleRulerLoopDragStart}
+        onScrubStart={handleRulerScrubStart}
       />
 
       {/* Grid lines */}
@@ -1254,9 +1560,9 @@ function TimelineScene({
         onScrubStart={handleScrubStart}
       />
 
-      {/* Background for pointer miss detection */}
+      {/* Background for pointer miss detection - below ruler */}
       <mesh
-        position={[timelineWidth / 2, -totalHeight / 2, -1]}
+        position={[timelineWidth / 2, -RULER_HEIGHT - totalHeight / 2, -1]}
         onPointerMissed={handlePointerMissed}
       >
         <planeGeometry args={[timelineWidth, totalHeight]} />
@@ -1273,6 +1579,10 @@ export function TimelineCanvas({
   beatsPerBar,
   totalBars,
   bpm,
+  viewportWidth,
+  viewportHeight,
+  scrollLeft,
+  scrollTop,
 }: TimelineCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const trackHeightScale = useUIStore((state) => state.trackHeightScale);
@@ -1291,7 +1601,20 @@ export function TimelineCanvas({
   const trackHeight = Math.round(64 * trackHeightScale);
   const barWidth = beatsPerBar * pixelsPerBeat;
   const timelineWidth = totalBars * barWidth;
-  const totalHeight = Math.max(flatTracks.length * trackHeight, 400);
+  // Content height (tracks area, not including ruler)
+  const contentHeight = Math.max(flatTracks.length * trackHeight, 400);
+  // Total height including ruler
+  const totalHeight = RULER_HEIGHT + contentHeight;
+
+  // Canvas dimensions - use viewport size plus buffer for smooth scrolling
+  // Buffer adds extra rendering area so content is pre-rendered before scrolling into view
+  const SCROLL_BUFFER = 200;
+  const canvasWidth = Math.max(viewportWidth + SCROLL_BUFFER * 2, 100);
+  const canvasHeight = Math.max(viewportHeight + SCROLL_BUFFER * 2, 100);
+
+  // Offset for the canvas position - starts before the scroll position to include buffer
+  const canvasOffsetX = Math.max(0, scrollLeft - SCROLL_BUFFER);
+  const canvasOffsetY = Math.max(0, scrollTop - SCROLL_BUFFER);
 
   // File drag handlers
   const handleFileDragEnter = useCallback((e: React.DragEvent) => {
@@ -1329,60 +1652,96 @@ export function TimelineCanvas({
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
 
-    const x = e.clientX - rect.left;
+    // Convert canvas-local coordinates to world coordinates by adding scroll offset
+    const x = e.clientX - rect.left + scrollLeft;
     const bar = Math.max(0, Math.floor(x / barWidth));
 
-    const y = e.clientY - rect.top;
+    // Y coordinate offset by ruler height to get track position
+    const y = e.clientY - rect.top + scrollTop - RULER_HEIGHT;
     const trackIndex = Math.floor(y / trackHeight);
-    const targetTrack = flatTracks[trackIndex]?.track;
+    const targetTrack = trackIndex >= 0 ? flatTracks[trackIndex]?.track : undefined;
 
     await handleAudioFileDrop(file, targetTrack?.id || null, bar);
-  }, [barWidth, trackHeight, flatTracks, handleAudioFileDrop]);
+  }, [barWidth, trackHeight, flatTracks, handleAudioFileDrop, scrollLeft, scrollTop]);
 
   return (
     <div
       ref={containerRef}
-      className="timeline-content relative overflow-hidden"
+      className="timeline-content relative"
       style={{ width: timelineWidth, minHeight: '100%', height: totalHeight }}
       onDragEnter={handleFileDragEnter}
       onDragLeave={handleFileDragLeave}
       onDragOver={handleFileDragOver}
       onDrop={handleFileDrop}
     >
+      {/* Canvas uses transform to stay in viewport - includes buffer for smooth scrolling */}
       {isMounted && (
-        <Canvas
-          style={{ width: timelineWidth, height: totalHeight }}
-          gl={{ antialias: true, alpha: true }}
-          dpr={[1, 2]}
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: canvasWidth,
+            height: canvasHeight,
+            pointerEvents: 'auto',
+            transform: `translate(${canvasOffsetX}px, ${canvasOffsetY}px)`,
+            willChange: 'transform',
+          }}
         >
-          <TimelineScene
-            flatTracks={flatTracks}
-            pixelsPerBeat={pixelsPerBeat}
-            beatsPerBar={beatsPerBar}
-            totalBars={totalBars}
-            bpm={bpm}
-            trackHeight={trackHeight}
-            timelineWidth={timelineWidth}
-            totalHeight={totalHeight}
-            currentBeat={currentBeat}
-          />
-        </Canvas>
+          <Canvas
+            style={{ width: canvasWidth, height: canvasHeight }}
+            gl={{ antialias: true, alpha: true }}
+            dpr={[1, 2]}
+          >
+            <TimelineScene
+              flatTracks={flatTracks}
+              pixelsPerBeat={pixelsPerBeat}
+              beatsPerBar={beatsPerBar}
+              totalBars={totalBars}
+              bpm={bpm}
+              trackHeight={trackHeight}
+              timelineWidth={timelineWidth}
+              totalHeight={contentHeight}
+              currentBeat={currentBeat}
+              viewportWidth={canvasWidth}
+              viewportHeight={canvasHeight}
+              scrollLeft={canvasOffsetX}
+              scrollTop={canvasOffsetY}
+            />
+          </Canvas>
+        </div>
       )}
 
-      {/* Empty state */}
+      {/* Empty state - sized to viewport, not buffered canvas */}
       {flatTracks.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div
+          className="flex items-center justify-center pointer-events-none"
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: viewportWidth,
+            height: viewportHeight,
+            transform: `translate(${scrollLeft}px, ${scrollTop}px)`,
+          }}
+        >
           <p className="text-muted-foreground">
             Add tracks from the Library
           </p>
         </div>
       )}
 
-      {/* Audio file drop zone overlay */}
+      {/* Audio file drop zone overlay - sized to viewport */}
       {isDraggingAudioFile && (
         <div
-          className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none"
+          className="z-50 flex items-center justify-center pointer-events-none"
           style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: viewportWidth,
+            height: viewportHeight,
+            transform: `translate(${scrollLeft}px, ${scrollTop}px)`,
             backgroundColor: 'rgba(34, 197, 94, 0.1)',
             border: '2px dashed rgba(34, 197, 94, 0.6)',
           }}

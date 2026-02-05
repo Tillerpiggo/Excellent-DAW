@@ -1,7 +1,6 @@
 'use client';
 
-import { useRef, useCallback, useEffect } from 'react';
-import { TimelineRuler } from '../Timeline/TimelineRuler';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import { TimelineCanvas } from './TimelineCanvas';
 import { TrackLabels } from './TrackLabels';
 import { ZoomControls } from './ZoomControls';
@@ -23,6 +22,7 @@ export function ArrangementView() {
     pixelsPerBeat,
     trackHeightScale,
     scrollLeft,
+    scrollTop,
     setScrollLeft,
     setScrollTop,
     setPixelsPerBeat,
@@ -30,12 +30,33 @@ export function ArrangementView() {
   } = useUIStore();
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const [viewportSize, setViewportSize] = useState({ width: 800, height: 600 });
   // Create minimal project-like object for flattenTracks
   const flatTracks = flattenTracks({ tracks, rootTracks } as Parameters<typeof flattenTracks>[0], collapsedTrackIds);
 
   const totalBeats = totalBars * beatsPerBar;
   const timelineWidth = totalBeats * pixelsPerBeat;
   const trackLabelWidth = 256;
+
+  // Track viewport size for canvas rendering
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const updateViewportSize = () => {
+      // Viewport is the visible area minus track labels
+      const width = container.clientWidth - trackLabelWidth;
+      const height = container.clientHeight;
+      setViewportSize({ width: Math.max(width, 100), height: Math.max(height, 100) });
+    };
+
+    updateViewportSize();
+
+    const resizeObserver = new ResizeObserver(updateViewportSize);
+    resizeObserver.observe(container);
+
+    return () => resizeObserver.disconnect();
+  }, [trackLabelWidth]);
 
   // Restore scroll position when layout changes (e.g., bottom panel opens/closes)
   useEffect(() => {
@@ -99,37 +120,27 @@ export function ArrangementView() {
           className="grid timeline-content"
           style={{
             gridTemplateColumns: `${trackLabelWidth}px 1fr`,
-            gridTemplateRows: '48px 1fr',
+            gridTemplateRows: '1fr',
             width: timelineWidth + trackLabelWidth,
             minHeight: '100%',
           }}
         >
-          {/* Corner - sticky top-left, highest z-index */}
-          <div className="sticky left-0 top-0 z-40 bg-surface border-b border-r border-border">
-            <div className="h-12 px-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                Tracks
-              </h2>
-              <button
-                onClick={() => addTrack()}
-                className="px-2 py-1 text-xs rounded bg-gradient-to-r from-accent-from/20 to-accent-to/20 text-accent-from hover:from-accent-from/30 hover:to-accent-to/30 transition-colors"
-              >
-                + Add
-              </button>
-            </div>
-          </div>
-
-          {/* Ruler - sticky top */}
-          <div className="sticky top-0 z-20 bg-surface border-b border-border h-12">
-            <TimelineRuler
-              totalBars={totalBars}
-              beatsPerBar={beatsPerBar}
-              pixelsPerBeat={pixelsPerBeat}
-            />
-          </div>
-
           {/* Track Labels - sticky left, z-30 to stay above timeline blocks and handles */}
           <div className="sticky left-0 z-30 bg-surface border-r border-border">
+            {/* Corner header - part of track labels column */}
+            <div className="sticky top-0 z-40 bg-surface border-b border-border">
+              <div className="h-12 px-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                  Tracks
+                </h2>
+                <button
+                  onClick={() => addTrack()}
+                  className="px-2 py-1 text-xs rounded bg-gradient-to-r from-accent-from/20 to-accent-to/20 text-accent-from hover:from-accent-from/30 hover:to-accent-to/30 transition-colors"
+                >
+                  + Add
+                </button>
+              </div>
+            </div>
             <TrackLabels flatTracks={flatTracks} />
           </div>
 
@@ -140,6 +151,10 @@ export function ArrangementView() {
             beatsPerBar={beatsPerBar}
             totalBars={totalBars}
             bpm={bpm}
+            viewportWidth={viewportSize.width}
+            viewportHeight={viewportSize.height}
+            scrollLeft={scrollLeft}
+            scrollTop={scrollTop}
           />
         </div>
       </div>
