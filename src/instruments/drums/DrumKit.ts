@@ -16,6 +16,7 @@ export const DrumKit: Instrument = {
   color: '#ef4444',
   hasAudio: true,
   hasVisual: false,
+  editorType: 'drum',
 
   defaultSettings: {
     kickVolume: -2,

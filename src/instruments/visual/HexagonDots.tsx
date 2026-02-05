@@ -172,6 +172,7 @@ export const HexagonDots: Instrument = {
   color: '#4ECDC4',
   hasAudio: false,
   hasVisual: true,
+  editorType: 'generic',
 
   defaultSettings: {
     dotSpeed: 4.0,

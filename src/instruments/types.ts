@@ -21,6 +21,9 @@ export interface AudioInstance {
   [key: string]: unknown;
 }
 
+// Editor types that instruments can use
+export type InstrumentEditorType = 'chord' | 'drum' | 'arp' | 'generic' | null;
+
 // Unified Instrument interface
 export interface Instrument {
   id: string;
@@ -30,6 +33,7 @@ export interface Instrument {
   color: string;
   hasAudio: boolean;
   hasVisual: boolean;
+  editorType: InstrumentEditorType;
   defaultSettings: Record<string, unknown>;
   settingsSchema?: SettingsSchema;
 

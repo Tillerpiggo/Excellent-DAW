@@ -340,6 +340,7 @@ export const SilkSymmetry: Instrument = {
   color: '#8b5cf6',
   hasAudio: false,
   hasVisual: true,
+  editorType: 'generic',
 
   defaultSettings: {
     symmetryFolds: 8,

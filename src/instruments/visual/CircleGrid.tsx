@@ -181,6 +181,7 @@ export const CircleGrid: Instrument = {
   color: '#14b8a6',
   hasAudio: false,
   hasVisual: true,
+  editorType: 'generic',
 
   defaultSettings: {
     circleRadius: 0.12,

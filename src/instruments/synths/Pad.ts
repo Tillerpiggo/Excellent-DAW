@@ -13,6 +13,7 @@ export const Pad: Instrument = {
   color: '#8b5cf6',
   hasAudio: true,
   hasVisual: false,
+  editorType: 'chord',
 
   defaultSettings: {
     attack: 0.3,

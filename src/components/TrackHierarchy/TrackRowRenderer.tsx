@@ -9,7 +9,7 @@ import { TRACK_TYPE_COLORS, INSTRUMENT_COLORS, withAlpha } from '@/utils/colors'
 
 interface TrackRowRendererProps {
   item: TreeItem<Track>;
-  title: string;
+  title: React.ReactNode;
   context: TreeItemRenderContext;
   children: React.ReactNode;
   depth: number;
@@ -37,6 +37,9 @@ export function TrackRowRenderer({ item, context, children, depth }: TrackRowRen
   const typeColor = TRACK_TYPE_COLORS[track.typeId];
   const instrumentColor = track.instrumentId ? INSTRUMENT_COLORS[track.instrumentId] : undefined;
 
+  // Extract the onClick from interactiveElementProps to handle it properly
+  const { onClick: rctOnClick, ...restInteractiveProps } = context.interactiveElementProps;
+
   return (
     <li
       {...context.itemContainerWithChildrenProps}
@@ -44,18 +47,27 @@ export function TrackRowRenderer({ item, context, children, depth }: TrackRowRen
     >
       <div
         {...context.itemContainerWithoutChildrenProps}
-        {...context.interactiveElementProps}
-        className={`group relative flex items-center px-2 cursor-pointer transition-colors ${
-          isSelected ? '' : 'hover:bg-muted/50'
+        {...restInteractiveProps}
+        role="treeitem"
+        tabIndex={0}
+        className={`group relative flex items-center px-2 cursor-pointer transition-colors select-none outline-none ${
+          isSelected ? 'ring-1 ring-accent/50' : 'hover:bg-muted/50'
         } ${isDropTarget && dragState.type === 'preset' ? 'bg-accent-from/30' : ''} ${
           isDraggingOver ? 'bg-accent/10' : ''
         }`}
         style={{
           height: trackHeight,
           paddingLeft: `${8 + depth * 16}px`,
+          userSelect: 'none',
           ...(isSelected
             ? { background: 'linear-gradient(90deg, rgba(100, 116, 139, 0.25) 0%, rgba(71, 85, 105, 0.1) 100%)' }
             : {}),
+        }}
+        onClick={(e) => {
+          // Call react-complex-tree's click handler for selection
+          if (rctOnClick) {
+            rctOnClick(e);
+          }
         }}
         onDragOver={(e) => {
           if (dragState.type === 'preset') {
@@ -84,10 +96,14 @@ export function TrackRowRenderer({ item, context, children, depth }: TrackRowRen
 
         {/* Expand/Collapse Toggle */}
         <button
-          {...context.arrowProps}
+          onClick={(e) => {
+            e.stopPropagation();
+            context.toggleExpandedState();
+          }}
           className={`w-5 h-5 flex items-center justify-center text-xs text-muted-foreground hover:text-foreground transition-colors ${
             !hasChildren ? 'invisible' : ''
           }`}
+          type="button"
         >
           {isExpanded ? '▼' : '▶'}
         </button>
@@ -127,6 +143,7 @@ export function TrackRowRenderer({ item, context, children, depth }: TrackRowRen
             track.muted ? 'bg-red-500/20 text-red-400' : 'bg-muted/50 text-muted-foreground hover:bg-muted'
           }`}
           title={track.muted ? 'Unmute' : 'Mute'}
+          type="button"
         >
           M
         </button>

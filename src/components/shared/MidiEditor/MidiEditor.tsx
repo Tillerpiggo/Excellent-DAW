@@ -40,6 +40,8 @@ interface DragState {
   noteId?: string;
   originalTime?: number;
   originalPitch?: number;
+  // For moving multiple notes: map of noteId -> original time
+  originalTimes?: Map<string, number>;
   pitch?: number;
 }
 
@@ -408,18 +410,28 @@ function MidiScene({
 
   // Handle note pointer down
   const handleNotePointerDown = useCallback((e: ThreeEvent<PointerEvent>, note: MidiNote) => {
+    // Determine which notes will be selected after this click
+    let newSelectedIds: Set<string>;
     if (e.shiftKey) {
-      setSelectedNoteIds(prev => {
-        const next = new Set(prev);
-        if (next.has(note.id)) next.delete(note.id);
-        else next.add(note.id);
-        return next;
-      });
+      newSelectedIds = new Set(selectedNoteIds);
+      if (newSelectedIds.has(note.id)) newSelectedIds.delete(note.id);
+      else newSelectedIds.add(note.id);
+      setSelectedNoteIds(newSelectedIds);
     } else if (!selectedNoteIds.has(note.id)) {
-      setSelectedNoteIds(new Set([note.id]));
+      newSelectedIds = new Set([note.id]);
+      setSelectedNoteIds(newSelectedIds);
+    } else {
+      newSelectedIds = selectedNoteIds;
     }
 
-    // Use raw clientX/Y for delta calculation - avoids issues with finding different canvases
+    // Store original times for all selected notes
+    const originalTimes = new Map<string, number>();
+    for (const n of notes) {
+      if (newSelectedIds.has(n.id)) {
+        originalTimes.set(n.id, n.time);
+      }
+    }
+
     setDragState({
       type: 'moving',
       startX: e.nativeEvent.clientX,
@@ -429,8 +441,9 @@ function MidiScene({
       noteId: note.id,
       originalTime: note.time,
       originalPitch: note.pitch,
+      originalTimes,
     });
-  }, [selectedNoteIds]);
+  }, [selectedNoteIds, notes]);
 
   // Handle background click (for drawing new notes or marquee)
   const handleBackgroundPointerDown = useCallback((e: ThreeEvent<PointerEvent>) => {
@@ -553,40 +566,21 @@ function MidiScene({
         if (newDuration !== drawingNote.duration) {
           setDrawingNote(prev => prev ? { ...prev, duration: newDuration } : null);
         }
-      } else if (dragState.type === 'moving' && dragState.originalTime !== undefined) {
-        // Calculate scale factor: CSS pixels to world units
-        // The canvas style width is canvasWidth (world units), but actual CSS size may differ
-        const scale = rect.width > 0 ? canvasWidth / rect.width : 1;
-
-        // Convert CSS pixel delta to world units, then to beats
+      } else if (dragState.type === 'moving' && dragState.originalTime !== undefined && dragState.originalTimes) {
+        // Compute delta from original start position (not incrementally)
         const deltaX = e.clientX - dragState.startX;
-        const worldDeltaX = deltaX * scale;
-        const deltaBeats = worldDeltaX / pixelsPerBeat;
+        const deltaBeats = deltaX / pixelsPerBeat;
         const snappedDelta = Math.round(deltaBeats / quantize) * quantize;
 
-        // Only update if there's actual movement
-        if (snappedDelta !== 0) {
-          // Calculate new time for the dragged note
-          const newPrimaryTime = Math.max(0, Math.min(totalBeats - (notes.find(n => n.id === dragState.noteId)?.duration ?? quantize), dragState.originalTime + snappedDelta));
-          const actualDelta = newPrimaryTime - dragState.originalTime;
-
-          // Move all selected notes by the same delta
-          if (actualDelta !== 0) {
-            onNotesChange(notes.map(n => {
-              if (selectedNoteIds.has(n.id)) {
-                const newTime = Math.max(0, Math.min(totalBeats - n.duration, n.time + actualDelta));
-                return { ...n, time: newTime };
-              }
-              return n;
-            }));
-            // Update the drag state so subsequent moves are relative to new position
-            setDragState(prev => ({
-              ...prev,
-              startX: e.clientX,
-              originalTime: newPrimaryTime,
-            }));
+        // Apply same delta to all selected notes from their original positions
+        onNotesChange(notes.map(n => {
+          const originalTime = dragState.originalTimes!.get(n.id);
+          if (originalTime !== undefined) {
+            const newTime = Math.max(0, Math.min(totalBeats - n.duration, originalTime + snappedDelta));
+            return { ...n, time: newTime };
           }
-        }
+          return n;
+        }));
       } else if (dragState.type === 'marquee') {
         setDragState(prev => ({ ...prev, currentX: x, currentY: y }));
       }
@@ -613,7 +607,7 @@ function MidiScene({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [dragState, drawingNote, pixelsPerBeat, quantize, totalBeats, notes, selectedNoteIds, onNotesChange, getNotesInMarquee, canvasWidth]);
+  }, [dragState, drawingNote, pixelsPerBeat, quantize, totalBeats, notes, selectedNoteIds, onNotesChange, getNotesInMarquee]);
 
   // Keyboard handler
   useEffect(() => {

@@ -14,6 +14,7 @@ export const LeadSynth: Instrument = {
   color: '#6366f1',
   hasAudio: true,
   hasVisual: false,
+  editorType: 'chord',
 
   defaultSettings: {
     attack: 0.005,

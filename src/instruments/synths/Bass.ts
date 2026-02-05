@@ -13,6 +13,7 @@ export const Bass: Instrument = {
   color: '#f59e0b',
   hasAudio: true,
   hasVisual: false,
+  editorType: 'chord',
 
   defaultSettings: {
     attack: 0.01,

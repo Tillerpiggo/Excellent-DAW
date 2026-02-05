@@ -17,6 +17,7 @@ export const AudioPlayer: Instrument = {
   color: '#22c55e',
   hasAudio: true,
   hasVisual: false,
+  editorType: null,
 
   defaultSettings: {
     volume: -6,

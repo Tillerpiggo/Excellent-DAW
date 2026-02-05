@@ -14,6 +14,7 @@ export const Keys: Instrument = {
   color: '#14b8a6',
   hasAudio: true,
   hasVisual: false,
+  editorType: 'chord',
 
   defaultSettings: {
     attack: 0.001,

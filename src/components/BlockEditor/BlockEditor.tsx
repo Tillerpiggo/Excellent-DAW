@@ -13,6 +13,7 @@ import { SwingEditorPanel } from '../SwingEditor';
 import { GenericMidiEditorPanel } from '../GenericMidiEditor';
 import { VisualViewPanel } from '../VisualView';
 import { PatternCategory } from '@/core/types';
+import { getInstrument } from '@/instruments';
 
 export type EditorType = 'chord' | 'drum' | 'arp' | 'mute' | 'transpose' | 'rhythm' | 'swing' | 'generic' | null;
 type ViewMode = 'editor' | 'visual';
@@ -67,12 +68,15 @@ export function BlockEditor() {
     if (typeId === 'swing') return 'swing';
 
     if (patternCategory) {
-      return getEditorForCategory(patternCategory);
+      const categoryEditor = getEditorForCategory(patternCategory);
+      if (categoryEditor) return categoryEditor;
     }
 
-    // Check instrument type - drumKit uses drum editor, melodic instruments use chord editor
-    if (instrumentId === 'drumKit') return 'drum';
-    if (['leadSynth', 'keys', 'pad', 'bass'].includes(instrumentId ?? '')) return 'chord';
+    // Check instrument's editor type
+    const instrument = getInstrument(instrumentId);
+    if (instrument?.editorType) {
+      return instrument.editorType;
+    }
 
     // Default to generic MIDI editor
     return 'generic';
