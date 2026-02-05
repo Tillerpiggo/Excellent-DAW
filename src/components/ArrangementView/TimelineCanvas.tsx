@@ -35,6 +35,8 @@ interface DragState {
   currentY: number;
   hit?: HitResult;
   originalPositions?: Map<string, { startBar: number; durationBars: number; trackId: string }>;
+  // For cross-track dragging
+  startTrackIndex?: number;
 }
 
 // Helper to find track ID for a given block ID
@@ -81,7 +83,7 @@ export function TimelineCanvas({
     trackHeightScale,
   } = useUIStore();
 
-  const { updateBlock } = useProjectStore();
+  const { updateBlock, moveBlock } = useProjectStore();
   const tracks = useProjectStore((state) => state.project.tracks);
   const { handleAudioFileDrop, isProcessingAudio } = useDragDrop();
 
@@ -93,6 +95,10 @@ export function TimelineCanvas({
     currentX: 0,
     currentY: 0,
   });
+
+  // Hover state for handle highlighting
+  const [hoverBlockId, setHoverBlockId] = useState<string | null>(null);
+  const [hoverZone, setHoverZone] = useState<HitResult['zone'] | null>(null);
 
   // Track if we're dragging an audio file over the timeline
   const [isDraggingAudioFile, setIsDraggingAudioFile] = useState(false);
@@ -173,7 +179,9 @@ export function TimelineCanvas({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Reset transform and scale for HiDPI (per SO #17854337)
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset to identity
+    ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, width, height);
 
     // Draw grid lines
@@ -211,7 +219,21 @@ export function TimelineCanvas({
         ctx.stroke();
       }
     }
-  }, [flatTracks, timelineWidth, totalHeight, barWidth, totalBars, trackHeight, dragState, selectedBlockIds, bpm, pixelsPerBeat, beatsPerBar]);
+  }, [flatTracks, timelineWidth, totalHeight, barWidth, totalBars, trackHeight, dragState, selectedBlockIds, bpm, pixelsPerBeat, beatsPerBar, hoverBlockId, hoverZone]);
+
+  // Helper to truncate text with ellipsis
+  const truncateText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string => {
+    const ellipsis = '...';
+    let width = ctx.measureText(text).width;
+    if (width <= maxWidth) return text;
+
+    const ellipsisWidth = ctx.measureText(ellipsis).width;
+    let truncated = text;
+    while (truncated.length > 0 && ctx.measureText(truncated).width + ellipsisWidth > maxWidth) {
+      truncated = truncated.slice(0, -1);
+    }
+    return truncated + ellipsis;
+  };
 
   // Draw a single block
   const drawBlock = useCallback((
@@ -223,17 +245,19 @@ export function TimelineCanvas({
   ) => {
     const isAudioBlock = track.instrumentId === 'audio' && block.audioData;
     const isSelected = selectedBlockIds.has(block.id);
+    const isHandleHovered = hoverBlockId === block.id && (hoverZone === 'right-loop' || hoverZone === 'right-extend');
 
     const baseColor = getTrackColor(track);
     const handleColor = darken(baseColor, 40);
     const selectionColor = tintWhite(baseColor, 0.85);
     const selectedHandleColor = tintWhite(baseColor, 0.5);
 
-    // Calculate position and size
-    const blockLeft = block.startBar * barWidth;
-    const blockWidth = Math.max(block.durationBars * barWidth - 2, 20);
-    const blockTop = trackTop + 4;
-    const blockHeight = trackHeight - 8;
+    // Calculate position and size - round to pixel boundaries for sharp rendering
+    const fullBlockWidth = block.durationBars * barWidth;
+    const blockLeft = Math.round(block.startBar * barWidth);
+    const blockWidth = Math.round(Math.max(fullBlockWidth - 2, 20)); // -2 matches original DOM
+    const blockTop = Math.round(trackTop + 4);
+    const blockHeight = Math.round(trackHeight - 8);
 
     // Calculate pattern info for looped blocks
     const allEvents = block.streams?.flatMap((s) => s.events) || [];
@@ -246,23 +270,33 @@ export function TimelineCanvas({
     const blockTotalBeats = block.durationBars * beatsPerBar;
     const loopCount = block.loop ? Math.ceil(blockTotalBeats / patternBeats) : 1;
 
+    // Content area width (excluding handle)
+    const contentAreaWidth = Math.round(blockWidth - handleWidthPx);
+
     // Draw iteration backgrounds
-    if (block.loop && loopCount > 1) {
+    if (block.loop) {
       for (let i = 0; i < loopCount; i++) {
-        const iterationLeftPx = i * patternWidthPx;
+        const iterationLeftPx = Math.round(i * patternWidthPx);
         const visibleBeats = Math.min(patternBeats, blockTotalBeats - i * patternBeats);
-        let iterationWidthPx = visibleBeats * pixelsPerBeat;
+        let iterationWidthPx = Math.round(visibleBeats * pixelsPerBeat);
         if (iterationWidthPx <= 0) continue;
 
         const isFirst = i === 0;
         const isLast = i === loopCount - 1;
 
+        // Clip last iteration to content area
         if (isLast) {
-          iterationWidthPx = Math.min(iterationWidthPx, blockWidth - iterationLeftPx - handleWidthPx);
+          iterationWidthPx = Math.round(Math.min(iterationWidthPx, contentAreaWidth - iterationLeftPx));
         }
-        iterationWidthPx = Math.max(4, iterationWidthPx);
+        if (iterationWidthPx <= 4) iterationWidthPx = 4;
 
         const iterColor = isFirst ? baseColor : darken(baseColor, 20);
+
+        // All iterations have left rounding, only non-last have right rounding
+        const leftRadius = 6;
+        const rightRadius = isLast ? 0 : 6;
+
+        // Draw iteration background
         ctx.fillStyle = iterColor;
         ctx.beginPath();
         ctx.roundRect(
@@ -270,78 +304,203 @@ export function TimelineCanvas({
           blockTop,
           iterationWidthPx,
           blockHeight,
-          isLast ? [6, 0, 0, 6] : 6
+          [leftRadius, rightRadius, rightRadius, leftRadius]
         );
         ctx.fill();
 
-        // Selection border for iteration
-        if (isSelected) {
-          ctx.strokeStyle = selectionColor;
-          ctx.lineWidth = 2;
-          ctx.stroke();
+        // First iteration gets 3px left accent border when not selected
+        if (isFirst && !isSelected) {
+          ctx.fillStyle = baseColor;
+          ctx.beginPath();
+          ctx.roundRect(blockLeft, blockTop, 3, blockHeight, [6, 0, 0, 6]);
+          ctx.fill();
         }
       }
     } else {
       // Non-looped block: single solid background
       ctx.fillStyle = baseColor;
       ctx.beginPath();
-      ctx.roundRect(blockLeft, blockTop, Math.max(4, blockWidth - handleWidthPx), blockHeight, [6, 0, 0, 6]);
+      ctx.roundRect(blockLeft, blockTop, Math.max(4, contentAreaWidth), blockHeight, [6, 0, 0, 6]);
       ctx.fill();
 
-      if (isSelected) {
-        ctx.strokeStyle = selectionColor;
-        ctx.lineWidth = 2;
+      // Accent border when not selected
+      if (!isSelected) {
+        ctx.fillStyle = baseColor;
+        ctx.beginPath();
+        ctx.roundRect(blockLeft, blockTop, 3, blockHeight, [6, 0, 0, 6]);
+        ctx.fill();
+      }
+    }
+
+    // Draw selection border following iteration contours (including divets)
+    if (isSelected) {
+      ctx.strokeStyle = selectionColor;
+      ctx.lineWidth = 2;
+      const r = 6; // Same radius as fill so arcs meet at divets
+
+      if (block.loop && loopCount > 1) {
+        // Per-iteration borders following divets
+        for (let i = 0; i < loopCount; i++) {
+          const iterationLeftPx = Math.round(i * patternWidthPx);
+          const visibleBeats = Math.min(patternBeats, blockTotalBeats - i * patternBeats);
+          let iterationWidthPx = Math.round(visibleBeats * pixelsPerBeat);
+          if (iterationWidthPx <= 0) continue;
+
+          const isFirst = i === 0;
+          const isLast = i === loopCount - 1;
+
+          if (isLast) {
+            iterationWidthPx = Math.round(Math.min(iterationWidthPx, contentAreaWidth - iterationLeftPx));
+          }
+
+          const iterLeft = blockLeft + iterationLeftPx;
+          const iterRight = iterLeft + iterationWidthPx;
+
+          // TOP EDGE with divet curves
+          ctx.beginPath();
+          if (isFirst) {
+            // Start after left corner curve
+            ctx.moveTo(iterLeft + r, blockTop);
+          } else {
+            // Start with curve coming UP out of divet (from previous iteration's down curve)
+            ctx.moveTo(iterLeft, blockTop + r);
+            ctx.arc(iterLeft + r, blockTop + r, r, Math.PI, Math.PI * 1.5); // Curve up to top edge
+          }
+          // Top edge line
+          if (isLast) {
+            ctx.lineTo(iterRight, blockTop); // Straight to handle
+          } else {
+            ctx.lineTo(iterRight - r, blockTop); // To before right curve
+            ctx.arc(iterRight - r, blockTop + r, r, Math.PI * 1.5, Math.PI * 2); // Curve down into divet
+          }
+          ctx.stroke();
+
+          // BOTTOM EDGE with divet curves
+          ctx.beginPath();
+          if (isFirst) {
+            // Start after left corner curve
+            ctx.moveTo(iterLeft + r, blockTop + blockHeight);
+          } else {
+            // Start with curve coming DOWN out of divet
+            ctx.moveTo(iterLeft, blockTop + blockHeight - r);
+            ctx.arc(iterLeft + r, blockTop + blockHeight - r, r, Math.PI, Math.PI * 0.5, true); // Curve down to bottom edge
+          }
+          // Bottom edge line
+          if (isLast) {
+            ctx.lineTo(iterRight, blockTop + blockHeight); // Straight to handle
+          } else {
+            ctx.lineTo(iterRight - r, blockTop + blockHeight); // To before right curve
+            ctx.arc(iterRight - r, blockTop + blockHeight - r, r, Math.PI * 0.5, 0, true); // Curve up into divet
+          }
+          ctx.stroke();
+
+          // LEFT EDGE - only for first iteration
+          if (isFirst) {
+            ctx.beginPath();
+            ctx.moveTo(iterLeft + r, blockTop);
+            ctx.arc(iterLeft + r, blockTop + r, r, Math.PI * 1.5, Math.PI, true);
+            ctx.lineTo(iterLeft, blockTop + blockHeight - r);
+            ctx.arc(iterLeft + r, blockTop + blockHeight - r, r, Math.PI, Math.PI * 0.5, true);
+            ctx.stroke();
+          }
+        }
+      } else {
+        // Non-looped or single iteration: simple border with rounded left corners
+        ctx.beginPath();
+        ctx.moveTo(blockLeft + r, blockTop);
+        ctx.arc(blockLeft + r, blockTop + r, r, Math.PI * 1.5, Math.PI, true);
+        ctx.lineTo(blockLeft, blockTop + blockHeight - r);
+        ctx.arc(blockLeft + r, blockTop + blockHeight - r, r, Math.PI, Math.PI * 0.5, true);
+        ctx.stroke();
+
+        // Top border
+        ctx.beginPath();
+        ctx.moveTo(blockLeft + r, blockTop);
+        ctx.lineTo(blockLeft + contentAreaWidth, blockTop);
+        ctx.stroke();
+
+        // Bottom border
+        ctx.beginPath();
+        ctx.moveTo(blockLeft + r, blockTop + blockHeight);
+        ctx.lineTo(blockLeft + contentAreaWidth, blockTop + blockHeight);
         ctx.stroke();
       }
     }
 
-    // Draw right resize handle
-    const handleLeft = blockLeft + blockWidth - handleWidthPx;
+    // Draw right resize handle (at right edge of container)
+    const handleLeft = Math.round(blockLeft + blockWidth - handleWidthPx);
+    // Handle opacity: 0.8 default, 1.0 on hover (when not selected)
+    const handleOpacity = isSelected ? 1.0 : (isHandleHovered ? 1.0 : 0.8);
+    ctx.globalAlpha = handleOpacity;
     ctx.fillStyle = isSelected ? selectedHandleColor : handleColor;
-    ctx.fillRect(handleLeft, blockTop, handleWidthPx, blockHeight);
+    ctx.beginPath();
+    ctx.roundRect(handleLeft, blockTop, handleWidthPx, blockHeight, [0, 6, 6, 0]);
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
 
-    // Selection border on handle
+    // Selection border on handle (top, bottom, right - follows curves)
     if (isSelected) {
       ctx.strokeStyle = selectionColor;
       ctx.lineWidth = 2;
-      ctx.strokeRect(handleLeft, blockTop, handleWidthPx, blockHeight);
+      const r = 5; // Radius - 1 for inset
+
+      // Top border with right curve
+      ctx.beginPath();
+      ctx.moveTo(handleLeft, blockTop + 1);
+      ctx.lineTo(handleLeft + handleWidthPx - 6, blockTop + 1);
+      ctx.arc(handleLeft + handleWidthPx - 6, blockTop + 6, r, Math.PI * 1.5, Math.PI * 2);
+      ctx.stroke();
+
+      // Bottom border with right curve
+      ctx.beginPath();
+      ctx.arc(handleLeft + handleWidthPx - 6, blockTop + blockHeight - 6, r, 0, Math.PI * 0.5);
+      ctx.lineTo(handleLeft, blockTop + blockHeight - 1);
+      ctx.stroke();
+
+      // Right border (connects the two curves)
+      ctx.beginPath();
+      ctx.moveTo(handleLeft + handleWidthPx - 1, blockTop + 6);
+      ctx.lineTo(handleLeft + handleWidthPx - 1, blockTop + blockHeight - 6);
+      ctx.stroke();
     }
 
     // Draw header background when selected
     if (isSelected) {
       ctx.fillStyle = selectionColor;
       ctx.beginPath();
-      ctx.roundRect(blockLeft, blockTop, blockWidth - handleWidthPx, 20, [4, 0, 0, 0]);
+      ctx.roundRect(blockLeft, blockTop, contentAreaWidth, 20, [4, 0, 0, 0]);
       ctx.fill();
     }
 
-    // Draw track name
-    ctx.font = '12px system-ui, -apple-system, sans-serif';
+    // Draw track name (with proper truncation, not compression)
+    ctx.font = '500 12px system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = isSelected ? baseColor : 'rgba(255, 255, 255, 0.9)';
-    ctx.fillText(track.name, blockLeft + 4, blockTop + 10, blockWidth - handleWidthPx - 8);
+    const maxTextWidth = contentAreaWidth - 8 - (block.loop ? 16 : 0); // Leave room for loop indicator
+    const truncatedName = truncateText(ctx, track.name, maxTextWidth);
+    ctx.fillText(truncatedName, blockLeft + 4, blockTop + 10);
 
     // Draw loop indicator
     if (block.loop) {
       ctx.font = '10px system-ui';
       ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
       ctx.textAlign = 'right';
-      ctx.fillText('⟳', blockLeft + blockWidth - handleWidthPx - 4, blockTop + 10);
+      ctx.fillText('⟳', blockLeft + contentAreaWidth - 4, blockTop + 10);
     }
 
     // Draw events or waveform
     const contentTop = blockTop + 24;
     const contentHeight = blockHeight - 28;
     const contentLeft = blockLeft + 3;
-    const contentWidth = blockWidth - handleWidthPx - 6;
+    const contentWidth = contentAreaWidth - 6;
 
     if (isAudioBlock && block.audioData) {
       drawWaveform(ctx, block, contentLeft, contentTop, contentWidth, contentHeight);
     } else if (allEvents.length > 0) {
       drawEvents(ctx, block, contentLeft, contentTop, contentWidth, contentHeight);
     }
-  }, [selectedBlockIds, barWidth, trackHeight, handleWidthPx, pixelsPerBeat, beatsPerBar, bpm]);
+  }, [selectedBlockIds, barWidth, trackHeight, handleWidthPx, pixelsPerBeat, beatsPerBar, bpm, hoverBlockId, hoverZone]);
 
   // Draw MIDI events inside a block
   const drawEvents = useCallback((
@@ -672,6 +831,7 @@ export function TimelineCanvas({
           currentY: y,
           hit,
           originalPositions,
+          startTrackIndex: hit.trackIndex,
         });
       }
     } else {
@@ -698,16 +858,45 @@ export function TimelineCanvas({
 
     if (dragState.type === 'marquee') {
       setDragState(prev => ({ ...prev, currentX: x, currentY: y }));
-    } else if (dragState.type === 'drag' && dragState.originalPositions) {
-      // Block dragging
+    } else if (dragState.type === 'drag' && dragState.originalPositions && dragState.hit) {
+      // Block dragging - handle both horizontal and cross-track movement
       const deltaX = x - dragState.startX;
       const deltaBars = Math.round(deltaX / barWidth);
 
-      if (deltaBars !== 0) {
-        for (const [blockId, original] of dragState.originalPositions) {
-          const newStartBar = Math.max(0, original.startBar + deltaBars);
-          updateBlock(original.trackId, blockId, { startBar: newStartBar });
+      // Calculate target track based on Y position
+      const targetTrackIndex = Math.floor(y / trackHeight);
+      const clampedTrackIndex = Math.max(0, Math.min(targetTrackIndex, flatTracks.length - 1));
+      const targetTrack = flatTracks[clampedTrackIndex]?.track;
+
+      // For now, only move the primary dragged block across tracks (not multi-select)
+      // Multi-track drag gets complex with different target tracks for each block
+      const primaryBlockId = dragState.hit.block.id;
+      const primaryOriginal = dragState.originalPositions.get(primaryBlockId);
+
+      if (primaryOriginal && targetTrack) {
+        const currentTrackId = findTrackForBlock(tracks, primaryBlockId);
+
+        // Move to different track if needed
+        if (currentTrackId && currentTrackId !== targetTrack.id) {
+          moveBlock(currentTrackId, primaryBlockId, targetTrack.id);
+          // Update the original positions map with new track ID
+          dragState.originalPositions.set(primaryBlockId, {
+            ...primaryOriginal,
+            trackId: targetTrack.id,
+          });
         }
+
+        // Update horizontal position
+        const newStartBar = Math.max(0, primaryOriginal.startBar + deltaBars);
+        const blockCurrentTrackId = findTrackForBlock(tracks, primaryBlockId) || targetTrack.id;
+        updateBlock(blockCurrentTrackId, primaryBlockId, { startBar: newStartBar });
+      }
+
+      // Handle other selected blocks (keep them on their original tracks, just move horizontally)
+      for (const [blockId, original] of dragState.originalPositions) {
+        if (blockId === primaryBlockId) continue;
+        const newStartBar = Math.max(0, original.startBar + deltaBars);
+        updateBlock(original.trackId, blockId, { startBar: newStartBar });
       }
     } else if (dragState.type === 'resize-left' && dragState.originalPositions) {
       const deltaX = x - dragState.startX;
@@ -772,7 +961,7 @@ export function TimelineCanvas({
     });
   }, [dragState.type, getBlocksInMarquee, selectBlocks]);
 
-  // Cursor management
+  // Cursor management and hover state
   const handleMouseMoveForCursor = useCallback((e: React.MouseEvent) => {
     if (dragState.type !== 'none') return;
 
@@ -783,12 +972,18 @@ export function TimelineCanvas({
     const hit = hitTest(x, y);
 
     if (hit) {
+      // Update hover state for handle highlighting
+      setHoverBlockId(hit.block.id);
+      setHoverZone(hit.zone);
+
       if (hit.zone === 'left-edge' || hit.zone === 'right-loop' || hit.zone === 'right-extend') {
         canvas.style.cursor = 'ew-resize';
       } else {
         canvas.style.cursor = 'pointer';
       }
     } else {
+      setHoverBlockId(null);
+      setHoverZone(null);
       canvas.style.cursor = 'default';
     }
   }, [dragState.type, getCanvasCoords, hitTest]);
