@@ -41,17 +41,15 @@ export const VISUAL_INSTRUMENTS: Record<VisualInstrumentId, VisualInstrumentDefi
       pulseFadeDuration: 2.0,       // Seconds for pulse to fade out
     },
   },
-  radialWave: {
-    id: 'radialWave',
-    name: 'Radial Wave',
-    description: 'Glowing radially symmetric sine wave that rotates on MIDI events',
-    icon: '🌊',
+  circleGrid: {
+    id: 'circleGrid',
+    name: 'Circle Grid',
+    description: '2x2 grid of circles that toggle on/off clockwise with each MIDI event',
+    icon: '⭕',
     defaultParams: {
-      waveFrequency: 6,             // Number of wave peaks around the circle
-      waveAmplitude: 0.3,           // How much the wave oscillates (0-1)
-      waveSpeed: 1.5,               // Speed of wave animation
+      circleRadius: 0.12,           // Radius of each circle
+      gridSpacing: 0.35,            // Space between circle centers
       glowIntensity: 0.8,           // Glow strength
-      rotationAmount: 45,           // Degrees to rotate per MIDI event
       baseHue: 0.55,                // Starting hue (0-1)
     },
   },

@@ -1303,20 +1303,35 @@ function TimelineScene({
     });
   }, [dragState.type, clearBlockSelection]);
 
+  // Helper to convert screen coordinates to world coordinates
+  // Must account for canvas offset (Lusion technique) not just scroll position
+  const screenToWorld = useCallback((clientX: number, clientY: number) => {
+    const canvas = document.querySelector('canvas');
+    if (!canvas) return { x: 0, y: 0 };
+
+    const rect = canvas.getBoundingClientRect();
+    const { scrollLeft, scrollTop } = getScrollValues();
+
+    // Calculate canvas offset the same way as in useFrame
+    const maxOffsetX = Math.max(0, timelineWidth - canvasWidth);
+    const maxOffsetY = Math.max(0, totalContentHeight - canvasHeight);
+    const canvasOffsetX = Math.max(0, Math.min(scrollLeft - scrollBuffer, maxOffsetX));
+    const canvasOffsetY = Math.max(0, Math.min(scrollTop - scrollBuffer, maxOffsetY));
+
+    // Convert: screen -> canvas local -> world
+    const x = (clientX - rect.left) + canvasOffsetX;
+    const y = (clientY - rect.top) + canvasOffsetY;
+
+    return { x, y };
+  }, [getScrollValues, timelineWidth, totalContentHeight, canvasWidth, canvasHeight, scrollBuffer]);
+
   // Handle pointer move and up globally
   useEffect(() => {
     if (dragState.type === 'none') return;
 
     const handleMove = (e: PointerEvent) => {
-      const canvas = document.querySelector('canvas');
-      if (!canvas) return;
-
-      const rect = canvas.getBoundingClientRect();
-      // Read scroll directly from DOM for accurate coordinates
-      const { scrollLeft, scrollTop } = getScrollValues();
-      // Convert canvas-local coordinates to world coordinates by adding scroll offset
-      const x = e.clientX - rect.left + scrollLeft;
-      const y = e.clientY - rect.top + scrollTop;
+      const { x, y } = screenToWorld(e.clientX, e.clientY);
+      if (x === 0 && y === 0) return; // Canvas not found
 
       if (dragState.type === 'marquee') {
         setDragState(prev => ({ ...prev, currentX: x, currentY: y }));
@@ -1472,12 +1487,7 @@ function TimelineScene({
     if (!isLoopDragging) return;
 
     const handleMove = (e: PointerEvent) => {
-      const canvas = document.querySelector('canvas');
-      if (!canvas) return;
-
-      const rect = canvas.getBoundingClientRect();
-      const { scrollLeft } = getScrollValues();
-      const x = e.clientX - rect.left + scrollLeft;
+      const { x } = screenToWorld(e.clientX, e.clientY);
       const currentBeat = pixelToBar(x);
 
       const loopStartBeat = Math.min(loopDragStart, currentBeat);
@@ -1496,20 +1506,14 @@ function TimelineScene({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [isLoopDragging, loopDragStart, pixelToBar, setLoopRegion, getScrollValues]);
+  }, [isLoopDragging, loopDragStart, pixelToBar, setLoopRegion, screenToWorld]);
 
   // Handle scrubbing pointer move and up
   useEffect(() => {
     if (!isScrubbing) return;
 
     const handleMove = (e: PointerEvent) => {
-      const canvas = document.querySelector('canvas');
-      if (!canvas) return;
-
-      const rect = canvas.getBoundingClientRect();
-      const { scrollLeft } = getScrollValues();
-      // Convert canvas-local coordinates to world coordinates by adding scroll offset
-      const x = e.clientX - rect.left + scrollLeft;
+      const { x } = screenToWorld(e.clientX, e.clientY);
       const beat = pixelToBeat(x);
 
       if (isPlaying) {
@@ -1531,7 +1535,7 @@ function TimelineScene({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [isScrubbing, pixelToBeat, isPlaying, seekTo, setCurrentBeat, setIsScrubbing, getScrollValues]);
+  }, [isScrubbing, pixelToBeat, isPlaying, seekTo, setCurrentBeat, setIsScrubbing, screenToWorld]);
 
   // Camera position is now updated in useFrame for perfect scroll sync
   // Initial position will be set on first frame
@@ -1708,20 +1712,18 @@ export function TimelineCanvas({
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
 
-    // Read scroll directly from DOM
-    const { scrollLeft, scrollTop } = getScrollValues();
-
-    // Convert canvas-local coordinates to world coordinates by adding scroll offset
-    const x = e.clientX - rect.left + scrollLeft;
+    // getBoundingClientRect already accounts for scroll position
+    // so we just need the position relative to the content div
+    const x = e.clientX - rect.left;
     const bar = Math.max(0, Math.floor(x / barWidth));
 
     // Y coordinate offset by ruler height to get track position
-    const y = e.clientY - rect.top + scrollTop - RULER_HEIGHT;
+    const y = e.clientY - rect.top - RULER_HEIGHT;
     const trackIndex = Math.floor(y / trackHeight);
     const targetTrack = trackIndex >= 0 ? flatTracks[trackIndex]?.track : undefined;
 
     await handleAudioFileDrop(file, targetTrack?.id || null, bar);
-  }, [barWidth, trackHeight, flatTracks, handleAudioFileDrop, getScrollValues]);
+  }, [barWidth, trackHeight, flatTracks, handleAudioFileDrop]);
 
   return (
     <div

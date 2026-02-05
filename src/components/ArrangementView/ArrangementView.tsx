@@ -23,6 +23,7 @@ export function ArrangementView() {
     trackHeightScale,
     scrollLeft,
     scrollTop,
+    currentBeat,
     setScrollLeft,
     setScrollTop,
     setPixelsPerBeat,
@@ -77,34 +78,37 @@ export function ArrangementView() {
   // Handle wheel zoom
   const handleWheel = useCallback(
     (e: React.WheelEvent<HTMLDivElement>) => {
-      // Ctrl + scroll: Horizontal zoom
-      if (e.ctrlKey || e.metaKey) {
+      // Option/Alt + scroll: Zoom mode
+      // deltaX controls horizontal zoom, deltaY controls vertical zoom
+      if (e.altKey) {
         e.preventDefault();
-        const delta = e.deltaY > 0 ? -5 : 5;
-        const newPixelsPerBeat = Math.max(10, Math.min(100, pixelsPerBeat + delta));
 
-        // Zoom centered on cursor position
-        if (containerRef.current) {
-          const rect = containerRef.current.getBoundingClientRect();
-          const cursorX = e.clientX - rect.left - trackLabelWidth + scrollLeft;
-          const beatAtCursor = cursorX / pixelsPerBeat;
-          const newCursorX = beatAtCursor * newPixelsPerBeat;
-          const newScrollLeft = newCursorX - (e.clientX - rect.left - trackLabelWidth);
+        // Horizontal zoom from deltaX - centered on playhead
+        if (Math.abs(e.deltaX) > 2) {
+          const hDelta = -e.deltaX * 0.02;
+          const newPixelsPerBeat = Math.max(2, Math.min(100, pixelsPerBeat + hDelta));
 
-          setPixelsPerBeat(newPixelsPerBeat);
-          setScrollLeft(Math.max(0, newScrollLeft));
-        } else {
-          setPixelsPerBeat(newPixelsPerBeat);
+          if (containerRef.current) {
+            const playheadX = currentBeat * pixelsPerBeat;
+            const newPlayheadX = currentBeat * newPixelsPerBeat;
+            const playheadViewportOffset = playheadX - scrollLeft;
+            const newScrollLeft = newPlayheadX - playheadViewportOffset;
+
+            setPixelsPerBeat(newPixelsPerBeat);
+            setScrollLeft(Math.max(0, newScrollLeft));
+          } else {
+            setPixelsPerBeat(newPixelsPerBeat);
+          }
+        }
+
+        // Vertical zoom from deltaY
+        if (Math.abs(e.deltaY) > 2) {
+          const vDelta = -e.deltaY * 0.005;
+          setTrackHeightScale(Math.max(0.5, Math.min(2.0, trackHeightScale + vDelta)));
         }
       }
-      // Shift + scroll: Vertical zoom
-      else if (e.shiftKey) {
-        e.preventDefault();
-        const delta = e.deltaY > 0 ? -0.1 : 0.1;
-        setTrackHeightScale(Math.max(0.5, Math.min(2.0, trackHeightScale + delta)));
-      }
     },
-    [pixelsPerBeat, trackHeightScale, scrollLeft, trackLabelWidth, setPixelsPerBeat, setTrackHeightScale, setScrollLeft]
+    [pixelsPerBeat, trackHeightScale, scrollLeft, currentBeat, setPixelsPerBeat, setTrackHeightScale, setScrollLeft]
   );
 
   return (

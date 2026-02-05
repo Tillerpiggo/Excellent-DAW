@@ -327,7 +327,7 @@ export const useProjectStore = create<ProjectState>()(
 
     setTotalBars: (bars: number) => {
       set((state) => {
-        state.project.totalBars = Math.max(1, Math.min(64, bars));
+        state.project.totalBars = Math.max(1, Math.min(256, bars));
       });
     },
 

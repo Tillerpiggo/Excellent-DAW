@@ -14,7 +14,7 @@ export function ZoomControls() {
         <span className="text-xs text-muted-foreground w-4 flex-shrink-0">H</span>
         <input
           type="range"
-          min="10"
+          min="2"
           max="100"
           value={pixelsPerBeat}
           onChange={(e) => setPixelsPerBeat(Number(e.target.value))}

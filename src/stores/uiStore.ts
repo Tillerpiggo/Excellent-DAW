@@ -270,7 +270,7 @@ export const useUIStore = create<UIState>((set) => ({
   },
 
   setPixelsPerBeat: (pixels) => {
-    set({ pixelsPerBeat: Math.max(10, Math.min(100, pixels)) });
+    set({ pixelsPerBeat: Math.max(2, Math.min(100, pixels)) });
   },
 
   setTrackHeightScale: (scale) => {
