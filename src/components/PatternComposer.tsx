@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { Panel, Group, Separator, usePanelRef } from 'react-resizable-panels';
 import { Header } from './Header';
-import { PatternLibrary } from './PatternLibrary/PatternLibrary';
+import { Library } from './Library/Library';
 import { ArrangementView } from './ArrangementView';
 import { Inspector } from './Inspector/Inspector';
 import { BlockEditor } from './BlockEditor';
@@ -43,7 +43,7 @@ export function DAWView() {
       <Header />
 
       <Group orientation="horizontal" className="flex-1">
-        {/* Pattern Library - Left Sidebar */}
+        {/* Library - Left Sidebar */}
         <Panel
           panelRef={libraryPanelRef}
           collapsible
@@ -54,7 +54,7 @@ export function DAWView() {
           id="library-panel"
         >
           <aside className="h-full border-r border-border bg-surface overflow-y-auto">
-            <PatternLibrary />
+            <Library />
           </aside>
         </Panel>
 

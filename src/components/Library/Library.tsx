@@ -6,7 +6,7 @@ import { SegmentedControl } from './SegmentedControl';
 import { PatternGrid } from './PatternGrid';
 import { PRESET_CATEGORIES } from '@/core/presets';
 
-export function PatternLibrary() {
+export function Library() {
   const [activeTab, setActiveTab] = useState<'loops' | 'patterns'>('loops');
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set(PRESET_CATEGORIES)
@@ -27,7 +27,7 @@ export function PatternLibrary() {
   return (
     <div className="p-3">
       <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-        Pattern Library
+        Library
       </h2>
 
       <SegmentedControl activeTab={activeTab} onChange={setActiveTab} />

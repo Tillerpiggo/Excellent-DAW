@@ -1219,7 +1219,7 @@ export function TimelineCanvas({
       {flatTracks.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <p className="text-muted-foreground">
-            Add tracks from the Pattern Library
+            Add tracks from the Library
           </p>
         </div>
       )}
