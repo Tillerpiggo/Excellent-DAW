@@ -69,8 +69,9 @@ export function BlockEditor() {
       return getEditorForCategory(patternCategory);
     }
 
-    if (instrumentId === 'drums') return 'drum';
-    if (['synth', 'keys', 'pad', 'bass'].includes(instrumentId ?? '')) return 'chord';
+    // Check instrument type - drumKit uses drum editor, melodic instruments use chord editor
+    if (instrumentId === 'drumKit') return 'drum';
+    if (['leadSynth', 'keys', 'pad', 'bass'].includes(instrumentId ?? '')) return 'chord';
 
     return null;
   }, [selectedBlock, selectedTrack]);

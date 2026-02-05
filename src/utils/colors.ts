@@ -1,5 +1,5 @@
-import { PatternCategory, TrackTypeId, InstrumentId } from '@/core/types';
-import { INSTRUMENTS } from '@/core/instruments';
+import { PatternCategory, TrackTypeId } from '@/core/types';
+import { INSTRUMENTS, getInstrument } from '@/instruments';
 
 // Category colors (kid-friendly but not childish)
 export const CATEGORY_COLORS: Record<PatternCategory, string> = {
@@ -32,14 +32,15 @@ export const TRACK_TYPE_COLORS: Record<TrackTypeId, string> = {
 };
 
 // Instrument colors - derived from INSTRUMENTS registry
-export const INSTRUMENT_COLORS = Object.fromEntries(
+export const INSTRUMENT_COLORS: Record<string, string> = Object.fromEntries(
   Object.entries(INSTRUMENTS).map(([id, def]) => [id, def.color])
-) as Record<InstrumentId, string>;
+);
 
 // Background variants (darker for timeline blocks)
-export function getBlockColor(instrumentId?: InstrumentId, category?: PatternCategory): string {
+export function getBlockColor(instrumentId?: string, category?: PatternCategory): string {
   if (instrumentId) {
-    return INSTRUMENT_COLORS[instrumentId];
+    const instrument = getInstrument(instrumentId);
+    return instrument?.color || '#64748b';
   }
   if (category) {
     return CATEGORY_COLORS[category];

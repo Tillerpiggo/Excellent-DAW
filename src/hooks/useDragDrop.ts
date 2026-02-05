@@ -96,7 +96,7 @@ export function useDragDrop() {
         // Check if dropping on an existing audio track
         if (trackId) {
           const track = project.tracks[trackId];
-          if (track?.instrumentId !== 'audio') {
+          if (track?.instrumentId !== 'audioPlayer') {
             // Not an audio track, create a new one
             targetTrackId = addAudioTrack(audioData.fileName);
           }

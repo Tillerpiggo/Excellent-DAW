@@ -1,9 +1,9 @@
 // Visual Playback Engine - Frame-based timing for visual instruments
 
-import { VisualInstrumentId, Event } from './types';
-import { VisualEvent, VisualInstrumentState } from './visualTypes';
+import { Event } from './types';
+import { VisualInstrumentState } from './visualTypes';
 import { ResolvedTrack } from './resolution';
-import { createVisualInstrumentState } from './visualInstruments';
+import { getInstrument } from '@/instruments';
 
 export interface VisualPlaybackCallbacks {
   // Called only when track structure changes (not every frame)
@@ -14,11 +14,29 @@ export interface VisualPlaybackCallbacks {
 
 interface ScheduledVisualEvent {
   trackId: string;
-  instrumentId: VisualInstrumentId;
+  instrumentId: string;
   startTimeInBeats: number;
   pitch: number;
   velocity: number;
   duration: number;
+}
+
+// Create visual instrument state from unified instrument system
+function createVisualInstrumentState(
+  instrumentId: string,
+  settings?: Record<string, unknown>
+): VisualInstrumentState {
+  const instrument = getInstrument(instrumentId);
+  const defaultSettings = instrument?.defaultSettings ?? {};
+  return {
+    instrumentId,
+    activeNotes: new Map<number, Event>(),
+    currentRotation: 0,
+    bloom: 0,
+    colorShift: 0,
+    params: { ...defaultSettings, ...settings },
+    noteOnCount: 0,
+  };
 }
 
 export class VisualPlaybackEngine {
@@ -52,9 +70,10 @@ export class VisualPlaybackEngine {
 
     // Create state for each track with a visual instrument
     for (const resolved of resolvedTracks) {
-      if (resolved.visualInstrumentId) {
-        console.log('[VisualPlayback] Creating state for track:', resolved.trackId, 'visualParams:', resolved.visualParams);
-        const state = createVisualInstrumentState(resolved.visualInstrumentId, resolved.visualParams);
+      const instrument = resolved.instrumentId ? getInstrument(resolved.instrumentId) : undefined;
+      if (instrument?.hasVisual) {
+        console.log('[VisualPlayback] Creating state for track:', resolved.trackId, 'instrumentSettings:', resolved.instrumentSettings);
+        const state = createVisualInstrumentState(resolved.instrumentId!, resolved.instrumentSettings);
         console.log('[VisualPlayback] Created state with params:', state.params);
         this.trackStates.set(resolved.trackId, state);
 
@@ -63,7 +82,7 @@ export class VisualPlaybackEngine {
         for (const event of resolved.output.events) {
           this.scheduledEvents.push({
             trackId: resolved.trackId,
-            instrumentId: resolved.visualInstrumentId,
+            instrumentId: resolved.instrumentId!,
             startTimeInBeats: event.startTimeInBeats,
             pitch: event.pitch,
             velocity: event.velocity,

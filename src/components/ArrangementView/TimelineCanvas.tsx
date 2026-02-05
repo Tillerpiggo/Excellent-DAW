@@ -348,7 +348,7 @@ function BlockMesh({
   isHovered,
   hoveredZone,
 }: BlockMeshProps) {
-  const isAudioBlock = track.instrumentId === 'audio' && block.audioData;
+  const isAudioBlock = track.instrumentId === 'audioPlayer' && block.audioData;
   const barWidth = beatsPerBar * pixelsPerBeat;
   const handleWidthPx = 12;
 

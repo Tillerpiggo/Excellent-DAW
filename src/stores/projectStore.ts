@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { Project, Track, Block, ProjectMetadata, Event } from '@/core/types';
 import { generateId } from '@/utils/id';
 import { PATTERN_PRESETS } from '@/core/presets';
-import { ChordData, chordsToEvents } from '@/core/harmony';
 import * as storage from '@/services/storage';
 import { useUIStore } from './uiStore';
 import { historyMiddleware, useHistoryStore } from './history';
@@ -25,8 +24,8 @@ interface ProjectState {
   deleteBlock: (trackId: string, blockId: string) => void;
   moveBlock: (sourceTrackId: string, blockId: string, targetTrackId: string) => void;
   splitBlockAtPosition: (trackId: string, blockId: string, splitBar: number, beatsPerBar: number) => string | null;
-  updateBlockChords: (trackId: string, blockId: string, chords: ChordData[]) => void;
   updateBlockDrums: (trackId: string, blockId: string, events: Event[]) => void;
+  updateBlockEvents: (trackId: string, blockId: string, events: Event[]) => void;
 
   // Project operations
   setBpm: (bpm: number) => void;
@@ -130,7 +129,7 @@ export const useProjectStore = create<ProjectState>()(
           id: trackId,
           name: name || 'Audio Track',
           typeId: 'base',
-          instrumentId: 'audio',
+          instrumentId: 'audioPlayer',
           muted: false,
           collapsed: false,
           blocks: [],
@@ -411,22 +410,6 @@ export const useProjectStore = create<ProjectState>()(
       return success ? newBlockId : null;
     },
 
-    updateBlockChords: (trackId: string, blockId: string, chords: ChordData[]) => {
-      set((state) => {
-        const track = state.project.tracks[trackId];
-        if (!track) return;
-
-        const block = track.blocks.find(b => b.id === blockId);
-        if (!block) return;
-
-        // Generate new events from the chord data
-        const events = chordsToEvents(chords);
-
-        // Update the block's streams with new events
-        block.streams = [{ events }];
-      });
-    },
-
     updateBlockDrums: (trackId: string, blockId: string, events: Event[]) => {
       set((state) => {
         const track = state.project.tracks[trackId];
@@ -436,6 +419,18 @@ export const useProjectStore = create<ProjectState>()(
         if (!block) return;
 
         // Update the block's streams with the drum events
+        block.streams = [{ events }];
+      });
+    },
+
+    updateBlockEvents: (trackId: string, blockId: string, events: Event[]) => {
+      set((state) => {
+        const track = state.project.tracks[trackId];
+        if (!track) return;
+
+        const block = track.blocks.find(b => b.id === blockId);
+        if (!block) return;
+
         block.streams = [{ events }];
       });
     },

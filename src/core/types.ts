@@ -81,7 +81,9 @@ export type TrackTypeId =
   | 'rest'
   | 'swing';
 
-export type InstrumentId = 'synth' | 'keys' | 'pad' | 'bass' | 'drums' | 'audio';
+// Legacy type for backwards compatibility during migration
+// New code should use string instrumentId directly
+export type InstrumentId = 'synth' | 'keys' | 'pad' | 'bass' | 'drums' | 'audio' | string;
 
 // Audio data for audio track blocks
 export interface AudioData {
@@ -100,15 +102,15 @@ export interface AudioData {
   waveformPeaks: number[];
 }
 
-export type VisualInstrumentId = 'silkSymmetry' | 'hexagonDots' | 'fractalTunnel' | 'circleGrid';
+// Legacy type for backwards compatibility during migration
+export type VisualInstrumentId = 'silkSymmetry' | 'hexagonDots' | 'fractalTunnel' | 'circleGrid' | string;
 
 export interface Track {
   id: string;
   name: string;
   typeId: TrackTypeId;
-  instrumentId?: InstrumentId;
-  visualInstrumentId?: VisualInstrumentId;
-  visualParams?: Record<string, unknown>; // Overrides for visual instrument defaults
+  instrumentId?: string; // Unified instrument ID (e.g., "leadSynth", "fractalTunnel")
+  instrumentSettings?: Record<string, unknown>; // Track-level settings for the instrument
   muted: boolean;
   collapsed: boolean;
   blocks: Block[];
@@ -137,7 +139,7 @@ export interface Preset {
   category: PatternCategory;
   description: string;
   defaultTrackType: TrackTypeId;
-  defaultInstrument?: InstrumentId;
+  defaultInstrument?: string; // Unified instrument ID
   events: Event[];
   durationBars: number;
   presetType: PresetType;
@@ -151,8 +153,9 @@ export interface TrackTypeDefinition {
   combine: (parent: Output, self: Output, ctx: ProcessContext) => Output;
 }
 
+// Legacy InstrumentDefinition - use Instrument from '@/instruments' instead
 export interface InstrumentDefinition {
-  id: InstrumentId;
+  id: string;
   name: string;
   description: string;
   color: string;

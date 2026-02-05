@@ -4,35 +4,28 @@ import { useRef, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { getVisualPlaybackEngine } from '@/core/visualPlayback';
+import { Instrument } from '../types';
 
 interface CircleGridProps {
   trackId: string;
 }
 
 const CONFIG = {
-  circleRadius: 0.12,      // Radius of each circle
-  gridSpacing: 0.35,       // Space between circle centers
-  glowIntensity: 0.8,      // Glow strength
-  baseHue: 0.55,           // Starting hue (cyan-ish)
+  circleRadius: 0.12,
+  gridSpacing: 0.35,
+  glowIntensity: 0.8,
+  baseHue: 0.55,
 };
 
-// Clockwise order starting top-left: TL(0) → TR(1) → BR(2) → BL(3)
 const CIRCLE_POSITIONS = [
-  { x: -1, y: 1 },   // Top-left (index 0)
-  { x: 1, y: 1 },    // Top-right (index 1)
-  { x: 1, y: -1 },   // Bottom-right (index 2)
-  { x: -1, y: -1 },  // Bottom-left (index 3)
+  { x: -1, y: 1 },
+  { x: 1, y: 1 },
+  { x: 1, y: -1 },
+  { x: -1, y: -1 },
 ];
 
 function isCircleVisible(noteOnCount: number, positionIndex: number): boolean {
-  // Each 8 notes is a full cycle:
-  // Notes 1-4 turn on circles in order (TL, TR, BR, BL)
-  // Notes 5-8 turn off circles in same order
   const cyclePosition = noteOnCount % 8;
-
-  // Circle at position `pos` is visible when:
-  // cyclePosition > pos (it was turned on) AND
-  // cyclePosition <= pos + 4 (it hasn't been turned off yet)
   return cyclePosition > positionIndex && cyclePosition <= positionIndex + 4;
 }
 
@@ -44,7 +37,6 @@ function renderCircle(
   hue: number,
   glowIntensity: number
 ) {
-  // Draw multiple glow layers
   const glowPasses = [
     { radiusMult: 2.5, alpha: 0.05 * glowIntensity },
     { radiusMult: 2.0, alpha: 0.1 * glowIntensity },
@@ -80,15 +72,13 @@ function renderCircleGrid(
 
   ctx.globalCompositeOperation = 'lighter';
 
-  // Slowly shift hue over time
   const hue = ((baseHue + time * 0.02) % 1) * 360;
 
-  // Render each circle if visible
   for (let i = 0; i < 4; i++) {
     if (isCircleVisible(noteOnCount, i)) {
       const pos = CIRCLE_POSITIONS[i];
       const x = centerX + pos.x * gridSpacing;
-      const y = centerY - pos.y * gridSpacing; // Flip y for canvas coordinates
+      const y = centerY - pos.y * gridSpacing;
 
       renderCircle(ctx, x, y, circleRadius, hue, glowIntensity);
     }
@@ -110,7 +100,7 @@ function renderVignette(ctx: CanvasRenderingContext2D, width: number, height: nu
   ctx.fillRect(0, 0, width, height);
 }
 
-export function CircleGrid({ trackId }: CircleGridProps) {
+function CircleGridVisual({ trackId }: CircleGridProps) {
   const { viewport } = useThree();
   const meshRef = useRef<THREE.Mesh>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -143,18 +133,15 @@ export function CircleGrid({ trackId }: CircleGridProps) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Read state from engine
     const state = engineRef.current.getTrackState(trackId);
     const params = state?.params ?? {};
     const noteOnCount = state?.noteOnCount ?? 0;
 
     timeRef.current += delta;
 
-    // Clear canvas
     ctx.fillStyle = '#050508';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Render the circle grid
     renderCircleGrid(
       ctx,
       canvas.width,
@@ -184,3 +171,30 @@ export function CircleGrid({ trackId }: CircleGridProps) {
     </mesh>
   );
 }
+
+// Unified Instrument definition
+export const CircleGrid: Instrument = {
+  id: 'circleGrid',
+  name: 'Circle Grid',
+  description: '2x2 grid of circles that toggle on/off clockwise with each MIDI event',
+  icon: '⭕',
+  color: '#14b8a6',
+  hasAudio: false,
+  hasVisual: true,
+
+  defaultSettings: {
+    circleRadius: 0.12,
+    gridSpacing: 0.35,
+    glowIntensity: 0.8,
+    baseHue: 0.55,
+  },
+
+  settingsSchema: {
+    circleRadius: { type: 'number', label: 'Circle Radius', min: 0.05, max: 0.3, step: 0.01, default: 0.12 },
+    gridSpacing: { type: 'number', label: 'Grid Spacing', min: 0.2, max: 0.6, step: 0.05, default: 0.35 },
+    glowIntensity: { type: 'number', label: 'Glow', min: 0, max: 1, step: 0.1, default: 0.8 },
+    baseHue: { type: 'number', label: 'Base Hue', min: 0, max: 1, step: 0.05, default: 0.55 },
+  },
+
+  VisualComponent: CircleGridVisual,
+};

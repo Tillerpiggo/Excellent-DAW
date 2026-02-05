@@ -1,9 +1,9 @@
 import * as Tone from 'tone';
-import { Project, InstrumentId, Block } from './types';
+import { Project, AudioData } from './types';
 import { resolveProject, ResolvedTrack } from './resolution';
-import { createInstruments, scheduleEvent, disposeInstruments, InstrumentInstances, getOrCreateAudioPlayer, clearAudioPlayers, stopAudioPlayers } from './instruments';
-import { ChordQuality, generateChordPitches } from './harmony';
 import { getVisualPlaybackEngine, VisualPlaybackEngine } from './visualPlayback';
+import { getInstrument, AudioInstance } from '@/instruments';
+import { getAudioFile, createAudioBlobUrl, revokeAudioBlobUrl } from '@/services/audioStorage';
 
 export type PlaybackState = 'stopped' | 'playing' | 'paused';
 
@@ -13,8 +13,21 @@ export interface PlaybackCallbacks {
   onLoop?: () => void;
 }
 
+// Track audio instances (keyed by trackId)
+interface TrackAudioState {
+  instrumentId: string;
+  instance: AudioInstance;
+}
+
+// Audio player management for audio file playback (keyed by blockId)
+interface AudioPlayerState {
+  player: Tone.Player;
+  blobUrl: string;
+}
+
 export class PlaybackEngine {
-  private instruments: InstrumentInstances | null = null;
+  private trackAudioStates: Map<string, TrackAudioState> = new Map();
+  private audioPlayers: Map<string, AudioPlayerState> = new Map();
   private state: PlaybackState = 'stopped';
   private animationFrame: number | null = null;
   private callbacks: PlaybackCallbacks = {};
@@ -27,7 +40,6 @@ export class PlaybackEngine {
     if (this.isInitialized) return;
 
     await Tone.start();
-    this.instruments = createInstruments();
     this.isInitialized = true;
   }
 
@@ -62,6 +74,9 @@ export class PlaybackEngine {
     // Resolve project to get all playable events
     const resolvedTracks = resolveProject(project);
 
+    // Create audio instances for each track
+    this.createTrackAudioInstances(resolvedTracks);
+
     // Schedule all events (including audio tracks)
     await this.scheduleEvents(resolvedTracks, project);
 
@@ -88,14 +103,38 @@ export class PlaybackEngine {
     this.startBeatTracking(project);
   }
 
+  private createTrackAudioInstances(resolvedTracks: ResolvedTrack[]): void {
+    // Dispose any existing instances first
+    this.disposeTrackAudioInstances();
+
+    for (const resolved of resolvedTracks) {
+      if (!resolved.instrumentId) continue;
+
+      const instrument = getInstrument(resolved.instrumentId);
+      if (!instrument?.hasAudio || !instrument.createAudio) continue;
+
+      // Create audio instance using instrument's createAudio method with track settings
+      const instance = instrument.createAudio(resolved.instrumentSettings ?? {});
+      this.trackAudioStates.set(resolved.trackId, {
+        instrumentId: resolved.instrumentId,
+        instance,
+      });
+    }
+  }
+
+  private disposeTrackAudioInstances(): void {
+    for (const state of this.trackAudioStates.values()) {
+      state.instance.dispose();
+    }
+    this.trackAudioStates.clear();
+  }
+
   private cleanupPlayback(): void {
     // Stop transport
     Tone.getTransport().stop();
 
     // Stop all audio players
-    if (this.instruments) {
-      stopAudioPlayers(this.instruments);
-    }
+    this.stopAudioPlayers();
 
     // Dispose all parts
     for (const part of this.parts) {
@@ -116,21 +155,29 @@ export class PlaybackEngine {
   }
 
   private async scheduleEvents(resolvedTracks: ResolvedTrack[], project: Project): Promise<void> {
-    if (!this.instruments) return;
-
     const totalBeats = project.totalBars * project.beatsPerBar;
 
     // Clear any existing audio players from previous playback
-    clearAudioPlayers(this.instruments);
+    this.clearAudioPlayers();
 
     for (const resolved of resolvedTracks) {
       if (!resolved.instrumentId) continue;
 
-      // Handle audio tracks separately
-      if (resolved.instrumentId === 'audio') {
+      const instrument = getInstrument(resolved.instrumentId);
+      if (!instrument) continue;
+
+      // Handle audio file playback tracks (audioPlayer instrument)
+      if (resolved.instrumentId === 'audioPlayer') {
         await this.scheduleAudioTrack(resolved.trackId, project);
         continue;
       }
+
+      // Skip if instrument doesn't have audio or scheduleNote
+      if (!instrument.hasAudio || !instrument.scheduleNote) continue;
+
+      // Get the audio instance for this track
+      const audioState = this.trackAudioStates.get(resolved.trackId);
+      if (!audioState) continue;
 
       // Filter events within bounds and convert to Tone.Part format
       const partEvents = resolved.output.events
@@ -144,12 +191,7 @@ export class PlaybackEngine {
 
       // Create a Tone.Part for this track - handles lookahead scheduling automatically
       const part = new Tone.Part((time, { event }) => {
-        scheduleEvent(
-          event,
-          resolved.instrumentId as InstrumentId,
-          this.instruments!,
-          time
-        );
+        instrument.scheduleNote!(audioState.instance, event, time);
       }, partEvents);
 
       part.start(0);
@@ -166,8 +208,6 @@ export class PlaybackEngine {
   }
 
   private async scheduleAudioTrack(trackId: string, project: Project): Promise<void> {
-    if (!this.instruments) return;
-
     const track = project.tracks[trackId];
     if (!track || track.muted) return;
 
@@ -176,17 +216,15 @@ export class PlaybackEngine {
 
       try {
         // Get or create the player for this block
-        const player = await getOrCreateAudioPlayer(
-          block.id,
-          block.audioData,
-          this.instruments
-        );
+        const playerState = await this.getOrCreateAudioPlayer(block.id, block.audioData);
 
         // Skip if audio couldn't be loaded
-        if (!player) {
+        if (!playerState) {
           console.warn(`Skipping audio block ${block.id} - audio not found`);
           continue;
         }
+
+        const { player } = playerState;
 
         // Calculate timing
         const startTime = `${block.startBar}:0:0`;
@@ -230,6 +268,49 @@ export class PlaybackEngine {
     }
   }
 
+  private async getOrCreateAudioPlayer(blockId: string, audioData: AudioData): Promise<AudioPlayerState | null> {
+    // Return existing player if available
+    if (this.audioPlayers.has(blockId)) {
+      return this.audioPlayers.get(blockId)!;
+    }
+
+    // Load audio from IndexedDB
+    const stored = await getAudioFile(audioData.storageId);
+    if (!stored) {
+      console.error(`Audio file not found in storage: ${audioData.storageId}`);
+      return null;
+    }
+
+    // Create blob URL for the player
+    const blobUrl = createAudioBlobUrl(stored.blob);
+
+    // Create and load player
+    const player = new Tone.Player(blobUrl).toDestination();
+    player.volume.value = -6; // Match synth levels
+
+    // Wait for buffer to load
+    await Tone.loaded();
+
+    const state: AudioPlayerState = { player, blobUrl };
+    this.audioPlayers.set(blockId, state);
+    return state;
+  }
+
+  private stopAudioPlayers(): void {
+    for (const { player } of this.audioPlayers.values()) {
+      player.stop();
+    }
+  }
+
+  private clearAudioPlayers(): void {
+    for (const { player, blobUrl } of this.audioPlayers.values()) {
+      player.stop();
+      player.dispose();
+      revokeAudioBlobUrl(blobUrl);
+    }
+    this.audioPlayers.clear();
+  }
+
   private startBeatTracking(project: Project): void {
     const totalBeats = project.totalBars * project.beatsPerBar;
 
@@ -259,15 +340,16 @@ export class PlaybackEngine {
     Tone.getTransport().position = 0;
 
     // Stop all audio players immediately
-    if (this.instruments) {
-      stopAudioPlayers(this.instruments);
-    }
+    this.stopAudioPlayers();
 
     // Dispose all parts
     for (const part of this.parts) {
       part.dispose();
     }
     this.parts = [];
+
+    // Dispose track audio instances
+    this.disposeTrackAudioInstances();
 
     // Stop visual playback
     if (this.visualEngine) {
@@ -291,9 +373,7 @@ export class PlaybackEngine {
     Tone.getTransport().pause();
 
     // Stop audio players (they'll be re-triggered on resume via transport)
-    if (this.instruments) {
-      stopAudioPlayers(this.instruments);
-    }
+    this.stopAudioPlayers();
 
     if (this.animationFrame !== null) {
       cancelAnimationFrame(this.animationFrame);
@@ -333,14 +413,12 @@ export class PlaybackEngine {
     const beats = beat % beatsPerBar;
 
     // Stop audio players so they can be re-triggered at the new position
-    if (this.instruments) {
-      stopAudioPlayers(this.instruments);
-    }
+    this.stopAudioPlayers();
 
     Tone.getTransport().position = `${bars}:${beats}:0`;
 
     // If playing, start any audio blocks that should be active at this position
-    if (this.state === 'playing' && this.project && this.instruments) {
+    if (this.state === 'playing' && this.project) {
       this.startAudioAtPosition(beat, beatsPerBar);
     }
 
@@ -353,14 +431,14 @@ export class PlaybackEngine {
   }
 
   private startAudioAtPosition(beat: number, beatsPerBar: number): void {
-    if (!this.project || !this.instruments) return;
+    if (!this.project) return;
 
     const bpm = this.project.bpm;
     const secondsPerBeat = 60 / bpm;
 
     for (const trackId of Object.keys(this.project.tracks)) {
       const track = this.project.tracks[trackId];
-      if (!track || track.muted || track.instrumentId !== 'audio') continue;
+      if (!track || track.muted || track.instrumentId !== 'audioPlayer') continue;
 
       for (const block of track.blocks) {
         if (!block.audioData) continue;
@@ -370,8 +448,8 @@ export class PlaybackEngine {
 
         // Check if the seek position is within this block
         if (beat >= blockStartBeat && beat < blockEndBeat) {
-          const player = this.instruments.audioPlayers.get(block.id);
-          if (!player) continue;
+          const playerState = this.audioPlayers.get(block.id);
+          if (!playerState) continue;
 
           // Calculate offset into the audio file
           const beatsIntoBlock = beat - blockStartBeat;
@@ -384,38 +462,9 @@ export class PlaybackEngine {
           }
 
           // Start playback from the calculated offset
-          player.start(Tone.now(), audioOffset);
+          playerState.player.start(Tone.now(), audioOffset);
         }
       }
-    }
-  }
-
-  async previewChord(
-    root: number,
-    quality: ChordQuality,
-    octave: number = 4,
-    instrumentId: InstrumentId = 'pad'
-  ): Promise<void> {
-    if (!this.isInitialized) {
-      await this.initialize();
-    }
-
-    if (!this.instruments) return;
-
-    const pitches = generateChordPitches(root, quality, octave);
-    const now = Tone.now();
-
-    // Use the track's instrument if it supports polyphony, else fallback to pad
-    const polyInstruments: InstrumentId[] = ['synth', 'keys', 'pad'];
-    const actualInstrument = polyInstruments.includes(instrumentId) ? instrumentId : 'pad';
-
-    for (const pitch of pitches) {
-      scheduleEvent(
-        { startTimeInBeats: 0, pitch, velocity: 90, duration: 0.5 },
-        actualInstrument,
-        this.instruments,
-        now
-      );
     }
   }
 
@@ -444,10 +493,8 @@ export class PlaybackEngine {
   dispose(): void {
     this.stop();
 
-    if (this.instruments) {
-      disposeInstruments(this.instruments);
-      this.instruments = null;
-    }
+    // Clear audio players
+    this.clearAudioPlayers();
 
     this.isInitialized = false;
   }

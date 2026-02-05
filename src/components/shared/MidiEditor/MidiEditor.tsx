@@ -39,6 +39,7 @@ interface DragState {
   currentY: number;
   noteId?: string;
   originalTime?: number;
+  originalPitch?: number;
   pitch?: number;
 }
 
@@ -407,15 +408,7 @@ function MidiScene({
 
   // Handle note pointer down
   const handleNotePointerDown = useCallback((e: ThreeEvent<PointerEvent>, note: MidiNote) => {
-    // Use screen coordinates for consistency with handleMove
-    const canvas = (e.nativeEvent.target as HTMLElement).closest('canvas');
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const x = e.nativeEvent.clientX - rect.left;
-    const y = e.nativeEvent.clientY - rect.top;
-
-    if (e.nativeEvent.shiftKey) {
+    if (e.shiftKey) {
       setSelectedNoteIds(prev => {
         const next = new Set(prev);
         if (next.has(note.id)) next.delete(note.id);
@@ -426,26 +419,24 @@ function MidiScene({
       setSelectedNoteIds(new Set([note.id]));
     }
 
+    // Use raw clientX/Y for delta calculation - avoids issues with finding different canvases
     setDragState({
       type: 'moving',
-      startX: x,
-      startY: y,
-      currentX: x,
-      currentY: y,
+      startX: e.nativeEvent.clientX,
+      startY: e.nativeEvent.clientY,
+      currentX: e.nativeEvent.clientX,
+      currentY: e.nativeEvent.clientY,
       noteId: note.id,
       originalTime: note.time,
+      originalPitch: note.pitch,
     });
   }, [selectedNoteIds]);
 
   // Handle background click (for drawing new notes or marquee)
   const handleBackgroundPointerDown = useCallback((e: ThreeEvent<PointerEvent>) => {
-    // Use screen coordinates for consistency with handleMove
-    const canvas = (e.nativeEvent.target as HTMLElement).closest('canvas');
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const x = e.nativeEvent.clientX - rect.left;
-    const y = e.nativeEvent.clientY - rect.top;
+    // Use Three.js world coordinates - they match the note rendering coordinate system
+    const x = e.point.x;
+    const y = -e.point.y;
 
     if (x > labelWidth) {
       // Clicked on grid
@@ -468,30 +459,40 @@ function MidiScene({
           };
 
           setDrawingNote(newNote);
-          if (!e.nativeEvent.shiftKey) {
+          if (!e.shiftKey) {
             setSelectedNoteIds(new Set([newNote.id]));
           } else {
             setSelectedNoteIds(prev => new Set([...prev, newNote.id]));
           }
 
+          // Store screen coords for drag delta calculation (consistent with handleMove)
+          const canvas = (e.nativeEvent.target as HTMLElement).closest('canvas');
+          const rect = canvas?.getBoundingClientRect();
+          const screenX = rect ? e.nativeEvent.clientX - rect.left : x;
+          const screenY = rect ? e.nativeEvent.clientY - rect.top : y;
+
           setDragState({
             type: 'drawing',
-            startX: x,
-            startY: y,
-            currentX: x,
-            currentY: y,
+            startX: screenX,
+            startY: screenY,
+            currentX: screenX,
+            currentY: screenY,
             pitch,
           });
         }
       } else {
-        // Start marquee
-        if (!e.nativeEvent.shiftKey) setSelectedNoteIds(new Set());
+        // Start marquee - use screen coords for consistency with handleMove
+        if (!e.shiftKey) setSelectedNoteIds(new Set());
+        const canvas = (e.nativeEvent.target as HTMLElement).closest('canvas');
+        const rect = canvas?.getBoundingClientRect();
+        const screenX = rect ? e.nativeEvent.clientX - rect.left : x;
+        const screenY = rect ? e.nativeEvent.clientY - rect.top : y;
         setDragState({
           type: 'marquee',
-          startX: x,
-          startY: y,
-          currentX: x,
-          currentY: y,
+          startX: screenX,
+          startY: screenY,
+          currentX: screenX,
+          currentY: screenY,
         });
       }
     }
@@ -553,20 +554,38 @@ function MidiScene({
           setDrawingNote(prev => prev ? { ...prev, duration: newDuration } : null);
         }
       } else if (dragState.type === 'moving' && dragState.originalTime !== undefined) {
-        const deltaX = x - dragState.startX;
-        const deltaBeats = deltaX / pixelsPerBeat;
+        // Calculate scale factor: CSS pixels to world units
+        // The canvas style width is canvasWidth (world units), but actual CSS size may differ
+        const scale = rect.width > 0 ? canvasWidth / rect.width : 1;
+
+        // Convert CSS pixel delta to world units, then to beats
+        const deltaX = e.clientX - dragState.startX;
+        const worldDeltaX = deltaX * scale;
+        const deltaBeats = worldDeltaX / pixelsPerBeat;
         const snappedDelta = Math.round(deltaBeats / quantize) * quantize;
 
-        // Move all selected notes
+        // Only update if there's actual movement
         if (snappedDelta !== 0) {
-          onNotesChange(notes.map(n => {
-            if (selectedNoteIds.has(n.id)) {
-              const baseTime = n.id === dragState.noteId ? dragState.originalTime! : n.time;
-              const newTime = Math.max(0, Math.min(totalBeats - n.duration, baseTime + snappedDelta));
-              return { ...n, time: newTime };
-            }
-            return n;
-          }));
+          // Calculate new time for the dragged note
+          const newPrimaryTime = Math.max(0, Math.min(totalBeats - (notes.find(n => n.id === dragState.noteId)?.duration ?? quantize), dragState.originalTime + snappedDelta));
+          const actualDelta = newPrimaryTime - dragState.originalTime;
+
+          // Move all selected notes by the same delta
+          if (actualDelta !== 0) {
+            onNotesChange(notes.map(n => {
+              if (selectedNoteIds.has(n.id)) {
+                const newTime = Math.max(0, Math.min(totalBeats - n.duration, n.time + actualDelta));
+                return { ...n, time: newTime };
+              }
+              return n;
+            }));
+            // Update the drag state so subsequent moves are relative to new position
+            setDragState(prev => ({
+              ...prev,
+              startX: e.clientX,
+              originalTime: newPrimaryTime,
+            }));
+          }
         }
       } else if (dragState.type === 'marquee') {
         setDragState(prev => ({ ...prev, currentX: x, currentY: y }));
@@ -594,7 +613,7 @@ function MidiScene({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [dragState, drawingNote, pixelsPerBeat, quantize, totalBeats, notes, selectedNoteIds, onNotesChange, getNotesInMarquee]);
+  }, [dragState, drawingNote, pixelsPerBeat, quantize, totalBeats, notes, selectedNoteIds, onNotesChange, getNotesInMarquee, canvasWidth]);
 
   // Keyboard handler
   useEffect(() => {

@@ -1,17 +1,9 @@
 // Visual Instrument Types
 
-import { VisualInstrumentId, Event } from './types';
-
-export interface VisualInstrumentDefinition {
-  id: VisualInstrumentId;
-  name: string;
-  description: string;
-  icon: string;
-  defaultParams: Record<string, unknown>;
-}
+import { Event } from './types';
 
 export interface VisualInstrumentState {
-  instrumentId: VisualInstrumentId;
+  instrumentId: string;
   activeNotes: Map<number, Event>;
   currentRotation: number;
   bloom: number;
@@ -22,7 +14,7 @@ export interface VisualInstrumentState {
 
 export interface VisualEvent {
   trackId: string;
-  instrumentId: VisualInstrumentId;
+  instrumentId: string;
   startTimeInBeats: number;
   pitch: number;
   velocity: number;
@@ -32,6 +24,6 @@ export interface VisualEvent {
 
 export interface VisualTrackState {
   trackId: string;
-  instrumentId: VisualInstrumentId;
+  instrumentId: string;
   state: VisualInstrumentState;
 }

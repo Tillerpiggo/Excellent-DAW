@@ -1,5 +1,5 @@
 import { Project, ProjectMetadata, PreviewTrackData, CURRENT_SCHEMA_VERSION } from '@/core/types';
-import { INSTRUMENTS } from '@/core/instruments';
+import { getInstrument } from '@/instruments';
 
 const STORAGE_KEYS = {
   PROJECT_LIST: 'pc_project_list',
@@ -79,9 +79,8 @@ export function generatePreviewTracks(project: Project): PreviewTrackData[] {
     if (!track) return;
 
     // Get color from instrument or use default
-    const color = track.instrumentId
-      ? INSTRUMENTS[track.instrumentId]?.color || '#6b7280'
-      : '#6b7280';
+    const instrument = track.instrumentId ? getInstrument(track.instrumentId) : undefined;
+    const color = instrument?.color || '#6b7280';
 
     // Extract block ranges
     const blocks = track.blocks.map((block) => ({

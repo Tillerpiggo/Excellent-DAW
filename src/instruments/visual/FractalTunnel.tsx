@@ -5,6 +5,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useProjectStore } from '@/stores/projectStore';
 import { getVisualPlaybackEngine } from '@/core/visualPlayback';
+import { Instrument } from '../types';
 
 interface FractalTunnelProps {
   trackId: string;
@@ -186,7 +187,7 @@ function renderBranches(
   branches: Branch[],
   centerX: number, centerY: number,
   focalLength: number, lineWidth: number, glowIntensity: number,
-  hueOffset: number = 0 // 0 = normal, 0.5 = inverted (180°)
+  hueOffset: number = 0
 ) {
   branches.sort((a, b) => a.generation - b.generation);
 
@@ -222,7 +223,6 @@ function renderBranches(
   });
 }
 
-// Composite inverted fractal through pulse ring masks (only affects lines, not background)
 function compositePulseRings(
   ctx: CanvasRenderingContext2D,
   invertedCanvas: HTMLCanvasElement,
@@ -234,14 +234,12 @@ function compositePulseRings(
   for (const pulse of pulses) {
     ctx.save();
 
-    // Create ring clip path - only the inverted lines within this ring will show
     ctx.beginPath();
     ctx.arc(centerX, centerY, pulse.radius, 0, Math.PI * 2);
     ctx.arc(centerX, centerY, Math.max(0, pulse.radius - pulse.bandWidth), 0, Math.PI * 2, true);
     ctx.closePath();
     ctx.clip();
 
-    // Draw the inverted fractal (transparent bg, so only lines show)
     ctx.globalAlpha = pulse.opacity;
     ctx.drawImage(invertedCanvas, 0, 0);
 
@@ -275,7 +273,7 @@ function renderEndpointDots(
 }
 
 
-export function FractalTunnel({ trackId }: FractalTunnelProps) {
+function FractalTunnelVisual({ trackId }: FractalTunnelProps) {
   const { viewport } = useThree();
   const bpm = useProjectStore((s) => s.project.bpm);
   const meshRef = useRef<THREE.Mesh>(null);
@@ -286,9 +284,7 @@ export function FractalTunnel({ trackId }: FractalTunnelProps) {
   const elapsedRef = useRef(0);
   const virtualBeatRef = useRef(0);
   const hueOffsetRef = useRef(0);
-  // Track pitch -> startTime to detect both new pitches and re-triggered same pitches
   const prevNoteStartsRef = useRef<Map<number, number>>(new Map());
-  // Color pulses - expanding rings of inverted color
   const pulsesRef = useRef<ColorPulse[]>([]);
   const pulseIdRef = useRef(0);
   const engineRef = useRef(getVisualPlaybackEngine());
@@ -299,7 +295,6 @@ export function FractalTunnel({ trackId }: FractalTunnelProps) {
     canvas.height = 1024;
     canvasRef.current = canvas;
 
-    // Offscreen canvases for pulse effect: normal and inverted versions
     const offscreenNormal = document.createElement('canvas');
     offscreenNormal.width = 1024;
     offscreenNormal.height = 1024;
@@ -329,7 +324,6 @@ export function FractalTunnel({ trackId }: FractalTunnelProps) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Read state directly from engine (not via React state)
     const state = engineRef.current.getTrackState(trackId);
     if (!state) return;
 
@@ -339,39 +333,28 @@ export function FractalTunnel({ trackId }: FractalTunnelProps) {
     const beatsPerSecond = bpm / 60;
     const deltaBeat = delta * beatsPerSecond * CONFIG.oscSpeed;
 
-    // Detect new note-on events by comparing pitch+startTimeInBeats with previous frame
     const currentNoteStarts = new Map<number, number>();
     let newNoteCount = 0;
     for (const [pitch, note] of state.activeNotes) {
       currentNoteStarts.set(pitch, note.startTimeInBeats);
       const prevStartTime = prevNoteStartsRef.current.get(pitch);
-      // New note if: pitch wasn't active before, OR same pitch but different startTimeInBeats (re-triggered)
       if (prevStartTime === undefined || prevStartTime !== note.startTimeInBeats) {
         newNoteCount++;
       }
     }
-    // Get params from state (merged instrument defaults + track overrides)
     const visualParams = state.params ?? {};
     const colorPulse = visualParams.colorPulse as boolean ?? false;
     const pulseSpeed = visualParams.pulseSpeed as number ?? 200;
     const pulseBandWidth = visualParams.pulseBandWidth as number ?? 40;
     const pulseFadeDuration = visualParams.pulseFadeDuration as number ?? 2.0;
 
-    // Debug: log when we detect new notes (includes track ID from state)
-    if (newNoteCount > 0) {
-      console.log('[FractalTunnel]', state.instrumentId, 'New notes:', newNoteCount, 'colorPulse:', colorPulse, 'params:', state.params);
-    }
-
-    // Shift hue for each new note-on (default behavior when no pulse)
     if (newNoteCount > 0) {
       if (!colorPulse) {
-        // Default: color shift on note
         hueOffsetRef.current = (hueOffsetRef.current + 30 * newNoteCount) % 360;
       }
     }
     prevNoteStartsRef.current = currentNoteStarts;
 
-    // Accumulate virtual beat
     virtualBeatRef.current += deltaBeat;
     const beat = virtualBeatRef.current;
 
@@ -386,16 +369,13 @@ export function FractalTunnel({ trackId }: FractalTunnelProps) {
       baseHue: (CONFIG.baseHue + beat / 64 + hueOffsetRef.current / 360) % 1,
     };
 
-    // Spawn color pulses on note-on when enabled
     if (colorPulse && newNoteCount > 0) {
-      console.log('[FractalTunnel] Spawning pulse! colorPulse:', colorPulse, 'activePulses:', pulsesRef.current.length + 1);
       pulsesRef.current.push({
         id: pulseIdRef.current++,
         spawnTime: elapsed,
       });
     }
 
-    // Update pulses and build active pulse list for rendering
     const activePulses: { radius: number; bandWidth: number; opacity: number }[] = [];
     if (colorPulse) {
       pulsesRef.current = pulsesRef.current.filter(pulse => {
@@ -431,7 +411,6 @@ export function FractalTunnel({ trackId }: FractalTunnelProps) {
     const hasPulses = activePulses.length > 0;
 
     if (hasPulses && offscreenNormal && offscreenInverted && normalCtx && invertedCtx) {
-      // Render normal fractal to offscreen (transparent background)
       normalCtx.clearRect(0, 0, offscreenNormal.width, offscreenNormal.height);
       renderTunnelLines(normalCtx, frontEndpoints, backEndpoints, centerX, centerY,
         CONFIG.focalLength, CONFIG.tunnelLineOpacity, CONFIG.glowIntensity);
@@ -443,7 +422,6 @@ export function FractalTunnel({ trackId }: FractalTunnelProps) {
         CONFIG.focalLength, elapsed);
       normalCtx.shadowBlur = 0;
 
-      // Render inverted fractal to offscreen (transparent background, hue +180°)
       invertedCtx.clearRect(0, 0, offscreenInverted.width, offscreenInverted.height);
       renderTunnelLines(invertedCtx, frontEndpoints, backEndpoints, centerX, centerY,
         CONFIG.focalLength, CONFIG.tunnelLineOpacity, CONFIG.glowIntensity);
@@ -455,15 +433,12 @@ export function FractalTunnel({ trackId }: FractalTunnelProps) {
         CONFIG.focalLength, elapsed);
       invertedCtx.shadowBlur = 0;
 
-      // Composite: background + normal fractal + inverted rings
       ctx.fillStyle = '#050508';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(offscreenNormal, 0, 0);
 
-      // Draw inverted fractal only within pulse ring areas
       compositePulseRings(ctx, offscreenInverted, centerX, centerY, activePulses);
     } else {
-      // No pulses - fast path, render directly
       ctx.fillStyle = '#050508';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -497,3 +472,33 @@ export function FractalTunnel({ trackId }: FractalTunnelProps) {
     </mesh>
   );
 }
+
+// Unified Instrument definition
+export const FractalTunnel: Instrument = {
+  id: 'fractalTunnel',
+  name: 'Fractal Tunnel',
+  description: 'Hypnotic fractal flower tunnel with BPM-synced spiral flipping',
+  icon: '🌸',
+  color: '#8b5cf6',
+  hasAudio: false,
+  hasVisual: true,
+
+  defaultSettings: {
+    symmetry: 6,
+    generations: 3,
+    glowIntensity: 0.9,
+    colorPulse: false,
+    pulseSpeed: 200,
+    pulseBandWidth: 40,
+    pulseFadeDuration: 2.0,
+  },
+
+  settingsSchema: {
+    colorPulse: { type: 'boolean', label: 'Color Pulse', default: false },
+    pulseSpeed: { type: 'number', label: 'Pulse Speed', min: 50, max: 500, step: 10, default: 200 },
+    pulseBandWidth: { type: 'number', label: 'Band Width', min: 10, max: 100, step: 5, default: 40 },
+    pulseFadeDuration: { type: 'number', label: 'Fade Duration', min: 0.5, max: 5, step: 0.1, default: 2.0 },
+  },
+
+  VisualComponent: FractalTunnelVisual,
+};

@@ -1,12 +1,12 @@
-import { Project, Track, Block, Event, Output, ProcessContext, HarmonyInfo, VisualInstrumentId } from './types';
+import { Project, Track, Block, Event, Output, ProcessContext, HarmonyInfo } from './types';
 import { getTrackType } from './trackTypes';
 import { findHarmonyInOutput, deriveScaleFromHarmony } from './harmony';
+import { getInstrument } from '@/instruments';
 
 export interface ResolvedTrack {
   trackId: string;
-  instrumentId?: string;
-  visualInstrumentId?: VisualInstrumentId;
-  visualParams?: Record<string, unknown>;
+  instrumentId?: string; // Unified instrument ID
+  instrumentSettings?: Record<string, unknown>; // Track-level settings
   output: Output;
 }
 
@@ -80,45 +80,48 @@ function applyModifiers(
 
 /**
  * Builds the resolved track outputs for a track.
- * Handles audio tracks, visual instruments, and visual inheritance.
+ * With unified instruments, a track has one instrumentId that can have audio, visual, or both.
  */
 function buildTrackOutputs(
   track: Track,
   selfOutput: Output,
   combinedOutput: Output,
-  inheritedVisualInstrumentId: VisualInstrumentId | undefined
+  inheritedInstrumentId: string | undefined
 ): ResolvedTrack[] {
   const results: ResolvedTrack[] = [];
 
-  const isAudioTrack = track.instrumentId === 'audio';
-  const hasAudioBlocks = isAudioTrack && track.blocks.some(b => b.audioData);
-  const hasAudioInstrument = track.instrumentId && combinedOutput.events.length > 0;
-  const hasVisualInstrument = track.visualInstrumentId && combinedOutput.events.length > 0;
+  const instrument = track.instrumentId ? getInstrument(track.instrumentId) : undefined;
+  const isAudioPlayer = track.instrumentId === 'audioPlayer';
+  const hasAudioBlocks = isAudioPlayer && track.blocks.some(b => b.audioData);
 
-  const hasVisualParams = track.visualParams && Object.keys(track.visualParams).length > 0;
-  const hasInheritedVisualOutput = !track.visualInstrumentId &&
-    hasVisualParams &&
-    inheritedVisualInstrumentId &&
+  // Check if instrument has audio or visual capabilities
+  const hasAudio = instrument?.hasAudio && combinedOutput.events.length > 0;
+  const hasVisual = instrument?.hasVisual && combinedOutput.events.length > 0;
+
+  // Check for inherited visual with settings override
+  const hasSettings = track.instrumentSettings && Object.keys(track.instrumentSettings).length > 0;
+  const inheritedInstrument = inheritedInstrumentId ? getInstrument(inheritedInstrumentId) : undefined;
+  const hasInheritedVisualOutput = !track.instrumentId &&
+    hasSettings &&
+    inheritedInstrument?.hasVisual &&
     selfOutput.events.length > 0;
 
-  // Main output (audio and/or own visual)
-  if (hasAudioBlocks || hasAudioInstrument || hasVisualInstrument) {
+  // Main output (audio and/or visual)
+  if (hasAudioBlocks || hasAudio || hasVisual) {
     results.push({
       trackId: track.id,
       instrumentId: track.instrumentId,
-      visualInstrumentId: track.visualInstrumentId,
-      visualParams: track.visualParams,
+      instrumentSettings: track.instrumentSettings,
       output: combinedOutput,
     });
   }
 
-  // Inherited visual output (visual-only, using selfOutput)
+  // Inherited visual output (visual-only, using selfOutput with settings override)
   if (hasInheritedVisualOutput) {
     results.push({
       trackId: track.id,
-      instrumentId: undefined,
-      visualInstrumentId: inheritedVisualInstrumentId,
-      visualParams: track.visualParams,
+      instrumentId: inheritedInstrumentId,
+      instrumentSettings: track.instrumentSettings,
       output: selfOutput,
     });
   }
@@ -205,7 +208,7 @@ export function resolveTrack(
   project: Project,
   context: ProcessContext,
   parentOutput?: Output,
-  inheritedVisualInstrumentId?: VisualInstrumentId
+  inheritedInstrumentId?: string
 ): ResolvedTrack[] {
   const results: ResolvedTrack[] = [];
 
@@ -230,13 +233,15 @@ export function resolveTrack(
   );
 
   // Step 5: Build this track's resolved outputs
-  const trackOutputs = buildTrackOutputs(track, selfOutput, combinedOutput, inheritedVisualInstrumentId);
+  const trackOutputs = buildTrackOutputs(track, selfOutput, combinedOutput, inheritedInstrumentId);
   results.push(...trackOutputs);
 
   // Step 6: Process regular children recursively
-  const visualToInherit = track.visualInstrumentId || inheritedVisualInstrumentId;
+  // Inherit instrument if it has visual capabilities (for visual inheritance)
+  const instrument = track.instrumentId ? getInstrument(track.instrumentId) : undefined;
+  const instrumentToInherit = instrument?.hasVisual ? track.instrumentId : inheritedInstrumentId;
   for (const childTrack of regular) {
-    const childResults = resolveTrack(childTrack, project, enrichedContext, combinedOutput, visualToInherit);
+    const childResults = resolveTrack(childTrack, project, enrichedContext, combinedOutput, instrumentToInherit);
     results.push(...childResults);
   }
 

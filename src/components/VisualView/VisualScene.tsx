@@ -1,11 +1,8 @@
 'use client';
 
 import { OrbitControls } from '@react-three/drei';
-import { SilkSymmetry } from './instruments/SilkSymmetry';
-import { HexagonDots } from './instruments/HexagonDots';
-import { FractalTunnel } from './instruments/FractalTunnel';
-import { CircleGrid } from './instruments/CircleGrid';
 import { VisualTrackInfo } from './VisualView';
+import { getInstrument } from '@/instruments';
 
 interface VisualSceneProps {
   tracks: VisualTrackInfo[];
@@ -29,22 +26,16 @@ export function VisualScene({ tracks }: VisualSceneProps) {
       />
 
       {/* Render visual instruments - all centered, overlapping */}
-      {tracks.map((track) => (
-        <group key={track.id} position={[0, 0, 0]}>
-          {track.instrumentId === 'silkSymmetry' && (
-            <SilkSymmetry trackId={track.id} />
-          )}
-          {track.instrumentId === 'hexagonDots' && (
-            <HexagonDots trackId={track.id} />
-          )}
-          {track.instrumentId === 'fractalTunnel' && (
-            <FractalTunnel trackId={track.id} />
-          )}
-          {track.instrumentId === 'circleGrid' && (
-            <CircleGrid trackId={track.id} />
-          )}
-        </group>
-      ))}
+      {tracks.map((track) => {
+        const instrument = getInstrument(track.instrumentId);
+        if (!instrument?.VisualComponent) return null;
+        const Component = instrument.VisualComponent;
+        return (
+          <group key={track.id} position={[0, 0, 0]}>
+            <Component trackId={track.id} />
+          </group>
+        );
+      })}
     </>
   );
 }

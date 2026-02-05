@@ -5,6 +5,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useProjectStore } from '@/stores/projectStore';
 import { getVisualPlaybackEngine } from '@/core/visualPlayback';
+import { Instrument } from '../types';
 
 interface SilkSymmetryProps {
   trackId: string;
@@ -254,7 +255,7 @@ function renderVignette(ctx: CanvasRenderingContext2D, width: number, height: nu
   ctx.fillRect(0, 0, width, height);
 }
 
-export function SilkSymmetry({ trackId }: SilkSymmetryProps) {
+function SilkSymmetryVisual({ trackId }: SilkSymmetryProps) {
   const { viewport } = useThree();
   const bpm = useProjectStore((s) => s.project.bpm);
   const meshRef = useRef<THREE.Mesh>(null);
@@ -292,7 +293,6 @@ export function SilkSymmetry({ trackId }: SilkSymmetryProps) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Read state directly from engine (not via React state)
     const state = engineRef.current.getTrackState(trackId);
     const hasActiveNotes = state ? state.activeNotes.size > 0 : false;
     const spiralDirection = hasActiveNotes ? -1 : 1;
@@ -326,3 +326,26 @@ export function SilkSymmetry({ trackId }: SilkSymmetryProps) {
     </mesh>
   );
 }
+
+// Unified Instrument definition
+export const SilkSymmetry: Instrument = {
+  id: 'silkSymmetry',
+  name: 'Silk Symmetry',
+  description: 'Flowing silk-like patterns with radial symmetry - MIDI inverts spiral direction',
+  icon: '🌀',
+  color: '#8b5cf6',
+  hasAudio: false,
+  hasVisual: true,
+
+  defaultSettings: {
+    symmetryFolds: 8,
+    lineCount: 12,
+    glowIntensity: 0.7,
+  },
+
+  settingsSchema: {
+    glowIntensity: { type: 'number', label: 'Glow', min: 0, max: 1, step: 0.1, default: 0.7 },
+  },
+
+  VisualComponent: SilkSymmetryVisual,
+};

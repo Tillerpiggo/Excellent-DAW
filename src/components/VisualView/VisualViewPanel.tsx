@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { useProjectStore } from '@/stores/projectStore';
 import { useVisualPlayback } from '@/hooks/useVisualPlayback';
 import { VisualView } from './VisualView';
+import { getInstrument } from '@/instruments';
 
 export function VisualViewPanel() {
   const { project } = useProjectStore();
@@ -11,11 +12,15 @@ export function VisualViewPanel() {
   // Initialize visual playback hook
   useVisualPlayback();
 
-  // Find all tracks with visual instruments
+  // Find all tracks with visual instruments (instruments that have hasVisual: true)
   const visualTracks = useMemo(() => {
     return Object.values(project.tracks)
-      .filter((track) => track.visualInstrumentId && !track.muted)
-      .map((track) => ({ id: track.id, instrumentId: track.visualInstrumentId! }));
+      .filter((track) => {
+        if (!track.instrumentId || track.muted) return false;
+        const instrument = getInstrument(track.instrumentId);
+        return instrument?.hasVisual === true;
+      })
+      .map((track) => ({ id: track.id, instrumentId: track.instrumentId! }));
   }, [project.tracks]);
 
   if (visualTracks.length === 0) {

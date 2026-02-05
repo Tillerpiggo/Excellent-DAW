@@ -3,11 +3,10 @@
 import { Canvas } from '@react-three/fiber';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import { VisualScene } from './VisualScene';
-import { VisualInstrumentId } from '@/core/types';
 
 export interface VisualTrackInfo {
   id: string;
-  instrumentId: VisualInstrumentId;
+  instrumentId: string;
 }
 
 interface VisualViewProps {
