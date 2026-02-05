@@ -42,14 +42,12 @@ function VerticalZoomIcon() {
 }
 
 export function TimelineToolbar() {
-  const {
-    pixelsPerBeat,
-    setPixelsPerBeat,
-    trackHeightScale,
-    setTrackHeightScale,
-    timelineQuantize,
-    setTimelineQuantize,
-  } = useUIStore();
+  const pixelsPerBeat = useUIStore((state) => state.pixelsPerBeat);
+  const setPixelsPerBeat = useUIStore((state) => state.setPixelsPerBeat);
+  const trackHeightScale = useUIStore((state) => state.trackHeightScale);
+  const setTrackHeightScale = useUIStore((state) => state.setTrackHeightScale);
+  const timelineQuantize = useUIStore((state) => state.timelineQuantize);
+  const setTimelineQuantize = useUIStore((state) => state.setTimelineQuantize);
 
   return (
     <div className="flex items-center gap-4 px-3 py-1.5 bg-surface border-b border-border">

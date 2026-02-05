@@ -1176,13 +1176,17 @@ function TimelineScene({
     }
   });
 
-  const {
-    selectedBlockIds, selectBlock, selectBlocks, clearBlockSelection,
-    setIsScrubbing, setCurrentBeat,
-    loopStart, loopEnd, setLoopEnabled,
-    timelineQuantize
-  } = useUIStore();
-  const { updateBlock } = useProjectStore();
+  const selectedBlockIds = useUIStore((state) => state.selectedBlockIds);
+  const selectBlock = useUIStore((state) => state.selectBlock);
+  const selectBlocks = useUIStore((state) => state.selectBlocks);
+  const clearBlockSelection = useUIStore((state) => state.clearBlockSelection);
+  const setIsScrubbing = useUIStore((state) => state.setIsScrubbing);
+  const setCurrentBeat = useUIStore((state) => state.setCurrentBeat);
+  const loopStart = useUIStore((state) => state.loopStart);
+  const loopEnd = useUIStore((state) => state.loopEnd);
+  const setLoopEnabled = useUIStore((state) => state.setLoopEnabled);
+  const timelineQuantize = useUIStore((state) => state.timelineQuantize);
+  const updateBlock = useProjectStore((state) => state.updateBlock);
   const tracks = useProjectStore((state) => state.project.tracks);
   const { isPlaying, seekTo, setLoopRegion } = usePlayback();
 
@@ -1668,7 +1672,8 @@ export function TimelineCanvas({
     bar: number;
   } | null>(null);
 
-  const { addBlock, addTrack } = useProjectStore();
+  const addBlock = useProjectStore((state) => state.addBlock);
+  const addTrack = useProjectStore((state) => state.addTrack);
 
   // Only render Canvas on client side
   useEffect(() => {

@@ -11,7 +11,9 @@ interface TrackLabelsProps {
 }
 
 export function TrackLabels({ flatTracks }: TrackLabelsProps) {
-  const { dropTargetTrackId, dragState, trackHeightScale } = useUIStore();
+  const dropTargetTrackId = useUIStore((state) => state.dropTargetTrackId);
+  const dragState = useUIStore((state) => state.dragState);
+  const trackHeightScale = useUIStore((state) => state.trackHeightScale);
   const { handleDragOver, handleDragLeave, handleHierarchyDrop } = useDragDrop();
 
   const trackHeight = Math.round(64 * trackHeightScale);
@@ -59,8 +61,13 @@ export function TrackLabels({ flatTracks }: TrackLabelsProps) {
 // Simplified row without drag handle - display only
 function TrackLabelRow({ node, trackHeight }: { node: TrackNode; trackHeight: number }) {
   const { track, depth } = node;
-  const { updateTrack } = useProjectStore();
-  const { selectedTrackId, selectTrack, collapsedTrackIds, toggleTrackCollapsed, dropTargetTrackId, dragState } = useUIStore();
+  const updateTrack = useProjectStore((state) => state.updateTrack);
+  const selectedTrackId = useUIStore((state) => state.selectedTrackId);
+  const selectTrack = useUIStore((state) => state.selectTrack);
+  const collapsedTrackIds = useUIStore((state) => state.collapsedTrackIds);
+  const toggleTrackCollapsed = useUIStore((state) => state.toggleTrackCollapsed);
+  const dropTargetTrackId = useUIStore((state) => state.dropTargetTrackId);
+  const dragState = useUIStore((state) => state.dragState);
   const { handleDragOver, handleDragLeave, handleHierarchyDrop } = useDragDrop();
 
   const isSelected = selectedTrackId === track.id;
