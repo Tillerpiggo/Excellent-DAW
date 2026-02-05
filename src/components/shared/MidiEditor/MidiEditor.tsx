@@ -306,15 +306,16 @@ function NoteMesh({
         <SelectionRing x={x} y={y} w={w} h={h} />
       )}
 
-      {/* Hit area */}
+      {/* Hit area - z=1 ensures notes are clicked before background */}
       <mesh
-        position={[x + w / 2, -(y + h / 2), 0.5]}
+        position={[x + w / 2, -(y + h / 2), 1]}
         onPointerDown={(e) => {
           e.stopPropagation();
           onPointerDown(e, note);
         }}
       >
-        <planeGeometry args={[w, h]} />
+        {/* Slightly larger hit area for easier clicking */}
+        <planeGeometry args={[w + 4, h + 4]} />
         <meshBasicMaterial transparent opacity={0} />
       </mesh>
     </group>
@@ -406,9 +407,15 @@ function MidiScene({
 
   // Handle note pointer down
   const handleNotePointerDown = useCallback((e: ThreeEvent<PointerEvent>, note: MidiNote) => {
-    const point = e.point;
+    // Use screen coordinates for consistency with handleMove
+    const canvas = (e.nativeEvent.target as HTMLElement).closest('canvas');
+    if (!canvas) return;
 
-    if (e.shiftKey) {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.nativeEvent.clientX - rect.left;
+    const y = e.nativeEvent.clientY - rect.top;
+
+    if (e.nativeEvent.shiftKey) {
       setSelectedNoteIds(prev => {
         const next = new Set(prev);
         if (next.has(note.id)) next.delete(note.id);
@@ -421,10 +428,10 @@ function MidiScene({
 
     setDragState({
       type: 'moving',
-      startX: point.x,
-      startY: -point.y,
-      currentX: point.x,
-      currentY: -point.y,
+      startX: x,
+      startY: y,
+      currentX: x,
+      currentY: y,
       noteId: note.id,
       originalTime: note.time,
     });
@@ -432,9 +439,13 @@ function MidiScene({
 
   // Handle background click (for drawing new notes or marquee)
   const handleBackgroundPointerDown = useCallback((e: ThreeEvent<PointerEvent>) => {
-    const point = e.point;
-    const x = point.x;
-    const y = -point.y;
+    // Use screen coordinates for consistency with handleMove
+    const canvas = (e.nativeEvent.target as HTMLElement).closest('canvas');
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = e.nativeEvent.clientX - rect.left;
+    const y = e.nativeEvent.clientY - rect.top;
 
     if (x > labelWidth) {
       // Clicked on grid
@@ -457,7 +468,7 @@ function MidiScene({
           };
 
           setDrawingNote(newNote);
-          if (!e.shiftKey) {
+          if (!e.nativeEvent.shiftKey) {
             setSelectedNoteIds(new Set([newNote.id]));
           } else {
             setSelectedNoteIds(prev => new Set([...prev, newNote.id]));
@@ -474,7 +485,7 @@ function MidiScene({
         }
       } else {
         // Start marquee
-        if (!e.shiftKey) setSelectedNoteIds(new Set());
+        if (!e.nativeEvent.shiftKey) setSelectedNoteIds(new Set());
         setDragState({
           type: 'marquee',
           startX: x,
@@ -486,65 +497,13 @@ function MidiScene({
     }
   }, [labelWidth, rowHeight, rows, pixelsPerBeat, quantize, totalBeats]);
 
-  // Handle pointer missed (clicks on canvas background - outside Three.js meshes)
+  // Handle pointer missed (clicks outside all Three.js meshes - just clear selection)
   const handlePointerMissed = useCallback((e: MouseEvent) => {
     if (dragState.type !== 'none') return;
-
-    const canvas = (e.target as HTMLElement).closest('canvas');
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    if (x > labelWidth) {
-      const gridX = x - labelWidth;
-      const rowIndex = Math.floor(y / rowHeight);
-
-      if (rowIndex >= 0 && rowIndex < rows.length) {
-        // Start drawing a new note
-        const pitch = rows[rowIndex].pitch;
-        const rawTime = gridX / pixelsPerBeat;
-        const time = Math.round(rawTime / quantize) * quantize;
-
-        if (time >= 0 && time < totalBeats) {
-          const newNote: MidiNote = {
-            id: generateId(),
-            pitch,
-            time,
-            duration: quantize,
-            velocity: 100,
-          };
-
-          setDrawingNote(newNote);
-          if (!e.shiftKey) {
-            setSelectedNoteIds(new Set([newNote.id]));
-          } else {
-            setSelectedNoteIds(prev => new Set([...prev, newNote.id]));
-          }
-
-          setDragState({
-            type: 'drawing',
-            startX: x,
-            startY: y,
-            currentX: x,
-            currentY: y,
-            pitch,
-          });
-        }
-      } else {
-        // Start marquee
-        if (!e.shiftKey) setSelectedNoteIds(new Set());
-        setDragState({
-          type: 'marquee',
-          startX: x,
-          startY: y,
-          currentX: x,
-          currentY: y,
-        });
-      }
+    if (!e.shiftKey) {
+      setSelectedNoteIds(new Set());
     }
-  }, [dragState.type, labelWidth, rowHeight, rows, pixelsPerBeat, quantize, totalBeats]);
+  }, [dragState.type]);
 
   // Get notes within marquee
   const getNotesInMarquee = useCallback((x1: number, y1: number, x2: number, y2: number): string[] => {
@@ -750,9 +709,9 @@ function MidiScene({
         />
       )}
 
-      {/* Grid hit area for new note drawing */}
+      {/* Grid hit area for new note drawing - z=0 so notes (z=1) are clicked first */}
       <mesh
-        position={[(labelWidth + canvasWidth) / 2, -canvasHeight / 2, 0.5]}
+        position={[(labelWidth + canvasWidth) / 2, -canvasHeight / 2, 0]}
         onPointerDown={handleBackgroundPointerDown}
         onPointerMissed={handlePointerMissed}
       >
