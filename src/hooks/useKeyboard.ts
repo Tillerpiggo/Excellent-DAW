@@ -191,11 +191,9 @@ export function useKeyboard() {
             e.stopPropagation();
             // Get fresh state to avoid stale closure
             const currentSelectedTrackIds = useUIStore.getState().selectedTrackIds;
-            console.log('Cmd+Shift+G pressed, selectedTrackIds:', Array.from(currentSelectedTrackIds));
             if (currentSelectedTrackIds.size >= 2) {
               const trackIdsToGroup = Array.from(currentSelectedTrackIds);
               const groupId = groupTracks(trackIdsToGroup);
-              console.log('groupTracks returned:', groupId);
               if (groupId) {
                 // Select the new group
                 selectTrack(groupId);

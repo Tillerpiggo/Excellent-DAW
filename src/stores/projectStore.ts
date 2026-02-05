@@ -250,7 +250,6 @@ export const useProjectStore = create<ProjectState>()(
     },
 
     groupTracks: (trackIds: string[]) => {
-      console.log('groupTracks called with:', trackIds);
       if (trackIds.length < 2) return null;
 
       const groupId = generateId();
@@ -258,7 +257,6 @@ export const useProjectStore = create<ProjectState>()(
       set((state) => {
         // Verify all tracks exist
         const tracks = trackIds.map((id) => state.project.tracks[id]).filter(Boolean);
-        console.log('Found tracks:', tracks.length, 'of', trackIds.length);
         if (tracks.length !== trackIds.length) return;
 
         // Create the group track at root level (no parent)
@@ -296,8 +294,6 @@ export const useProjectStore = create<ProjectState>()(
 
         // Add group to root tracks
         state.project.rootTracks.push(groupId);
-
-        console.log('Group created:', groupId);
       });
 
       return groupId;

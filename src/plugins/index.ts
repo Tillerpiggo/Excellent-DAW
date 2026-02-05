@@ -8,6 +8,7 @@ import { RadialSymmetryPlugin } from './shaders/radialSymmetry';
 import { PixelatePlugin } from './shaders/pixelate';
 import { ChromaticAberrationPlugin } from './shaders/chromaticAberration';
 import { EchoPlugin } from './clones/echo';
+import { TilePlugin } from './clones/tile';
 
 // Plugin registry - populated with all plugins
 export const VISUAL_PLUGINS: Record<string, VisualPlugin> = {
@@ -21,6 +22,7 @@ export const VISUAL_PLUGINS: Record<string, VisualPlugin> = {
   [ChromaticAberrationPlugin.id]: ChromaticAberrationPlugin,
   // Clones
   [EchoPlugin.id]: EchoPlugin,
+  [TilePlugin.id]: TilePlugin,
 };
 
 export function getPlugin(id: string): VisualPlugin | undefined {

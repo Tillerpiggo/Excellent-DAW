@@ -59,6 +59,7 @@ export function ShaderChain({ inputTexture, plugins, size = 1024 }: ShaderChainP
       const uniforms: Record<string, THREE.IUniform> = {
         tDiffuse: { value: null },
         resolution: { value: new THREE.Vector2(size, size) },
+        time: { value: 0 },
       };
 
       // Add settings as uniforms
@@ -127,7 +128,16 @@ export function ShaderChain({ inputTexture, plugins, size = 1024 }: ShaderChainP
     });
   }, []);
 
-  useFrame(() => {
+  useFrame((state) => {
+    const time = state.clock.elapsedTime;
+
+    // Update time uniform for all passes
+    passes.forEach((pass) => {
+      if (pass.material.uniforms.time) {
+        pass.material.uniforms.time.value = time;
+      }
+    });
+
     if (passes.length === 0) {
       // No shader plugins - just pass through input
       outputMaterial.uniforms.tDiffuse.value = inputTexture;
