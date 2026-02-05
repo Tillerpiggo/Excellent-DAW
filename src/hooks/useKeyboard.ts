@@ -16,9 +16,10 @@ export function useKeyboard() {
     clearBlockSelection,
     setPixelsPerBeat,
     pixelsPerBeat,
+    currentBeat,
   } = useUIStore();
 
-  const { deleteTrack, deleteBlock } = useProjectStore();
+  const { deleteTrack, deleteBlock, splitBlockAtPosition } = useProjectStore();
   const project = useProjectStore((state) => state.project);
 
   const handleKeyDown = useCallback(
@@ -136,6 +137,51 @@ export function useKeyboard() {
             useHistoryStore.getState().redo();
           }
           break;
+
+        case 'KeyT':
+          // Cmd/Ctrl + T: Split selected blocks at playhead
+          if (e.metaKey || e.ctrlKey) {
+            e.preventDefault();
+            if (selectedBlockIds.size > 0) {
+              const tracks = Object.values(project.tracks);
+              const beatsPerBar = project.beatsPerBar;
+              const playheadBar = currentBeat / beatsPerBar;
+
+              // Track new block IDs for selection
+              const newBlockIds: string[] = [];
+
+              selectedBlockIds.forEach((blockId) => {
+                for (const track of tracks) {
+                  const block = track.blocks.find((b) => b.id === blockId);
+                  if (block) {
+                    // Check if playhead is inside this block
+                    const blockEnd = block.startBar + block.durationBars;
+                    if (playheadBar > block.startBar && playheadBar < blockEnd) {
+                      const newBlockId = splitBlockAtPosition(
+                        track.id,
+                        blockId,
+                        playheadBar,
+                        beatsPerBar
+                      );
+                      if (newBlockId) {
+                        newBlockIds.push(newBlockId);
+                      }
+                    }
+                    break;
+                  }
+                }
+              });
+
+              // Add new blocks to selection
+              if (newBlockIds.length > 0) {
+                useUIStore.getState().selectBlocks([
+                  ...Array.from(selectedBlockIds),
+                  ...newBlockIds,
+                ]);
+              }
+            }
+          }
+          break;
       }
     },
     [
@@ -144,11 +190,14 @@ export function useKeyboard() {
       selectedBlockIds,
       deleteTrack,
       deleteBlock,
+      splitBlockAtPosition,
       selectTrack,
       clearBlockSelection,
       setPixelsPerBeat,
       pixelsPerBeat,
+      currentBeat,
       project.tracks,
+      project.beatsPerBar,
     ]
   );
 

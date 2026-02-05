@@ -24,6 +24,7 @@ interface ProjectState {
   updateBlock: (trackId: string, blockId: string, updates: Partial<Block>) => void;
   deleteBlock: (trackId: string, blockId: string) => void;
   moveBlock: (sourceTrackId: string, blockId: string, targetTrackId: string) => void;
+  splitBlockAtPosition: (trackId: string, blockId: string, splitBar: number, beatsPerBar: number) => string | null;
   updateBlockChords: (trackId: string, blockId: string, chords: ChordData[]) => void;
   updateBlockDrums: (trackId: string, blockId: string, events: Event[]) => void;
 
@@ -290,6 +291,126 @@ export const useProjectStore = create<ProjectState>()(
       });
     },
 
+    splitBlockAtPosition: (trackId: string, blockId: string, splitBar: number, beatsPerBar: number) => {
+      const newBlockId = generateId();
+      let success = false;
+
+      set((state) => {
+        const track = state.project.tracks[trackId];
+        if (!track) return;
+
+        const blockIndex = track.blocks.findIndex(b => b.id === blockId);
+        if (blockIndex === -1) return;
+
+        const block = track.blocks[blockIndex];
+        const blockEndBar = block.startBar + block.durationBars;
+
+        // Don't split if playhead is at or outside block boundaries
+        // Use small epsilon to avoid floating point issues
+        const epsilon = 0.001;
+        if (splitBar <= block.startBar + epsilon || splitBar >= blockEndBar - epsilon) {
+          return;
+        }
+
+        const splitBeat = (splitBar - block.startBar) * beatsPerBar;
+        const firstDuration = splitBar - block.startBar;
+        const secondDuration = blockEndBar - splitBar;
+
+        // For looped blocks, we need to "bake in" the pattern
+        // Calculate the pattern length in beats
+        let patternBeats = block.durationBars * beatsPerBar;
+        if (block.loop && block.streams[0]?.events.length > 0) {
+          const maxEventEnd = Math.max(
+            ...block.streams[0].events.map(e => e.startTimeInBeats + e.duration)
+          );
+          patternBeats = maxEventEnd;
+        }
+
+        // Expand looped events to full duration, then split
+        const expandedEvents: Event[] = [];
+        const totalBeats = block.durationBars * beatsPerBar;
+
+        if (block.streams[0]?.events) {
+          if (block.loop && patternBeats > 0) {
+            // Expand loop iterations
+            const iterations = Math.ceil(totalBeats / patternBeats);
+            for (let i = 0; i < iterations; i++) {
+              const offset = i * patternBeats;
+              for (const event of block.streams[0].events) {
+                const expandedStart = event.startTimeInBeats + offset;
+                // Only include if the event starts within the block duration
+                if (expandedStart < totalBeats) {
+                  expandedEvents.push({
+                    ...event,
+                    startTimeInBeats: expandedStart,
+                    // Trim duration if it extends past block end
+                    duration: Math.min(event.duration, totalBeats - expandedStart),
+                  });
+                }
+              }
+            }
+          } else {
+            // Not looped - just copy events
+            expandedEvents.push(...block.streams[0].events);
+          }
+        }
+
+        // Split events: first block gets events before split point
+        const firstBlockEvents: Event[] = [];
+        const secondBlockEvents: Event[] = [];
+
+        for (const event of expandedEvents) {
+          const eventEnd = event.startTimeInBeats + event.duration;
+
+          if (event.startTimeInBeats < splitBeat) {
+            // Event starts before split
+            if (eventEnd <= splitBeat) {
+              // Event fully in first block
+              firstBlockEvents.push({ ...event });
+            } else {
+              // Event spans split - truncate to first block
+              firstBlockEvents.push({
+                ...event,
+                duration: splitBeat - event.startTimeInBeats,
+              });
+            }
+          } else {
+            // Event starts at or after split - goes to second block
+            // Adjust timing relative to second block's start
+            secondBlockEvents.push({
+              ...event,
+              startTimeInBeats: event.startTimeInBeats - splitBeat,
+            });
+          }
+        }
+
+        // Update first block
+        block.durationBars = firstDuration;
+        block.loop = false; // After baking in, no longer looped
+        block.streams = [{ events: firstBlockEvents }];
+
+        // Create second block
+        const secondBlock: Block = {
+          id: newBlockId,
+          startBar: splitBar,
+          durationBars: secondDuration,
+          loop: false,
+          streams: [{ events: secondBlockEvents }],
+        };
+
+        // Copy audio data if present (with offset adjustment would be needed for full support)
+        if (block.audioData) {
+          secondBlock.audioData = { ...block.audioData };
+        }
+
+        // Insert second block right after the first
+        track.blocks.splice(blockIndex + 1, 0, secondBlock);
+        success = true;
+      });
+
+      return success ? newBlockId : null;
+    },
+
     updateBlockChords: (trackId: string, blockId: string, chords: ChordData[]) => {
       set((state) => {
         const track = state.project.tracks[trackId];
@@ -327,7 +448,7 @@ export const useProjectStore = create<ProjectState>()(
 
     setTotalBars: (bars: number) => {
       set((state) => {
-        state.project.totalBars = Math.max(1, Math.min(256, bars));
+        state.project.totalBars = Math.max(1, Math.min(512, bars));
       });
     },
 

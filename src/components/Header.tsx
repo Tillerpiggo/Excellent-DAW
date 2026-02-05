@@ -221,9 +221,9 @@ export function Header() {
               if (isNaN(val) || val < 1) {
                 setTotalBars(1);
                 setBarsInput('1');
-              } else if (val > 64) {
-                setTotalBars(64);
-                setBarsInput('64');
+              } else if (val > 512) {
+                setTotalBars(512);
+                setBarsInput('512');
               } else {
                 setTotalBars(val);
               }
