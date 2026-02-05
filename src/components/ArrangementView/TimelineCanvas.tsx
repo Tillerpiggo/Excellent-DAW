@@ -471,7 +471,7 @@ function BlockMesh({
 
       {/* Track name and loop indicator using Html overlay */}
       <Html
-        position={[blockLeft + 4, -(blockTop + 6), 0.1]}
+        position={[blockLeft + 4, -(blockTop + 10), 0.1]}
         style={{
           width: contentAreaWidth - 16,
           pointerEvents: 'none',
@@ -488,6 +488,7 @@ function BlockMesh({
             fontWeight: 500,
             whiteSpace: 'nowrap',
             overflow: 'hidden',
+            transform: 'translateY(-50%)',
           }}
         >
           <span
@@ -500,7 +501,7 @@ function BlockMesh({
             {track.name}
           </span>
           {block.loop && (
-            <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '10px', marginLeft: '4px' }}>
+            <span style={{ color: isSelected ? baseColor : 'rgba(255,255,255,0.7)', fontSize: '10px', marginLeft: '4px', opacity: isSelected ? 0.7 : 1 }}>
               ⟳
             </span>
           )}
