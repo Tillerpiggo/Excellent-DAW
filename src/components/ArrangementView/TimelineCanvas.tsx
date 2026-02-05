@@ -1187,6 +1187,7 @@ function TimelineScene({
   const setLoopEnabled = useUIStore((state) => state.setLoopEnabled);
   const timelineQuantize = useUIStore((state) => state.timelineQuantize);
   const updateBlock = useProjectStore((state) => state.updateBlock);
+  const addBlock = useProjectStore((state) => state.addBlock);
   const tracks = useProjectStore((state) => state.project.tracks);
   const { isPlaying, seekTo, setLoopRegion } = usePlayback();
 
@@ -1209,6 +1210,7 @@ function TimelineScene({
     track?: Track;
     trackIndex?: number;
     originalPositions?: Map<string, { startBar: number; durationBars: number; trackId: string }>;
+    isCopying?: boolean;
   }>({
     type: 'none',
     startX: 0,
@@ -1229,6 +1231,7 @@ function TimelineScene({
     zone: string
   ) => {
     const point = e.point;
+    const isAltHeld = e.altKey;
 
     // Handle selection
     if (e.shiftKey) {
@@ -1243,34 +1246,59 @@ function TimelineScene({
       selectBlock(block.id, track.id, false);
     }
 
-    // Capture original positions
-    const originalPositions = new Map<string, { startBar: number; durationBars: number; trackId: string }>();
-    for (const blockId of selectedBlockIds) {
-      const trackId = findTrackForBlock(tracks, blockId);
-      if (trackId) {
-        const foundBlock = tracks[trackId].blocks.find(b => b.id === blockId);
-        if (foundBlock) {
-          originalPositions.set(blockId, {
-            startBar: foundBlock.startBar,
-            durationBars: foundBlock.durationBars,
-            trackId,
-          });
-        }
-      }
-    }
-    if (!originalPositions.has(block.id)) {
-      originalPositions.set(block.id, {
-        startBar: block.startBar,
-        durationBars: block.durationBars,
-        trackId: track.id,
-      });
-    }
-
     let dragType: typeof dragState.type = 'none';
     if (zone === 'left-edge') dragType = 'resize-left';
     else if (zone === 'right-loop') dragType = 'resize-right-loop';
     else if (zone === 'right-extend') dragType = 'resize-right-extend';
     else dragType = 'drag';
+
+    // Determine which blocks to work with (current selection or just clicked block)
+    const blocksToProcess = selectedBlockIds.has(block.id) ? selectedBlockIds : new Set([block.id]);
+
+    // Opt/Alt + drag = copy blocks
+    const shouldCopy = isAltHeld && dragType === 'drag';
+
+    // Capture original positions (and create copies if copying)
+    const originalPositions = new Map<string, { startBar: number; durationBars: number; trackId: string }>();
+    const newBlockIds: string[] = [];
+
+    for (const blockId of blocksToProcess) {
+      const trackId = findTrackForBlock(tracks, blockId);
+      if (trackId) {
+        const foundBlock = tracks[trackId].blocks.find(b => b.id === blockId);
+        if (foundBlock) {
+          if (shouldCopy) {
+            // Create a copy of the block
+            const newBlockId = addBlock(trackId, {
+              startBar: foundBlock.startBar,
+              durationBars: foundBlock.durationBars,
+              loop: foundBlock.loop,
+              streams: foundBlock.streams?.map(s => ({
+                events: s.events.map(ev => ({ ...ev })),
+              })),
+              audioData: foundBlock.audioData ? { ...foundBlock.audioData } : undefined,
+            });
+            originalPositions.set(newBlockId, {
+              startBar: foundBlock.startBar,
+              durationBars: foundBlock.durationBars,
+              trackId,
+            });
+            newBlockIds.push(newBlockId);
+          } else {
+            originalPositions.set(blockId, {
+              startBar: foundBlock.startBar,
+              durationBars: foundBlock.durationBars,
+              trackId,
+            });
+          }
+        }
+      }
+    }
+
+    // If we created copies, select them instead
+    if (shouldCopy && newBlockIds.length > 0) {
+      selectBlocks(newBlockIds);
+    }
 
     setDragState({
       type: dragType,
@@ -1282,8 +1310,9 @@ function TimelineScene({
       track,
       trackIndex,
       originalPositions,
+      isCopying: shouldCopy,
     });
-  }, [selectedBlockIds, selectBlock, selectBlocks, tracks]);
+  }, [selectedBlockIds, selectBlock, selectBlocks, tracks, addBlock]);
 
   const handleBackgroundPointerDown = useCallback((e: ThreeEvent<PointerEvent>) => {
     if (dragState.type !== 'none') return;

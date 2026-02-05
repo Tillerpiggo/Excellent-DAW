@@ -10,6 +10,39 @@ interface CircleGridProps {
   trackId: string;
 }
 
+// Shape types
+type ShapeType = 'circles' | 'platonic';
+const SHAPE_OPTIONS: ShapeType[] = ['circles', 'platonic'];
+
+// Platonic solid types
+type SolidType = 'tetrahedron' | 'cube' | 'octahedron' | 'dodecahedron' | 'icosahedron';
+const SOLID_OPTIONS: SolidType[] = ['tetrahedron', 'cube', 'octahedron', 'dodecahedron', 'icosahedron'];
+
+// Create edge geometry for platonic solids
+function createSolidEdges(type: SolidType, radius: number): THREE.BufferGeometry {
+  let geometry: THREE.BufferGeometry;
+
+  switch (type) {
+    case 'tetrahedron':
+      geometry = new THREE.TetrahedronGeometry(radius);
+      break;
+    case 'cube':
+      geometry = new THREE.BoxGeometry(radius * 1.4, radius * 1.4, radius * 1.4);
+      break;
+    case 'octahedron':
+      geometry = new THREE.OctahedronGeometry(radius);
+      break;
+    case 'dodecahedron':
+      geometry = new THREE.DodecahedronGeometry(radius);
+      break;
+    case 'icosahedron':
+      geometry = new THREE.IcosahedronGeometry(radius);
+      break;
+  }
+
+  return new THREE.EdgesGeometry(geometry);
+}
+
 // Layout generator functions - return normalized positions [-1, 1]
 type LayoutFn = (index: number, total: number, rows: number, cols: number) => { x: number; y: number };
 
@@ -193,7 +226,129 @@ const toggleModes: Record<string, ToggleFn> = {
 
 const TOGGLE_OPTIONS = Object.keys(toggleModes);
 
-function CircleGridVisual({ trackId }: CircleGridProps) {
+// Platonic Solids Visual Component
+function PlatonicSolidsVisual({ trackId }: CircleGridProps) {
+  const groupRef = useRef<THREE.Group>(null);
+  const engineRef = useRef(getVisualPlaybackEngine());
+  const timeRef = useRef(0);
+  const linesRef = useRef<THREE.LineSegments[]>([]);
+  const materialsRef = useRef<THREE.LineBasicMaterial[]>([]);
+
+  // Get current params
+  const getParams = () => {
+    const state = engineRef.current.getTrackState(trackId);
+    return state?.params ?? {};
+  };
+
+  const params = getParams();
+  const solidType = (params.solidType as SolidType) ?? 'icosahedron';
+  const layers = (params.concentricLayers as number) ?? 5;
+  const baseSize = (params.platonicSize as number) ?? 3;
+
+  // Create line geometries for each concentric layer
+  const lineData = useMemo(() => {
+    const data: { geometry: THREE.BufferGeometry; scale: number }[] = [];
+
+    for (let i = 0; i < layers; i++) {
+      // Scale from innermost to outermost
+      const scale = ((i + 1) / layers) * baseSize;
+      const geometry = createSolidEdges(solidType, 1);
+      data.push({ geometry, scale });
+    }
+
+    return data;
+  }, [solidType, layers, baseSize]);
+
+  // Set up materials and lines
+  useEffect(() => {
+    if (!groupRef.current) return;
+
+    // Clear existing
+    linesRef.current.forEach(line => groupRef.current?.remove(line));
+    linesRef.current = [];
+    materialsRef.current = [];
+
+    // Create new lines for each layer
+    lineData.forEach(({ geometry, scale }) => {
+      const material = new THREE.LineBasicMaterial({
+        color: 0x00ffff,
+        transparent: true,
+        opacity: 0.8,
+        linewidth: 1, // Note: linewidth > 1 only works on some platforms
+      });
+
+      const line = new THREE.LineSegments(geometry, material);
+      line.scale.setScalar(scale);
+      groupRef.current?.add(line);
+      linesRef.current.push(line);
+      materialsRef.current.push(material);
+    });
+
+    return () => {
+      linesRef.current.forEach(line => {
+        line.geometry.dispose();
+        (line.material as THREE.Material).dispose();
+      });
+    };
+  }, [lineData]);
+
+  useFrame((_, delta) => {
+    if (!groupRef.current) return;
+
+    const state = engineRef.current.getTrackState(trackId);
+    const params = state?.params ?? {};
+    const noteOnCount = state?.noteOnCount ?? 0;
+
+    // Read params
+    const rotationSpeed = (params.rotationSpeed as number) ?? 0.3;
+    const baseHue = (params.baseHue as number) ?? 0.55;
+    const hueRange = (params.hueRange as number) ?? 0.2;
+    const toggleModeName = (params.toggleMode as string) ?? 'none';
+    const layers = (params.concentricLayers as number) ?? 5;
+
+    timeRef.current += delta;
+    const time = timeRef.current;
+
+    // Rotate the whole group
+    groupRef.current.rotation.x = time * rotationSpeed * 0.5;
+    groupRef.current.rotation.y = time * rotationSpeed;
+    groupRef.current.rotation.z = time * rotationSpeed * 0.3;
+
+    // Update each layer
+    const toggleFn = toggleModes[toggleModeName] ?? toggleModes.none;
+    const color = new THREE.Color();
+
+    linesRef.current.forEach((line, i) => {
+      const material = materialsRef.current[i];
+      if (!material) return;
+
+      // Check visibility based on toggle mode
+      const isVisible = toggleFn(i, layers, noteOnCount);
+      line.visible = isVisible;
+
+      if (isVisible) {
+        // Color varies by layer and time
+        const layerRatio = i / layers;
+        const hue = (baseHue + layerRatio * hueRange + time * 0.1) % 1;
+        color.setHSL(hue, 0.9, 0.6);
+        material.color = color;
+
+        // Pulse opacity based on note events
+        const pulseFactor = 0.7 + 0.3 * Math.sin(time * 3 + i);
+        material.opacity = pulseFactor;
+
+        // Slight individual rotation for each layer
+        line.rotation.x = time * (0.1 + i * 0.02);
+        line.rotation.y = time * (0.15 + i * 0.015);
+      }
+    });
+  });
+
+  return <group ref={groupRef} position={[0, 0, -3]} />;
+}
+
+// Circles Visual Component (original implementation)
+function CirclesVisual({ trackId }: CircleGridProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const engineRef = useRef(getVisualPlaybackEngine());
   const timeRef = useRef(0);
@@ -307,6 +462,25 @@ function CircleGridVisual({ trackId }: CircleGridProps) {
   );
 }
 
+// Main wrapper that switches between shapes
+function CircleGridVisual({ trackId }: CircleGridProps) {
+  const engineRef = useRef(getVisualPlaybackEngine());
+
+  const getParams = () => {
+    const state = engineRef.current.getTrackState(trackId);
+    return state?.params ?? {};
+  };
+
+  const params = getParams();
+  const shape = (params.shape as ShapeType) ?? 'circles';
+
+  if (shape === 'platonic') {
+    return <PlatonicSolidsVisual trackId={trackId} />;
+  }
+
+  return <CirclesVisual trackId={trackId} />;
+}
+
 // Unified Instrument definition
 export const CircleGrid: Instrument = {
   id: 'circleGrid',
@@ -319,11 +493,18 @@ export const CircleGrid: Instrument = {
   editorType: 'generic',
 
   defaultSettings: {
+    shape: 'circles',
+    // Circles settings
     rows: 2,
     cols: 2,
     spacing: 1.5,
     dotSize: 1,
     layout: 'grid',
+    // Platonic settings
+    solidType: 'icosahedron',
+    concentricLayers: 5,
+    platonicSize: 3,
+    // Shared settings
     toggleMode: 'cycle',
     baseHue: 0.55,
     hueRange: 0.2,
@@ -331,6 +512,13 @@ export const CircleGrid: Instrument = {
   },
 
   settingsSchema: {
+    shape: {
+      type: 'select',
+      label: 'Shape',
+      options: SHAPE_OPTIONS.map(s => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) })),
+      default: 'circles'
+    },
+    // Circles settings
     rows: { type: 'number', label: 'Rows', min: 1, max: 32, step: 1, default: 2 },
     cols: { type: 'number', label: 'Columns', min: 1, max: 32, step: 1, default: 2 },
     spacing: { type: 'number', label: 'Spacing', min: 0.1, max: 4, step: 0.1, default: 1.5 },
@@ -341,6 +529,16 @@ export const CircleGrid: Instrument = {
       options: LAYOUT_OPTIONS.map(l => ({ value: l, label: l.charAt(0).toUpperCase() + l.slice(1) })),
       default: 'grid'
     },
+    // Platonic settings
+    solidType: {
+      type: 'select',
+      label: 'Solid Type',
+      options: SOLID_OPTIONS.map(s => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) })),
+      default: 'icosahedron'
+    },
+    concentricLayers: { type: 'number', label: 'Layers', min: 1, max: 10, step: 1, default: 5 },
+    platonicSize: { type: 'number', label: 'Size', min: 1, max: 8, step: 0.5, default: 3 },
+    // Shared settings
     toggleMode: {
       type: 'select',
       label: 'Toggle Mode',
@@ -349,7 +547,7 @@ export const CircleGrid: Instrument = {
     },
     baseHue: { type: 'number', label: 'Base Hue', min: 0, max: 1, step: 0.05, default: 0.55 },
     hueRange: { type: 'number', label: 'Hue Range', min: 0, max: 1, step: 0.05, default: 0.2 },
-    rotationSpeed: { type: 'number', label: 'Rotation Speed', min: 0, max: 2, step: 0.1, default: 0 },
+    rotationSpeed: { type: 'number', label: 'Rotation Speed', min: 0, max: 2, step: 0.1, default: 0.3 },
   },
 
   VisualComponent: CircleGridVisual,

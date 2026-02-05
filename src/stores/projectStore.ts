@@ -311,54 +311,37 @@ export const useProjectStore = create<ProjectState>()(
           return;
         }
 
-        const splitBeat = (splitBar - block.startBar) * beatsPerBar;
         const firstDuration = splitBar - block.startBar;
         const secondDuration = blockEndBar - splitBar;
 
-        // For looped blocks, we need to "bake in" the pattern
-        // Calculate the pattern length in beats
-        let patternBeats = block.durationBars * beatsPerBar;
-        if (block.loop && block.streams[0]?.events.length > 0) {
-          const maxEventEnd = Math.max(
-            ...block.streams[0].events.map(e => e.startTimeInBeats + e.duration)
-          );
-          patternBeats = maxEventEnd;
+        // For looped MIDI blocks, keep both halves looped with the same events
+        // The resolution code handles expanding the loop during playback
+        if (block.loop && !block.audioData) {
+          // Simply split the duration - events stay the same, loop continues
+          block.durationBars = firstDuration;
+          // block.loop stays true, block.streams stay the same
+
+          const secondBlock: Block = {
+            id: newBlockId,
+            startBar: splitBar,
+            durationBars: secondDuration,
+            loop: true,
+            streams: block.streams.map(s => ({ events: s.events.map(e => ({ ...e })) })),
+          };
+
+          track.blocks.splice(blockIndex + 1, 0, secondBlock);
+          success = true;
+          return;
         }
 
-        // Expand looped events to full duration, then split
-        const expandedEvents: Event[] = [];
-        const totalBeats = block.durationBars * beatsPerBar;
+        // For non-looped blocks or audio blocks, split the events
+        const splitBeat = (splitBar - block.startBar) * beatsPerBar;
+        const blockEvents = block.streams[0]?.events || [];
 
-        if (block.streams[0]?.events) {
-          if (block.loop && patternBeats > 0) {
-            // Expand loop iterations
-            const iterations = Math.ceil(totalBeats / patternBeats);
-            for (let i = 0; i < iterations; i++) {
-              const offset = i * patternBeats;
-              for (const event of block.streams[0].events) {
-                const expandedStart = event.startTimeInBeats + offset;
-                // Only include if the event starts within the block duration
-                if (expandedStart < totalBeats) {
-                  expandedEvents.push({
-                    ...event,
-                    startTimeInBeats: expandedStart,
-                    // Trim duration if it extends past block end
-                    duration: Math.min(event.duration, totalBeats - expandedStart),
-                  });
-                }
-              }
-            }
-          } else {
-            // Not looped - just copy events
-            expandedEvents.push(...block.streams[0].events);
-          }
-        }
-
-        // Split events: first block gets events before split point
         const firstBlockEvents: Event[] = [];
         const secondBlockEvents: Event[] = [];
 
-        for (const event of expandedEvents) {
+        for (const event of blockEvents) {
           const eventEnd = event.startTimeInBeats + event.duration;
 
           if (event.startTimeInBeats < splitBeat) {
@@ -385,7 +368,6 @@ export const useProjectStore = create<ProjectState>()(
 
         // Update first block
         block.durationBars = firstDuration;
-        block.loop = false; // After baking in, no longer looped
         block.streams = [{ events: firstBlockEvents }];
 
         // Create second block
