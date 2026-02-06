@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState, RefObject } from 'react';
+import React, { Component, useCallback, useEffect, useMemo, useRef, useState, RefObject } from 'react';
 import { Canvas, ThreeEvent, useFrame, useThree } from '@react-three/fiber';
 import { OrthographicCamera, Text } from '@react-three/drei';
 import * as THREE from 'three';
@@ -12,6 +12,60 @@ import { usePlayback } from '@/hooks/usePlayback';
 import { useDragDrop } from '@/hooks/useDragDrop';
 import { isAudioFile } from '@/core/audio';
 import { INSTRUMENT_COLORS, TRACK_TYPE_COLORS, darken, tintWhite } from '@/utils/colors';
+
+// Error boundary to catch R3F/Three.js crashes and allow recovery
+interface CanvasErrorBoundaryProps {
+  children: React.ReactNode;
+  width: number;
+  height: number;
+}
+
+interface CanvasErrorBoundaryState {
+  hasError: boolean;
+  errorCount: number;
+}
+
+class CanvasErrorBoundary extends Component<CanvasErrorBoundaryProps, CanvasErrorBoundaryState> {
+  state: CanvasErrorBoundaryState = { hasError: false, errorCount: 0 };
+
+  static getDerivedStateFromError(): Partial<CanvasErrorBoundaryState> {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error) {
+    console.warn('[TimelineCanvas] R3F error caught, will retry:', error.message);
+
+    // Auto-retry after a short delay (handles transient WebGL issues)
+    const { errorCount } = this.state;
+    if (errorCount < 3) {
+      setTimeout(() => {
+        this.setState(prev => ({ hasError: false, errorCount: prev.errorCount + 1 }));
+      }, 100 * (errorCount + 1));
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      if (this.state.errorCount >= 3) {
+        return (
+          <div
+            style={{ width: this.props.width, height: this.props.height }}
+            className="flex items-center justify-center"
+          >
+            <button
+              onClick={() => this.setState({ hasError: false, errorCount: 0 })}
+              className="px-4 py-2 text-sm rounded bg-muted/50 text-muted-foreground hover:bg-muted/80 transition-colors"
+            >
+              Timeline crashed — click to reload
+            </button>
+          </div>
+        );
+      }
+      return null; // Brief blank while auto-retrying
+    }
+    return this.props.children;
+  }
+}
 
 // Ruler height constant - used for positioning content below the ruler
 const RULER_HEIGHT = 48;
@@ -38,10 +92,27 @@ function findTrackForBlock(tracks: Record<string, Track>, blockId: string): stri
 }
 
 // Helper to calculate pattern bars for a block
+// Safe min/max that avoids stack overflow from spreading large arrays
+function safeMax(arr: number[], initial: number): number {
+  let max = initial;
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i] > max) max = arr[i];
+  }
+  return max;
+}
+
+function safeMin(arr: number[], initial: number): number {
+  let min = initial;
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i] < min) min = arr[i];
+  }
+  return min;
+}
+
 function getPatternBars(block: Block, beatsPerBar: number): number {
   const allEvents = block.streams?.flatMap((s) => s.events) || [];
   const patternLengthBeats = allEvents.length > 0
-    ? Math.max(...allEvents.map((e) => e.startTimeInBeats + (e.duration || 0.25)), beatsPerBar)
+    ? safeMax(allEvents.map((e) => e.startTimeInBeats + (e.duration || 0.25)), beatsPerBar)
     : beatsPerBar;
   return Math.ceil(patternLengthBeats / beatsPerBar);
 }
@@ -362,7 +433,7 @@ function BlockMesh({
   // Pattern info for loops
   const allEvents = block.streams?.flatMap((s) => s.events) || [];
   const patternLengthBeats = allEvents.length > 0
-    ? Math.max(...allEvents.map((e) => e.startTimeInBeats + (e.duration || 0.25)), beatsPerBar)
+    ? safeMax(allEvents.map((e) => e.startTimeInBeats + (e.duration || 0.25)), beatsPerBar)
     : beatsPerBar;
   const patternBars = Math.ceil(patternLengthBeats / beatsPerBar);
   const patternBeats = patternBars * beatsPerBar;
@@ -451,8 +522,8 @@ function BlockMesh({
     const contentWidth = contentAreaWidth - 6;
 
     const pitches = allEvents.filter((e) => e.pitch !== undefined).map((e) => e.pitch!);
-    const minPitch = pitches.length > 0 ? Math.min(...pitches) : 60;
-    const maxPitch = pitches.length > 0 ? Math.max(...pitches) : 72;
+    const minPitch = pitches.length > 0 ? safeMin(pitches, 60) : 60;
+    const maxPitch = pitches.length > 0 ? safeMax(pitches, 72) : 72;
     const pitchRange = Math.max(maxPitch - minPitch + 1, 1);
 
     for (let loopIdx = 0; loopIdx < loopCount; loopIdx++) {
@@ -1843,43 +1914,45 @@ export function TimelineCanvas({
         - This eliminates the lag from React state updates
       */}
       {isMounted && (
-        <div
-          ref={canvasWrapperRef}
-          style={{
-            position: 'absolute',
-            // Initial position at 0,0 - useFrame will update top/left each frame
-            left: 0,
-            top: 0,
-            width: canvasWidth,
-            height: canvasHeight,
-            pointerEvents: 'auto',
-            // willChange hints to browser for optimization
-            willChange: 'top, left',
-          }}
-        >
-          <Canvas
-            style={{ width: canvasWidth, height: canvasHeight }}
-            gl={{ antialias: true, alpha: true }}
-            dpr={[1, 2]}
+        <CanvasErrorBoundary width={canvasWidth} height={canvasHeight}>
+          <div
+            ref={canvasWrapperRef}
+            style={{
+              position: 'absolute',
+              // Initial position at 0,0 - useFrame will update top/left each frame
+              left: 0,
+              top: 0,
+              width: canvasWidth,
+              height: canvasHeight,
+              pointerEvents: 'auto',
+              // willChange hints to browser for optimization
+              willChange: 'top, left',
+            }}
           >
-            <TimelineScene
-              flatTracks={flatTracks}
-              pixelsPerBeat={pixelsPerBeat}
-              beatsPerBar={beatsPerBar}
-              totalBars={totalBars}
-              bpm={bpm}
-              trackHeight={trackHeight}
-              timelineWidth={timelineWidth}
-              totalHeight={contentHeight}
-              currentBeat={currentBeat}
-              canvasWidth={canvasWidth}
-              canvasHeight={canvasHeight}
-              scrollContainerRef={scrollContainerRef}
-              canvasWrapperRef={canvasWrapperRef}
-              scrollBuffer={SCROLL_BUFFER}
-            />
-          </Canvas>
-        </div>
+            <Canvas
+              style={{ width: canvasWidth, height: canvasHeight }}
+              gl={{ antialias: true, alpha: true }}
+              dpr={[1, 2]}
+            >
+              <TimelineScene
+                flatTracks={flatTracks}
+                pixelsPerBeat={pixelsPerBeat}
+                beatsPerBar={beatsPerBar}
+                totalBars={totalBars}
+                bpm={bpm}
+                trackHeight={trackHeight}
+                timelineWidth={timelineWidth}
+                totalHeight={contentHeight}
+                currentBeat={currentBeat}
+                canvasWidth={canvasWidth}
+                canvasHeight={canvasHeight}
+                scrollContainerRef={scrollContainerRef}
+                canvasWrapperRef={canvasWrapperRef}
+                scrollBuffer={SCROLL_BUFFER}
+              />
+            </Canvas>
+          </div>
+        </CanvasErrorBoundary>
       )}
 
       {/* Empty state - uses sticky positioning to stay in viewport */}

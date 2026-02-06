@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { useProjectStore } from '@/stores/projectStore';
-import { useVisualPlayback } from '@/hooks/useVisualPlayback';
+import { useVisualSync } from '@/hooks/useVisualPlayback';
 import { VisualView, VisualTrackInfo } from './VisualView';
 import { getInstrument } from '@/instruments';
 import { Track } from '@/core/types';
@@ -10,8 +10,8 @@ import { Track } from '@/core/types';
 export function VisualViewPanel() {
   const { project } = useProjectStore();
 
-  // Initialize visual playback hook
-  useVisualPlayback();
+  // Sync visual engine with project changes
+  useVisualSync();
 
   // Find all tracks that should be rendered:
   // 1. Tracks with visual instruments

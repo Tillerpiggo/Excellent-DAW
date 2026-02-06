@@ -1,7 +1,6 @@
 import * as Tone from 'tone';
 import { Project, AudioData } from './types';
 import { resolveProject, ResolvedTrack } from './resolution';
-import { getVisualPlaybackEngine, VisualPlaybackEngine } from './visualPlayback';
 import { getInstrument, AudioInstance } from '@/instruments';
 import { getAudioFile, createAudioBlobUrl, revokeAudioBlobUrl } from '@/services/audioStorage';
 
@@ -38,7 +37,6 @@ export class PlaybackEngine {
   private parts: Tone.Part[] = [];
   private project: Project | null = null;
   private isInitialized = false;
-  private visualEngine: VisualPlaybackEngine | null = null;
 
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
@@ -88,25 +86,11 @@ export class PlaybackEngine {
     // Schedule all events (including audio tracks)
     await this.scheduleEvents(resolvedTracks, project);
 
-    // Initialize visual playback engine (synced with Tone.js transport)
-    this.visualEngine = getVisualPlaybackEngine();
-    this.visualEngine.initialize(
-      resolvedTracks,
-      project.bpm,
-      project.beatsPerBar,
-      project.totalBars,
-      () => this.getCurrentBeat()
-    );
-
-    // Prepare visual engine before starting - pre-calculates initial state
-    this.visualEngine.prepare(startBeat);
-
     // Ensure all audio buffers are loaded before starting
     await Tone.loaded();
 
-    // Start transport and visual engine together for tight sync
+    // Start transport
     Tone.getTransport().start();
-    this.visualEngine.start();
 
     // Start any audio that should already be playing at this position
     if (startBeat > 0) {
@@ -155,11 +139,6 @@ export class PlaybackEngine {
       part.dispose();
     }
     this.parts = [];
-
-    // Stop visual playback
-    if (this.visualEngine) {
-      this.visualEngine.stop();
-    }
 
     // Stop beat tracking
     if (this.animationFrame !== null) {
@@ -365,11 +344,6 @@ export class PlaybackEngine {
     // Dispose track audio instances
     this.disposeTrackAudioInstances();
 
-    // Stop visual playback
-    if (this.visualEngine) {
-      this.visualEngine.stop();
-    }
-
     // Stop beat tracking
     if (this.animationFrame !== null) {
       cancelAnimationFrame(this.animationFrame);
@@ -434,11 +408,6 @@ export class PlaybackEngine {
     // If playing, start any audio blocks that should be active at this position
     if (this.state === 'playing' && this.project) {
       this.startAudioAtPosition(beat, beatsPerBar);
-    }
-
-    // Seek visual engine to show correct state at this position
-    if (this.visualEngine) {
-      this.visualEngine.seekTo(beat);
     }
 
     this.callbacks.onBeatChange?.(beat);

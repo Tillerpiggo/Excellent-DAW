@@ -1,40 +1,22 @@
-import { useEffect, useCallback } from 'react';
-import { useUIStore } from '@/stores/uiStore';
-import { useVisualStore } from '@/stores/visualStore';
+import { useEffect, useRef } from 'react';
+import { useProjectStore } from '@/stores/projectStore';
 import { getVisualPlaybackEngine } from '@/core/visualPlayback';
+import { Project } from '@/core/types';
 
-export function useVisualPlayback() {
-  const isPlaying = useUIStore((state) => state.isPlaying);
-  const setActiveTrackIds = useVisualStore((state) => state.setActiveTrackIds);
+/**
+ * Syncs the visual playback engine with the current project.
+ * Calls resolveFromProject() whenever the project changes.
+ */
+export function useVisualSync() {
+  const project = useProjectStore((s) => s.project);
+  const prevProjectRef = useRef<Project | null>(null);
 
-  // Handle structural changes (which tracks have visual instruments)
-  const handleTracksChanged = useCallback(
-    (trackIds: string[]) => {
-      setActiveTrackIds(trackIds);
-    },
-    [setActiveTrackIds]
-  );
-
-  // Set up callbacks when the component mounts
   useEffect(() => {
+    // Avoid re-resolving if project reference hasn't changed
+    if (project === prevProjectRef.current) return;
+    prevProjectRef.current = project;
+
     const engine = getVisualPlaybackEngine();
-    engine.setCallbacks({
-      onTracksChanged: handleTracksChanged,
-    });
-
-    return () => {
-      engine.setCallbacks({});
-    };
-  }, [handleTracksChanged]);
-
-  // Clear active tracks when playback stops
-  useEffect(() => {
-    if (!isPlaying) {
-      // Small delay to allow final state updates
-      const timeout = setTimeout(() => {
-        setActiveTrackIds([]);
-      }, 100);
-      return () => clearTimeout(timeout);
-    }
-  }, [isPlaying, setActiveTrackIds]);
+    engine.resolveFromProject(project);
+  }, [project]);
 }

@@ -3,6 +3,7 @@
 import { OrbitControls } from '@react-three/drei';
 import { VisualTrackInfo } from './VisualView';
 import { TrackRenderer } from './TrackRenderer';
+import { VisualBeatSync } from './VisualBeatSync';
 import { useProjectStore } from '@/stores/projectStore';
 
 interface VisualSceneProps {
@@ -14,6 +15,9 @@ export function VisualScene({ tracks }: VisualSceneProps) {
 
   return (
     <>
+      {/* Compute visual state before instruments read it */}
+      <VisualBeatSync />
+
       {/* Lighting */}
       <ambientLight intensity={0.4} />
       <directionalLight position={[5, 5, 5]} intensity={0.8} />

@@ -192,10 +192,12 @@ function NeonPolarVisual({ trackId }: NeonPolarProps) {
     timeRef.current += delta;
     const time = timeRef.current;
 
-    // Spawn new curve on MIDI event
-    if (state.noteOnCount > lastNoteOnCountRef.current) {
-      const newCount = state.noteOnCount - lastNoteOnCountRef.current;
-      lastNoteOnCountRef.current = state.noteOnCount;
+    // Spawn new curve on MIDI event (clamp to max 3 per frame for scrub safety)
+    const rawDelta = state.noteOnCount - lastNoteOnCountRef.current;
+    lastNoteOnCountRef.current = state.noteOnCount;
+
+    if (rawDelta > 0) {
+      const newCount = Math.min(rawDelta, 3);
 
       for (let i = 0; i < newCount; i++) {
         const phaseOffset = (hueCounterRef.current * 0.7) + Math.random() * 0.3;

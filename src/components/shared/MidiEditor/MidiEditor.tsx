@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, ThreeEvent } from '@react-three/fiber';
+import { Canvas, ThreeEvent, useThree } from '@react-three/fiber';
 import { OrthographicCamera, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { generateId } from '@/utils/id';
@@ -32,7 +32,7 @@ export interface MidiEditorProps {
 }
 
 interface DragState {
-  type: 'none' | 'drawing' | 'moving' | 'marquee';
+  type: 'none' | 'drawing' | 'moving' | 'resizing' | 'marquee';
   startX: number;
   startY: number;
   currentX: number;
@@ -40,10 +40,15 @@ interface DragState {
   noteId?: string;
   originalTime?: number;
   originalPitch?: number;
-  // For moving multiple notes: map of noteId -> original time
   originalTimes?: Map<string, number>;
+  originalPitches?: Map<string, number>;
+  originalDurations?: Map<string, number>;
+  startWorldX?: number;
   pitch?: number;
 }
+
+const DRAG_NONE: DragState = { type: 'none', startX: 0, startY: 0, currentX: 0, currentY: 0 };
+const NOTE_EDGE_WIDTH = 8;
 
 // Helper to lighten a hex color
 function lightenColor(hex: string, amount: number): string {
@@ -262,6 +267,8 @@ interface NoteMeshProps {
   labelWidth: number;
   isSelected: boolean;
   onPointerDown: (e: ThreeEvent<PointerEvent>, note: MidiNote) => void;
+  onEdgePointerDown: (e: ThreeEvent<PointerEvent>, note: MidiNote) => void;
+  onHoverChange: (target: 'noteBody' | 'noteEdge' | null) => void;
 }
 
 function NoteMesh({
@@ -273,6 +280,8 @@ function NoteMesh({
   labelWidth,
   isSelected,
   onPointerDown,
+  onEdgePointerDown,
+  onHoverChange,
 }: NoteMeshProps) {
   const x = labelWidth + note.time * pixelsPerBeat;
   const y = rowIndex * rowHeight + 2;
@@ -282,6 +291,26 @@ function NoteMesh({
   const noteColor = isSelected ? lightenColor(row.color, 0.3) : row.color;
 
   const shape = useMemo(() => createRoundedRectShape(w, h, 3), [w, h]);
+
+  const handlePointerDown = useCallback((e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
+    // Check if click is near the right edge (resize zone)
+    const localX = e.point.x - x;
+    if (w > NOTE_EDGE_WIDTH * 2 && localX > w - NOTE_EDGE_WIDTH) {
+      onEdgePointerDown(e, note);
+    } else {
+      onPointerDown(e, note);
+    }
+  }, [x, w, note, onPointerDown, onEdgePointerDown]);
+
+  const handlePointerMove = useCallback((e: ThreeEvent<PointerEvent>) => {
+    const localX = e.point.x - x;
+    if (w > NOTE_EDGE_WIDTH * 2 && localX > w - NOTE_EDGE_WIDTH) {
+      onHoverChange('noteEdge');
+    } else {
+      onHoverChange('noteBody');
+    }
+  }, [x, w, onHoverChange]);
 
   return (
     <group>
@@ -312,10 +341,9 @@ function NoteMesh({
       {/* Hit area - z=1 ensures notes are clicked before background */}
       <mesh
         position={[x + w / 2, -(y + h / 2), 1]}
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          onPointerDown(e, note);
-        }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerOut={() => onHoverChange(null)}
       >
         {/* Slightly larger hit area for easier clicking */}
         <planeGeometry args={[w + 4, h + 4]} />
@@ -378,6 +406,7 @@ interface MidiSceneProps {
   labelWidth: number;
   canvasWidth: number;
   canvasHeight: number;
+  setCursor: (cursor: string) => void;
 }
 
 function MidiScene({
@@ -392,25 +421,31 @@ function MidiScene({
   labelWidth,
   canvasWidth,
   canvasHeight,
+  setCursor,
 }: MidiSceneProps) {
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
   const [drawingNote, setDrawingNote] = useState<MidiNote | null>(null);
-  const [dragState, setDragState] = useState<DragState>({
-    type: 'none',
-    startX: 0,
-    startY: 0,
-    currentX: 0,
-    currentY: 0,
-  });
+  const [dragState, setDragState] = useState<DragState>(DRAG_NONE);
+  const dragStateRef = useRef(dragState);
+  dragStateRef.current = dragState;
+
+  const { gl } = useThree();
 
   // Create pitch-to-row index lookup
   const pitchToRowIndex = useCallback((pitch: number) => {
     return rows.findIndex(r => r.pitch === pitch);
   }, [rows]);
 
-  // Handle note pointer down
+  // Hover handler for dynamic cursor
+  const handleHoverChange = useCallback((target: 'noteBody' | 'noteEdge' | null) => {
+    if (dragStateRef.current.type !== 'none') return;
+    if (target === 'noteEdge') setCursor('ew-resize');
+    else if (target === 'noteBody') setCursor('grab');
+    else setCursor('crosshair');
+  }, [setCursor]);
+
+  // Handle note body pointer down -> start moving
   const handleNotePointerDown = useCallback((e: ThreeEvent<PointerEvent>, note: MidiNote) => {
-    // Determine which notes will be selected after this click
     let newSelectedIds: Set<string>;
     if (e.shiftKey) {
       newSelectedIds = new Set(selectedNoteIds);
@@ -424,11 +459,13 @@ function MidiScene({
       newSelectedIds = selectedNoteIds;
     }
 
-    // Store original times for all selected notes
+    // Store original times AND pitches for all selected notes
     const originalTimes = new Map<string, number>();
+    const originalPitches = new Map<string, number>();
     for (const n of notes) {
       if (newSelectedIds.has(n.id)) {
         originalTimes.set(n.id, n.time);
+        originalPitches.set(n.id, n.pitch);
       }
     }
 
@@ -442,84 +479,108 @@ function MidiScene({
       originalTime: note.time,
       originalPitch: note.pitch,
       originalTimes,
+      originalPitches,
     });
-  }, [selectedNoteIds, notes]);
+    setCursor('grabbing');
+  }, [selectedNoteIds, notes, setCursor]);
+
+  // Handle note edge pointer down -> start resizing
+  const handleEdgePointerDown = useCallback((e: ThreeEvent<PointerEvent>, note: MidiNote) => {
+    let newSelectedIds: Set<string>;
+    if (!selectedNoteIds.has(note.id)) {
+      newSelectedIds = new Set([note.id]);
+      setSelectedNoteIds(newSelectedIds);
+    } else {
+      newSelectedIds = selectedNoteIds;
+    }
+
+    const originalDurations = new Map<string, number>();
+    for (const n of notes) {
+      if (newSelectedIds.has(n.id)) {
+        originalDurations.set(n.id, n.duration);
+      }
+    }
+
+    setDragState({
+      type: 'resizing',
+      startX: e.nativeEvent.clientX,
+      startY: e.nativeEvent.clientY,
+      currentX: e.nativeEvent.clientX,
+      currentY: e.nativeEvent.clientY,
+      noteId: note.id,
+      originalDurations,
+    });
+    setCursor('ew-resize');
+  }, [selectedNoteIds, notes, setCursor]);
 
   // Handle background click (for drawing new notes or marquee)
   const handleBackgroundPointerDown = useCallback((e: ThreeEvent<PointerEvent>) => {
-    // Use Three.js world coordinates - they match the note rendering coordinate system
-    const x = e.point.x;
-    const y = -e.point.y;
+    const worldX = e.point.x;
+    const gridY = -e.point.y;
 
-    if (x > labelWidth) {
-      // Clicked on grid
-      const gridX = x - labelWidth;
-      const rowIndex = Math.floor(y / rowHeight);
+    if (worldX <= labelWidth) return;
 
-      if (rowIndex >= 0 && rowIndex < rows.length) {
-        // Start drawing a new note
-        const pitch = rows[rowIndex].pitch;
-        const rawTime = gridX / pixelsPerBeat;
-        const time = Math.round(rawTime / quantize) * quantize;
+    // Cmd/Ctrl + drag = marquee selection
+    if (e.metaKey || e.ctrlKey) {
+      if (!e.shiftKey) setSelectedNoteIds(new Set());
+      setDragState({
+        type: 'marquee',
+        startX: worldX,
+        startY: gridY,
+        currentX: worldX,
+        currentY: gridY,
+      });
+      setCursor('crosshair');
+      return;
+    }
 
-        if (time >= 0 && time < totalBeats) {
-          const newNote: MidiNote = {
-            id: generateId(),
-            pitch,
-            time,
-            duration: quantize,
-            velocity: 100,
-          };
+    // Draw new note on the grid
+    const gridX = worldX - labelWidth;
+    const rowIndex = Math.floor(gridY / rowHeight);
 
-          setDrawingNote(newNote);
-          if (!e.shiftKey) {
-            setSelectedNoteIds(new Set([newNote.id]));
-          } else {
-            setSelectedNoteIds(prev => new Set([...prev, newNote.id]));
-          }
+    if (rowIndex >= 0 && rowIndex < rows.length) {
+      const pitch = rows[rowIndex].pitch;
+      const rawTime = gridX / pixelsPerBeat;
+      const time = Math.round(rawTime / quantize) * quantize;
 
-          // Store screen coords for drag delta calculation (consistent with handleMove)
-          const canvas = (e.nativeEvent.target as HTMLElement).closest('canvas');
-          const rect = canvas?.getBoundingClientRect();
-          const screenX = rect ? e.nativeEvent.clientX - rect.left : x;
-          const screenY = rect ? e.nativeEvent.clientY - rect.top : y;
+      if (time >= 0 && time < totalBeats) {
+        const newNote: MidiNote = {
+          id: generateId(),
+          pitch,
+          time,
+          duration: quantize,
+          velocity: 100,
+        };
 
-          setDragState({
-            type: 'drawing',
-            startX: screenX,
-            startY: screenY,
-            currentX: screenX,
-            currentY: screenY,
-            pitch,
-          });
+        setDrawingNote(newNote);
+        if (!e.shiftKey) {
+          setSelectedNoteIds(new Set([newNote.id]));
+        } else {
+          setSelectedNoteIds(prev => new Set([...prev, newNote.id]));
         }
-      } else {
-        // Start marquee - use screen coords for consistency with handleMove
-        if (!e.shiftKey) setSelectedNoteIds(new Set());
-        const canvas = (e.nativeEvent.target as HTMLElement).closest('canvas');
-        const rect = canvas?.getBoundingClientRect();
-        const screenX = rect ? e.nativeEvent.clientX - rect.left : x;
-        const screenY = rect ? e.nativeEvent.clientY - rect.top : y;
+
         setDragState({
-          type: 'marquee',
-          startX: screenX,
-          startY: screenY,
-          currentX: screenX,
-          currentY: screenY,
+          type: 'drawing',
+          startX: worldX,
+          startY: gridY,
+          currentX: worldX,
+          currentY: gridY,
+          startWorldX: worldX,
+          pitch,
         });
       }
     }
-  }, [labelWidth, rowHeight, rows, pixelsPerBeat, quantize, totalBeats]);
+  }, [labelWidth, rowHeight, rows, pixelsPerBeat, quantize, totalBeats, setCursor]);
 
-  // Handle pointer missed (clicks outside all Three.js meshes - just clear selection)
+  // Handle pointer missed (clicks outside all Three.js meshes)
   const handlePointerMissed = useCallback((e: MouseEvent) => {
-    if (dragState.type !== 'none') return;
+    if (dragStateRef.current.type !== 'none') return;
     if (!e.shiftKey) {
       setSelectedNoteIds(new Set());
     }
-  }, [dragState.type]);
+  }, []);
 
-  // Get notes within marquee
+  // Get notes within marquee bounds
   const getNotesInMarquee = useCallback((x1: number, y1: number, x2: number, y2: number): string[] => {
     const minX = Math.min(x1, x2) - labelWidth;
     const maxX = Math.max(x1, x2) - labelWidth;
@@ -549,16 +610,15 @@ function MidiScene({
   useEffect(() => {
     if (dragState.type === 'none') return;
 
-    const handleMove = (e: PointerEvent) => {
-      const canvas = document.querySelector('canvas');
-      if (!canvas) return;
+    const canvas = gl.domElement;
 
+    const handleMove = (e: PointerEvent) => {
       const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
 
       if (dragState.type === 'drawing' && drawingNote) {
-        const deltaX = x - dragState.startX;
+        // Use screen-relative X (equals world X at zoom=1)
+        const currentWorldX = e.clientX - rect.left;
+        const deltaX = currentWorldX - dragState.startX;
         const deltaDuration = deltaX / pixelsPerBeat;
         let newDuration = Math.round((quantize + deltaDuration) / quantize) * quantize;
         newDuration = Math.max(quantize, Math.min(totalBeats - drawingNote.time, newDuration));
@@ -566,23 +626,46 @@ function MidiScene({
         if (newDuration !== drawingNote.duration) {
           setDrawingNote(prev => prev ? { ...prev, duration: newDuration } : null);
         }
-      } else if (dragState.type === 'moving' && dragState.originalTime !== undefined && dragState.originalTimes) {
-        // Compute delta from original start position (not incrementally)
+      } else if (dragState.type === 'moving' && dragState.originalTimes && dragState.originalPitches) {
+        // Horizontal: time change
         const deltaX = e.clientX - dragState.startX;
         const deltaBeats = deltaX / pixelsPerBeat;
         const snappedDelta = Math.round(deltaBeats / quantize) * quantize;
 
-        // Apply same delta to all selected notes from their original positions
+        // Vertical: pitch change (row offset)
+        const deltaY = e.clientY - dragState.startY;
+        const rowDelta = Math.round(deltaY / rowHeight);
+
         onNotesChange(notes.map(n => {
           const originalTime = dragState.originalTimes!.get(n.id);
-          if (originalTime !== undefined) {
+          const originalPitch = dragState.originalPitches!.get(n.id);
+          if (originalTime !== undefined && originalPitch !== undefined) {
+            const origRowIndex = rows.findIndex(r => r.pitch === originalPitch);
+            const newRowIndex = Math.max(0, Math.min(rows.length - 1, origRowIndex + rowDelta));
+            const newPitch = rows[newRowIndex].pitch;
             const newTime = Math.max(0, Math.min(totalBeats - n.duration, originalTime + snappedDelta));
-            return { ...n, time: newTime };
+            return { ...n, time: newTime, pitch: newPitch };
+          }
+          return n;
+        }));
+      } else if (dragState.type === 'resizing' && dragState.originalDurations) {
+        // Resize: change duration of all selected notes
+        const deltaX = e.clientX - dragState.startX;
+        const deltaBeats = deltaX / pixelsPerBeat;
+        const snappedDelta = Math.round(deltaBeats / quantize) * quantize;
+
+        onNotesChange(notes.map(n => {
+          const originalDuration = dragState.originalDurations!.get(n.id);
+          if (originalDuration !== undefined) {
+            const newDuration = Math.max(quantize, originalDuration + snappedDelta);
+            return { ...n, duration: newDuration };
           }
           return n;
         }));
       } else if (dragState.type === 'marquee') {
-        setDragState(prev => ({ ...prev, currentX: x, currentY: y }));
+        const currentX = e.clientX - rect.left;
+        const currentY = e.clientY - rect.top;
+        setDragState(prev => ({ ...prev, currentX, currentY }));
       }
     };
 
@@ -593,11 +676,12 @@ function MidiScene({
       } else if (dragState.type === 'marquee') {
         const ids = getNotesInMarquee(dragState.startX, dragState.startY, dragState.currentX, dragState.currentY);
         if (ids.length > 0) {
-          setSelectedNoteIds(new Set(ids));
+          setSelectedNoteIds(prev => new Set([...prev, ...ids]));
         }
       }
 
-      setDragState({ type: 'none', startX: 0, startY: 0, currentX: 0, currentY: 0 });
+      setDragState(DRAG_NONE);
+      setCursor('crosshair');
     };
 
     window.addEventListener('pointermove', handleMove);
@@ -607,7 +691,7 @@ function MidiScene({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [dragState, drawingNote, pixelsPerBeat, quantize, totalBeats, notes, selectedNoteIds, onNotesChange, getNotesInMarquee]);
+  }, [dragState, drawingNote, pixelsPerBeat, quantize, totalBeats, rowHeight, rows, notes, onNotesChange, getNotesInMarquee, gl, setCursor]);
 
   // Keyboard handler
   useEffect(() => {
@@ -654,6 +738,17 @@ function MidiScene({
       <mesh position={[labelWidth / 2, -canvasHeight / 2, -1]}>
         <planeGeometry args={[labelWidth, canvasHeight]} />
         <meshBasicMaterial color="#242424" />
+      </mesh>
+
+      {/* Label area cursor zone - default cursor over labels */}
+      <mesh
+        position={[labelWidth / 2, -canvasHeight / 2, 0.5]}
+        onPointerMove={() => {
+          if (dragStateRef.current.type === 'none') setCursor('default');
+        }}
+      >
+        <planeGeometry args={[labelWidth, canvasHeight]} />
+        <meshBasicMaterial transparent opacity={0} />
       </mesh>
 
       {/* Row labels using Html overlay */}
@@ -708,6 +803,8 @@ function MidiScene({
             labelWidth={labelWidth}
             isSelected={selectedNoteIds.has(note.id)}
             onPointerDown={handleNotePointerDown}
+            onEdgePointerDown={handleEdgePointerDown}
+            onHoverChange={handleHoverChange}
           />
         );
       })}
@@ -722,11 +819,14 @@ function MidiScene({
         />
       )}
 
-      {/* Grid hit area for new note drawing - z=0 so notes (z=1) are clicked first */}
+      {/* Grid hit area for new note drawing / marquee - z=0 so notes (z=1) are clicked first */}
       <mesh
         position={[(labelWidth + canvasWidth) / 2, -canvasHeight / 2, 0]}
         onPointerDown={handleBackgroundPointerDown}
         onPointerMissed={handlePointerMissed}
+        onPointerMove={() => {
+          if (dragStateRef.current.type === 'none') setCursor('crosshair');
+        }}
       >
         <planeGeometry args={[canvasWidth - labelWidth, canvasHeight]} />
         <meshBasicMaterial transparent opacity={0} />
@@ -755,6 +855,11 @@ export function MidiEditor({
     setIsMounted(true);
   }, []);
 
+  // Direct DOM cursor updates (no re-renders)
+  const setCursor = useCallback((cursor: string) => {
+    if (containerRef.current) containerRef.current.style.cursor = cursor;
+  }, []);
+
   // Canvas dimensions
   const labelWidth = 64;
   const canvasWidth = totalBeats * pixelsPerBeat + labelWidth + 20;
@@ -764,7 +869,7 @@ export function MidiEditor({
     <div
       ref={containerRef}
       className="flex-1 overflow-auto bg-background"
-      style={{ cursor: 'crosshair' }}
+      style={{ cursor: 'default' }}
     >
       <div style={{ width: canvasWidth, height: canvasHeight }}>
         {isMounted && (
@@ -772,6 +877,7 @@ export function MidiEditor({
             style={{ width: canvasWidth, height: canvasHeight }}
             gl={{ antialias: true, alpha: true }}
             dpr={[1, 2]}
+            frameloop="always"
           >
             <MidiScene
               rows={rows}
@@ -785,6 +891,7 @@ export function MidiEditor({
               labelWidth={labelWidth}
               canvasWidth={canvasWidth}
               canvasHeight={canvasHeight}
+              setCursor={setCursor}
             />
           </Canvas>
         )}

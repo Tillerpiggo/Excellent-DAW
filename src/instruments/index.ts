@@ -16,6 +16,9 @@ import { HexagonDots } from './visual/HexagonDots';
 import { FractalTunnel } from './visual/FractalTunnel';
 import { CircleGrid } from './visual/CircleGrid';
 import { NeonPolar } from './visual/NeonPolar';
+import { HopfFibration } from './visual/HopfFibration';
+import { IcosahedronBurst } from './visual/IcosahedronBurst';
+import { MetronomeBalls } from './visual/MetronomeBalls';
 
 // Flat registry for quick lookup by ID
 export const INSTRUMENTS: Record<string, Instrument> = {
@@ -32,6 +35,9 @@ export const INSTRUMENTS: Record<string, Instrument> = {
   fractalTunnel: FractalTunnel,
   circleGrid: CircleGrid,
   neonPolar: NeonPolar,
+  hopfFibration: HopfFibration,
+  icosahedronBurst: IcosahedronBurst,
+  metronomeBalls: MetronomeBalls,
 };
 
 // Get instrument by ID
@@ -75,7 +81,7 @@ export function getInstrumentFolderTree(): InstrumentFolder {
       },
       {
         name: 'Visual',
-        instruments: ['silkSymmetry', 'hexagonDots', 'fractalTunnel', 'circleGrid', 'neonPolar'],
+        instruments: ['silkSymmetry', 'hexagonDots', 'fractalTunnel', 'circleGrid', 'neonPolar', 'hopfFibration', 'icosahedronBurst', 'metronomeBalls'],
       },
     ],
   };
