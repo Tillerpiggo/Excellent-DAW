@@ -246,63 +246,62 @@ export function MidiEditor({
     }
   }, [handleHoverChange]);
 
-  // Handle background click (for drawing new notes or marquee)
+  // Handle background click (left-click = marquee selection, right-click = draw note)
   const handleBackgroundPointerDown = useCallback((e: React.PointerEvent) => {
     if (!gridRef.current) return;
     const rect = gridRef.current.getBoundingClientRect();
     const gridX = e.clientX - rect.left;
     const gridY = e.clientY - rect.top;
 
-    // Cmd/Ctrl + drag = marquee selection
-    if (e.metaKey || e.ctrlKey) {
-      if (!e.shiftKey) setSelectedNoteIds(new Set());
-      // Store world coordinates (grid-relative + labelWidth offset for marquee matching)
-      setDragState({
-        type: 'marquee',
-        startX: gridX + labelWidth,
-        startY: gridY,
-        currentX: gridX + labelWidth,
-        currentY: gridY,
-      });
-      setCursor('crosshair');
+    // Right-click = draw new note
+    if (e.button === 2) {
+      const rowIndex = Math.floor(gridY / rowHeight);
+
+      if (rowIndex >= 0 && rowIndex < rows.length) {
+        const pitch = rows[rowIndex].pitch;
+        const rawTime = gridX / pixelsPerBeat;
+        const time = Math.round(rawTime / quantize) * quantize;
+
+        if (time >= 0 && time < totalBeats) {
+          const newNote: MidiNote = {
+            id: generateId(),
+            pitch,
+            time,
+            duration: quantize,
+            velocity: 100,
+          };
+
+          setDrawingNote(newNote);
+          if (!e.shiftKey) {
+            setSelectedNoteIds(new Set([newNote.id]));
+          } else {
+            setSelectedNoteIds(prev => new Set([...prev, newNote.id]));
+          }
+
+          setDragState({
+            type: 'drawing',
+            startX: e.clientX,
+            startY: e.clientY,
+            currentX: e.clientX,
+            currentY: e.clientY,
+            startWorldX: gridX + labelWidth,
+            pitch,
+          });
+        }
+      }
       return;
     }
 
-    // Draw new note on the grid
-    const rowIndex = Math.floor(gridY / rowHeight);
-
-    if (rowIndex >= 0 && rowIndex < rows.length) {
-      const pitch = rows[rowIndex].pitch;
-      const rawTime = gridX / pixelsPerBeat;
-      const time = Math.round(rawTime / quantize) * quantize;
-
-      if (time >= 0 && time < totalBeats) {
-        const newNote: MidiNote = {
-          id: generateId(),
-          pitch,
-          time,
-          duration: quantize,
-          velocity: 100,
-        };
-
-        setDrawingNote(newNote);
-        if (!e.shiftKey) {
-          setSelectedNoteIds(new Set([newNote.id]));
-        } else {
-          setSelectedNoteIds(prev => new Set([...prev, newNote.id]));
-        }
-
-        setDragState({
-          type: 'drawing',
-          startX: e.clientX,
-          startY: e.clientY,
-          currentX: e.clientX,
-          currentY: e.clientY,
-          startWorldX: gridX + labelWidth,
-          pitch,
-        });
-      }
-    }
+    // Left-click = marquee selection
+    if (!e.shiftKey) setSelectedNoteIds(new Set());
+    setDragState({
+      type: 'marquee',
+      startX: gridX + labelWidth,
+      startY: gridY,
+      currentX: gridX + labelWidth,
+      currentY: gridY,
+    });
+    setCursor('crosshair');
   }, [labelWidth, rowHeight, rows, pixelsPerBeat, quantize, totalBeats, setCursor]);
 
   // Get notes within marquee bounds
@@ -549,6 +548,7 @@ export function MidiEditor({
             ...gridBackground,
           }}
           onPointerDown={handleBackgroundPointerDown}
+          onContextMenu={(e) => e.preventDefault()}
           onPointerMove={() => {
             if (dragStateRef.current.type === 'none') setCursor('crosshair');
           }}

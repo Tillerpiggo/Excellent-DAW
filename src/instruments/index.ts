@@ -96,5 +96,22 @@ export function getInstrumentOptions(): { id: string; label: string; icon?: stri
   }));
 }
 
+// Walk up the parent chain to find the nearest ancestor with an instrumentId (for MIDI config inheritance)
+import { Track } from '@/core/types';
+
+export function getInheritedMidiInstrumentId(
+  track: Track,
+  tracks: Record<string, Track>
+): string | undefined {
+  if (track.instrumentId) return track.instrumentId;
+
+  let current = track.parentId ? tracks[track.parentId] : undefined;
+  while (current) {
+    if (current.instrumentId) return current.instrumentId;
+    current = current.parentId ? tracks[current.parentId] : undefined;
+  }
+  return undefined;
+}
+
 // Re-export types
 export * from './types';

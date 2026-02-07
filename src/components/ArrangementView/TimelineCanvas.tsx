@@ -937,7 +937,7 @@ export function TimelineCanvas({
     return {
       position: 'absolute' as const,
       left: x1,
-      top: y1,
+      top: y1 - RULER_HEIGHT,
       width: w,
       height: h,
       backgroundColor: 'rgba(59, 130, 246, 0.15)',

@@ -5,6 +5,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { PresetSelector } from './PresetSelector';
 import { Preset, Block, Track } from '@/core/types';
+import { getInheritedMidiInstrumentId } from '@/instruments';
 
 interface EditorPanelProps {
   presets?: Preset[];
@@ -48,7 +49,7 @@ export function EditorPanel({ presets, color, children }: EditorPanelProps) {
 
       {/* Editor content */}
       <div className="flex-1 overflow-hidden">
-        {children({ block: selectedBlock, track: selectedTrack, beatsPerBar: project.beatsPerBar, instrumentId: selectedTrack.instrumentId })}
+        {children({ block: selectedBlock, track: selectedTrack, beatsPerBar: project.beatsPerBar, instrumentId: getInheritedMidiInstrumentId(selectedTrack, project.tracks) })}
       </div>
     </div>
   );

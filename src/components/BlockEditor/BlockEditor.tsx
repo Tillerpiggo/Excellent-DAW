@@ -13,7 +13,7 @@ import { SwingEditorPanel } from '../SwingEditor';
 import { GenericMidiEditorPanel } from '../GenericMidiEditor';
 import { VisualViewPanel } from '../VisualView';
 import { PatternCategory } from '@/core/types';
-import { getInstrument } from '@/instruments';
+import { getInstrument, getInheritedMidiInstrumentId } from '@/instruments';
 
 export type EditorType = 'chord' | 'drum' | 'arp' | 'mute' | 'transpose' | 'rhythm' | 'swing' | 'generic' | null;
 type ViewMode = 'editor' | 'visual';
@@ -61,7 +61,7 @@ export function BlockEditor() {
   const editorType = useMemo((): EditorType => {
     if (!selectedBlock || !selectedTrack) return null;
 
-    const { patternCategory, typeId, instrumentId } = selectedTrack;
+    const { patternCategory, typeId } = selectedTrack;
 
     if (typeId === 'rhythm') return 'rhythm';
     if (typeId === 'transpose') return 'transpose';
@@ -72,15 +72,16 @@ export function BlockEditor() {
       if (categoryEditor) return categoryEditor;
     }
 
-    // Check instrument's editor type
-    const instrument = getInstrument(instrumentId);
+    // Check instrument's editor type (inherit from parent if needed)
+    const effectiveInstrumentId = getInheritedMidiInstrumentId(selectedTrack, project.tracks);
+    const instrument = getInstrument(effectiveInstrumentId);
     if (instrument?.editorType) {
       return instrument.editorType;
     }
 
     // Default to generic MIDI editor
     return 'generic';
-  }, [selectedBlock, selectedTrack]);
+  }, [selectedBlock, selectedTrack, project.tracks]);
 
   // Render the editor content based on type
   const renderEditor = () => {
