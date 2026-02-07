@@ -1,11 +1,19 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { getVisualPlaybackEngine } from '@/core/visualPlayback';
 import { useProjectStore } from '@/stores/projectStore';
 import { Instrument } from '../types';
+import {
+  ManagedLineSet,
+  ManagedDotSet,
+  ManagedBlobPool,
+  createDisplacementUniforms,
+  createDisplacementMaterial,
+  DisplacementUniforms,
+} from '@/lib/three';
 
 interface MetronomeBallsProps {
   trackId: string;
@@ -15,99 +23,88 @@ interface MetronomeBallsProps {
 interface Palette { bg: number; fg: number; accent: number; glow: number; tertiary: number }
 
 const PALETTES: Record<string, Palette> = {
-  default:  { bg: 0xf5f2eb, fg: 0x1a2744, accent: 0xb5563e, glow: 0xb5563e, tertiary: 0x4a7a6f }, // paper & ink, teal-green
-  sepia:    { bg: 0xe8dcc8, fg: 0x3b2612, accent: 0x8b5e34, glow: 0xc4883a, tertiary: 0x6b7f4a }, // aged parchment, olive
-  midnight: { bg: 0x0d1117, fg: 0xc9d1d9, accent: 0xd4a847, glow: 0xd4a847, tertiary: 0x58a6c9 }, // dark with gold, steel blue
-  botanical:{ bg: 0xeae6df, fg: 0x2d4a3e, accent: 0xb47a4e, glow: 0x6b8f6b, tertiary: 0x8a5a7a }, // forest & amber, dusty mauve
-  plum:     { bg: 0xf0e8f0, fg: 0x3a1f4a, accent: 0xc25a7c, glow: 0xc25a7c, tertiary: 0x5a8a6a }, // deep purple & rose, sage
+  default:  { bg: 0xf5f2eb, fg: 0x1a2744, accent: 0xb5563e, glow: 0xb5563e, tertiary: 0x4a7a6f },
+  sepia:    { bg: 0xe8dcc8, fg: 0x3b2612, accent: 0x8b5e34, glow: 0xc4883a, tertiary: 0x6b7f4a },
+  midnight: { bg: 0x0d1117, fg: 0xc9d1d9, accent: 0xd4a847, glow: 0xd4a847, tertiary: 0x58a6c9 },
+  botanical:{ bg: 0xeae6df, fg: 0x2d4a3e, accent: 0xb47a4e, glow: 0x6b8f6b, tertiary: 0x8a5a7a },
+  plum:     { bg: 0xf0e8f0, fg: 0x3a1f4a, accent: 0xc25a7c, glow: 0xc25a7c, tertiary: 0x5a8a6a },
 };
 
-const PALETTE_KEYS = Object.keys(PALETTES);
-
 // MIDI trigger pitches
-const PITCH_FG = 48;      // C3 — foreground update
-const PITCH_BG = 50;      // D3 — background flower update
-const PITCH_GLOW = 52;    // E3 — glow pulse
-const PITCH_INK = 54;     // F#3 — ink dot rotation
-const PITCH_INVERT = 56;  // G#3 — toggle color inversion
-const PITCH_PAL_SEPIA = 58;     // A#3 — sepia palette
-const PITCH_PAL_MIDNIGHT = 60;  // C4 — midnight palette
-const PITCH_PAL_BOTANICAL = 62; // D4 — botanical palette
-const PITCH_PAL_PLUM = 64;      // E4 — plum palette
-
-// Sustained-effect pitch ranges (active while note is held)
-const PITCH_WAVE_MIN = 66;  // F#4 — ink-on-water (lowest spatial freq)
-const PITCH_WAVE_MAX = 70;  // A#4 — ink-on-water (highest spatial freq)
-const PITCH_WARP_MIN = 72;  // C5  — warp field (lowest spatial freq)
-const PITCH_WARP_MAX = 76;  // E5  — warp field (highest spatial freq)
-const PITCH_SPIRAL = 78;    // F#5 — trigger spiral dots from bg centers
-const PITCH_CRAZY_INK = 80; // G#5 — crazy polar ink dots
-const PITCH_SCALE_POP = 82; // A#5 — squash & scale pop
-const PITCH_LINE_WEIGHT = 84; // C6 — line weight punch
-const PITCH_SNARE_L = 86;  // D6 — snare pattern over left panel
-const PITCH_SNARE_C = 88;  // E6 — snare pattern over center panel
-const PITCH_SNARE_R = 90;  // F#6 — snare pattern over right panel
+const PITCH_FG = 48;
+const PITCH_BG = 50;
+const PITCH_GLOW = 52;
+const PITCH_INK = 54;
+const PITCH_INVERT = 56;
+const PITCH_PAL_SEPIA = 58;
+const PITCH_PAL_MIDNIGHT = 60;
+const PITCH_PAL_BOTANICAL = 62;
+const PITCH_PAL_PLUM = 64;
+const PITCH_WAVE_MIN = 66;
+const PITCH_WAVE_MAX = 70;
+const PITCH_WARP_MIN = 72;
+const PITCH_WARP_MAX = 76;
+const PITCH_SPIRAL = 78;
+const PITCH_CRAZY_INK = 80;
+const PITCH_SCALE_POP = 82;
+const PITCH_LINE_WEIGHT = 84;
+const PITCH_SNARE_L = 86;
+const PITCH_SNARE_C = 88;
+const PITCH_SNARE_R = 90;
 
 // Spiral dot constants
-const SPIRAL_DOTS_PER_TRIGGER = 3;    // one per background panel center
-const SPIRAL_ARMS = 5;                // dots per arm burst
-const SPIRAL_GROWTH = 8;              // how fast spiral radius grows per step
-const SPIRAL_FADE_PER_STEP = 0.06;    // opacity lost per 1/32 note step
-const SPIRAL_MAX_STEPS = 24;          // max steps before removal
-const SPIRAL_ROTATION_PER_KICK = Math.PI / 12; // how much kick rotates spiral base
+const SPIRAL_ARMS = 5;
+const SPIRAL_GROWTH = 8;
+const SPIRAL_FADE_PER_STEP = 0.06;
+const SPIRAL_MAX_STEPS = 24;
+const SPIRAL_ROTATION_PER_KICK = Math.PI / 12;
 
 // Crazy polar ink constants
-const CRAZY_INK_POSITIONS = 256;      // sample points along polar path
-const CRAZY_INK_DOTS_PER_TRIGGER = 12; // blobs placed per trigger
-const CRAZY_INK_ORBIT_FRAC = 0.30;   // orbit radius as fraction of panel width
-const CRAZY_INK_BLOB_MULT = 0.8;     // smaller blobs
-const CRAZY_INK_BLOB_VERTS = 8;
-const CRAZY_INK_BLOB_NOISE = 0.25;
+const CRAZY_INK_POSITIONS = 256;
+const CRAZY_INK_DOTS_PER_TRIGGER = 12;
+const CRAZY_INK_ORBIT_FRAC = 0.30;
+const CRAZY_INK_BLOB_MULT = 0.8;
 const CRAZY_INK_FADE_PER_STEP = 0.15;
 
-// Scale pop: 2-step sequence — instant hit, snap back on next 1/16th
+// Scale pop & line weight
 const SCALE_POP_STEPS: number[] = [1.03, 1.0];
-
-// Line weight: instant boost, snaps back after 1 sixteenth-note tick
 const LINE_WEIGHT_OPACITY_MULT = 2.2;
 const LINE_WEIGHT_DOT_MULT = 1.5;
 const LINE_WEIGHT_HOLD_TICKS = 1;
 
 // Snare bounce pattern
-const SNARE_BALLS = 20;
+const SNARE_BALLS = 16;
 const SNARE_SPEED = 2.5;
-const SNARE_BOUNCE_RADIUS = 120;  // pattern-space radius of the imaginary circle
+const SNARE_BOUNCE_RADIUS = 60;
+const SNARE_SIM_BEATS = 30;
 const SNARE_LINE_OPACITY = 0.25;
-const SNARE_KICK_STEP = 4;   // degrees per trigger
+const SNARE_KICK_STEP = 4;
 const SNARE_SNARE_STEP = 3;
-const SNARE_EVOLVE_KICK_STEP = 1.5;  // degrees per 1/32 note auto-evolution
+const SNARE_EVOLVE_KICK_STEP = 1.5;
 const SNARE_EVOLVE_SNARE_STEP = 1.0;
 const SNARE_PITCHES = [PITCH_SNARE_L, PITCH_SNARE_C, PITCH_SNARE_R];
 
 // Effect tuning
-const WAVE_FREQ_MIN = 2.0;    // spatial freq low end
-const WAVE_FREQ_MAX = 14.0;   // spatial freq high end
-const WAVE_AMP_SCALE = 0.012; // * viewport width * (velocity/127)
-const WAVE_SPEED = 1.8;       // temporal oscillation speed
-
-const WARP_FOLD_MIN = 3.0;         // pitch 72 → 3-fold (trefoil)
-const WARP_FOLD_MAX = 8.0;        // pitch 76 → 8-fold (octagonal)
-const WARP_AMP_SCALE = 0.018;     // punchy amplitude
-const WARP_BASE_SPEED = 0.6;      // slow temporal drift
-
-const EFFECT_LERP = 0.08;     // smooth amplitude ramp per frame
+const WAVE_FREQ_MIN = 2.0;
+const WAVE_FREQ_MAX = 14.0;
+const WAVE_AMP_SCALE = 0.012;
+const WAVE_SPEED = 1.8;
+const WARP_FOLD_MIN = 3.0;
+const WARP_FOLD_MAX = 8.0;
+const WARP_AMP_SCALE = 0.018;
+const EFFECT_LERP = 0.08;
 
 const DEFAULTS = {
   balls: 24,
-  kickStart: 37,      // degrees
-  snareStart: 53,     // degrees
-  kickStep: 3,        // degrees per trigger
-  snareStep: 2,       // degrees per trigger
+  kickStart: 37,
+  snareStart: 53,
+  kickStep: 3,
+  snareStep: 2,
   speed: 2,
   dotSize: 2,
   lineOpacity: 0.2,
-  fgMultiplier: 1,    // multiplier for foreground angle changes
-  bgMultiplier: 4,    // multiplier for background angle changes
+  fgMultiplier: 1,
+  bgMultiplier: 4,
 };
 
 // Simulation constants
@@ -117,27 +114,29 @@ const BG_BALLS = 32;
 const BG_SPEED = 3;
 const BG_LINE_OPACITY = 0.12;
 const BG_SCALE = 1.8;
-const PATTERN_EXTENT = 500; // pattern-space half-size
-const MAX_EXTENT = PATTERN_EXTENT * 2; // ball cutoff distance
+const PATTERN_EXTENT = 500;
+const MAX_EXTENT = PATTERN_EXTENT * 2;
+const MAX_BALLS = 80; // max from settingsSchema
+const MAX_POINTS_PER_LINE = SIM_BEATS * STEPS_PER_BEAT + 1;
+const MAX_INK_BLOBS = 256;
+const MAX_CRAZY_INK_BLOBS = 256;
+const MAX_SPIRAL_DOTS = 256;
+
+// Ink dot constants
+const INK_POSITIONS = 128;
+const INK_DOTS = 4;
+const INK_ORBIT_FRAC = 0.35;
+const INK_BLOB_MULT = 2.0;
+const INK_FADE_PER_STEP = 0.2;
+
+const BG_ROTATION_STEP = (Math.PI * 2) / 24;
 
 function deg2rad(d: number): number {
   return (d * Math.PI) / 180;
 }
 
-// Background rotation per trigger
-const BG_ROTATION_STEP = (Math.PI * 2) / 24;
+// --- Polar path functions (unchanged) ---
 
-// Ink dot constants
-const INK_POSITIONS = 128;            // sample points along the polar path
-const INK_DOTS = 4;                   // new blobs placed per trigger
-const INK_ORBIT_FRAC = 0.35;         // base orbit radius as fraction of panel width
-const INK_BLOB_MULT = 2.0;           // blob radius = dotSize * scale * this
-const INK_BLOB_VERTS = 10;           // vertices per blob shape
-const INK_BLOB_NOISE = 0.35;         // max radial noise as fraction of radius
-const INK_FADE_PER_STEP = 0.2;       // opacity lost per PITCH_INK trigger
-
-/** Polar path function — complex curve that stays near baseR, never crosses center.
- *  Combines several harmonics for an organic, flower-like orbit. */
 function inkPolarPath(slot: number, baseR: number): [number, number] {
   const t = (slot / INK_POSITIONS) * Math.PI * 2;
   const r = baseR * (1
@@ -149,16 +148,6 @@ function inkPolarPath(slot: number, baseR: number): [number, number] {
   return [Math.cos(t) * r, Math.sin(t) * r];
 }
 
-/** Simple deterministic hash for ink blob noise (only changes with seed) */
-function inkHash(a: number, b: number, c: number, d: number): number {
-  let h = (a * 73856093) ^ (b * 19349663) ^ (c * 83492791) ^ (d * 41729501);
-  h = ((h >> 16) ^ h) * 0x45d9f3b;
-  h = ((h >> 16) ^ h) * 0x45d9f3b;
-  h = (h >> 16) ^ h;
-  return (h & 0xffff) / 0xffff; // 0–1
-}
-
-/** Crazy polar path — wild multi-harmonic curve with sharp petals and loops */
 function crazyPolarPath(slot: number, baseR: number): [number, number] {
   const t = (slot / CRAZY_INK_POSITIONS) * Math.PI * 2;
   const r = baseR * (1
@@ -174,38 +163,33 @@ function crazyPolarPath(slot: number, baseR: number): [number, number] {
   return [Math.cos(t) * r, Math.sin(t) * r];
 }
 
-/** Spiral dot — born at a background center, spirals outward each 1/32 note */
-interface SpiralDot {
-  panelIndex: number;   // which background panel (0, 1, 2)
-  baseAngle: number;    // initial spiral angle
-  step: number;         // current step along spiral (advances each 1/32 note)
-  opacity: number;      // fades each step
-  seed: number;         // for blob shape noise
-}
-
-/** Persistent ink blob — placed once, fades over subsequent triggers */
-interface InkBlob {
-  slot: number;   // position slot (0–31)
-  opacity: number;
-  seed: number;   // deterministic shape seed
-}
-
-/** Geometry whose vertices can be displaced each frame by wave/warp effects */
-interface DisplaceableGeom {
-  attr: THREE.BufferAttribute;
-  base: Float32Array; // snapshot of undisplaced positions
-}
+// --- Data types ---
 
 interface Trajectory {
-  points: Float32Array; // interleaved x,y pairs
-  count: number;        // number of points
+  points: Float32Array;
+  count: number;
 }
 
-/** Precompute all ball trajectories for the metronome pattern */
+interface SpiralDot {
+  panelIndex: number;
+  baseAngle: number;
+  step: number;
+  opacity: number;
+  seed: number;
+}
+
+interface InkBlob {
+  slot: number;
+  opacity: number;
+  seed: number;
+}
+
+// --- Pattern computation (unchanged) ---
+
 function computePattern(
   balls: number,
-  kickAngle: number,  // radians
-  snareAngle: number, // radians
+  kickAngle: number,
+  snareAngle: number,
   baseSpeed: number,
 ): Trajectory[] {
   const result: Trajectory[] = [];
@@ -213,291 +197,132 @@ function computePattern(
 
   for (let i = 0; i < balls; i++) {
     let angle = (i / balls) * Math.PI * 2;
-    let x = 0;
-    let y = 0;
+    let x = 0, y = 0;
     const pts = new Float32Array(maxPoints * 2);
-    pts[0] = 0;
-    pts[1] = 0;
+    pts[0] = 0; pts[1] = 0;
     let count = 1;
     let alive = true;
 
     for (let beat = 0; beat < SIM_BEATS && alive; beat++) {
       const bim = beat % 4;
       let speed: number;
-      if (bim === 0 || bim === 2) {
-        angle += kickAngle;
-        speed = Math.abs(baseSpeed);
-      } else {
-        angle -= snareAngle;
-        speed = -Math.abs(baseSpeed);
-      }
+      if (bim === 0 || bim === 2) { angle += kickAngle; speed = Math.abs(baseSpeed); }
+      else { angle -= snareAngle; speed = -Math.abs(baseSpeed); }
       const dx = Math.cos(angle) * speed;
       const dy = Math.sin(angle) * speed;
 
       for (let s = 0; s < STEPS_PER_BEAT && alive; s++) {
-        x += dx;
-        y += dy;
-        if (Math.abs(x) > MAX_EXTENT || Math.abs(y) > MAX_EXTENT) {
-          alive = false;
-        } else {
-          pts[count * 2] = x;
-          pts[count * 2 + 1] = y;
-          count++;
-        }
+        x += dx; y += dy;
+        if (Math.abs(x) > MAX_EXTENT || Math.abs(y) > MAX_EXTENT) { alive = false; }
+        else { pts[count * 2] = x; pts[count * 2 + 1] = y; count++; }
       }
     }
-
     result.push({ points: pts, count });
   }
   return result;
 }
 
-/** Precompute ball trajectories that bounce off an imaginary circle of given radius.
- *  Balls reflect off the circle boundary instead of flying to infinity. */
 function computePatternBounce(
   balls: number,
   kickAngle: number,
   snareAngle: number,
   baseSpeed: number,
   bounceRadius: number,
+  simBeats: number = SIM_BEATS,
 ): Trajectory[] {
   const result: Trajectory[] = [];
-  const maxPoints = SIM_BEATS * STEPS_PER_BEAT + 1;
+  const maxPoints = simBeats * STEPS_PER_BEAT + 1;
 
   for (let i = 0; i < balls; i++) {
     let angle = (i / balls) * Math.PI * 2;
-    let x = 0;
-    let y = 0;
+    let x = 0, y = 0;
     const pts = new Float32Array(maxPoints * 2);
-    pts[0] = 0;
-    pts[1] = 0;
+    pts[0] = 0; pts[1] = 0;
     let count = 1;
 
-    for (let beat = 0; beat < SIM_BEATS; beat++) {
+    for (let beat = 0; beat < simBeats; beat++) {
       const bim = beat % 4;
       let speed: number;
-      if (bim === 0 || bim === 2) {
-        angle += kickAngle;
-        speed = Math.abs(baseSpeed);
-      } else {
-        angle -= snareAngle;
-        speed = -Math.abs(baseSpeed);
-      }
+      if (bim === 0 || bim === 2) { angle += kickAngle; speed = Math.abs(baseSpeed); }
+      else { angle -= snareAngle; speed = -Math.abs(baseSpeed); }
       let dx = Math.cos(angle) * speed;
       let dy = Math.sin(angle) * speed;
 
       for (let s = 0; s < STEPS_PER_BEAT; s++) {
-        let nx = x + dx;
-        let ny = y + dy;
+        let nx = x + dx, ny = y + dy;
         const dist = Math.sqrt(nx * nx + ny * ny);
-
-        // Bounce off the circle boundary
         if (dist > bounceRadius && dist > 0.001) {
-          // Normal at hit point (pointing inward)
-          const normX = -nx / dist;
-          const normY = -ny / dist;
-          // Reflect velocity: v' = v - 2(v·n)n
+          const normX = -nx / dist, normY = -ny / dist;
           const dot = dx * normX + dy * normY;
-          dx = dx - 2 * dot * normX;
-          dy = dy - 2 * dot * normY;
-          // Place on boundary and apply reflected step
+          dx = dx - 2 * dot * normX; dy = dy - 2 * dot * normY;
           nx = (nx / dist) * bounceRadius + dx;
           ny = (ny / dist) * bounceRadius + dy;
         }
-
-        x = nx;
-        y = ny;
-        pts[count * 2] = x;
-        pts[count * 2 + 1] = y;
+        x = nx; y = ny;
+        pts[count * 2] = x; pts[count * 2 + 1] = y;
         count++;
         if (count >= maxPoints) break;
       }
       if (count >= maxPoints) break;
     }
-
     result.push({ points: pts, count });
   }
   return result;
 }
 
-/** Build THREE.Line objects from trajectories with dot at each endpoint */
-function buildLines(
-  parent: THREE.Group,
-  trajectories: Trajectory[],
-  scale: number,
-  color: number,
-  opacity: number,
-  dotSize: number,
-  disposables: (() => void)[],
-  displaceables?: DisplaceableGeom[],
-) {
-  for (const traj of trajectories) {
-    if (traj.count < 2) continue;
+// --- Reusable scratch buffers for trajectory → line position conversion ---
+// Pre-allocate one large buffer for writing line positions (x,y,z triples)
+const _scratchLinePos = new Float32Array(MAX_POINTS_PER_LINE * 3);
 
-    const positions = new Float32Array(traj.count * 3);
-    for (let i = 0; i < traj.count; i++) {
-      positions[i * 3] = traj.points[i * 2] * scale;
-      positions[i * 3 + 1] = traj.points[i * 2 + 1] * scale;
-      positions[i * 3 + 2] = 0;
-    }
-    const geom = new THREE.BufferGeometry();
-    const attr = new THREE.BufferAttribute(positions, 3);
-    geom.setAttribute('position', attr);
-    const mat = new THREE.LineBasicMaterial({
-      color,
-      transparent: true,
-      opacity,
-      depthWrite: false,
-      depthTest: false,
-    });
-    const line = new THREE.Line(geom, mat);
-    parent.add(line);
-    disposables.push(() => { geom.dispose(); mat.dispose(); });
-
-    // Track for displacement effects
-    if (displaceables) {
-      displaceables.push({ attr, base: new Float32Array(positions) });
-    }
-
-    // Dot at final position
-    const lx = traj.points[(traj.count - 1) * 2] * scale;
-    const ly = traj.points[(traj.count - 1) * 2 + 1] * scale;
-    const dotGeom = new THREE.CircleGeometry(dotSize * scale * 0.5, 12);
-    const dotMat = new THREE.MeshBasicMaterial({ color, depthWrite: false, depthTest: false });
-    const dot = new THREE.Mesh(dotGeom, dotMat);
-    dot.position.set(lx, ly, 0);
-    parent.add(dot);
-    disposables.push(() => { dotGeom.dispose(); dotMat.dispose(); });
+/** Copy trajectory points into _scratchLinePos scaled, return point count. */
+function trajectoryToPositions(traj: Trajectory, scale: number): number {
+  const count = traj.count;
+  for (let i = 0; i < count; i++) {
+    _scratchLinePos[i * 3] = traj.points[i * 2] * scale;
+    _scratchLinePos[i * 3 + 1] = traj.points[i * 2 + 1] * scale;
+    _scratchLinePos[i * 3 + 2] = 0;
   }
+  return count;
 }
 
-/** Build an irregular ink-blob shape (noisy circle) */
-function buildInkBlob(
-  parent: THREE.Group,
-  cx: number,
-  cy: number,
-  baseRadius: number,
-  color: number,
-  opacity: number,
-  seed: number,
-  disposables: (() => void)[],
-) {
-  const shape = new THREE.Shape();
-  for (let v = 0; v < INK_BLOB_VERTS; v++) {
-    const noise = inkHash(seed, v, 0, 0) * 2 - 1; // -1 to 1
-    const r = baseRadius * (1 + noise * INK_BLOB_NOISE);
-    const angle = (v / INK_BLOB_VERTS) * Math.PI * 2;
-    const px = Math.cos(angle) * r;
-    const py = Math.sin(angle) * r;
-    if (v === 0) shape.moveTo(px, py);
-    else shape.lineTo(px, py);
-  }
-  shape.closePath();
-
-  const geom = new THREE.ShapeGeometry(shape);
-  const mat = new THREE.MeshBasicMaterial({
-    color,
-    transparent: true,
-    opacity,
-    depthWrite: false,
-    depthTest: false,
-  });
-  const mesh = new THREE.Mesh(geom, mat);
-  mesh.position.set(cx, cy, 0);
-  parent.add(mesh);
-  disposables.push(() => { geom.dispose(); mat.dispose(); });
-}
-
-/** Render all persistent ink blobs around the panel center */
-function renderInkBlobs(
-  parent: THREE.Group,
-  orbitRadius: number,
-  color: number,
-  dotSize: number,
-  scale: number,
-  blobs: InkBlob[],
-  disposables: (() => void)[],
-) {
-  const blobR = dotSize * scale * INK_BLOB_MULT;
-
-  for (const blob of blobs) {
-    const [x, y] = inkPolarPath(blob.slot, orbitRadius);
-    buildInkBlob(parent, x, y, blobR, color, blob.opacity, blob.seed, disposables);
-  }
-}
-
-/** Build a smaller ink blob for the crazy polar system */
-function buildCrazyInkBlob(
-  parent: THREE.Group,
-  cx: number,
-  cy: number,
-  baseRadius: number,
-  color: number,
-  opacity: number,
-  seed: number,
-  disposables: (() => void)[],
-) {
-  const shape = new THREE.Shape();
-  for (let v = 0; v < CRAZY_INK_BLOB_VERTS; v++) {
-    const noise = inkHash(seed, v, 1, 0) * 2 - 1;
-    const r = baseRadius * (1 + noise * CRAZY_INK_BLOB_NOISE);
-    const angle = (v / CRAZY_INK_BLOB_VERTS) * Math.PI * 2;
-    const px = Math.cos(angle) * r;
-    const py = Math.sin(angle) * r;
-    if (v === 0) shape.moveTo(px, py);
-    else shape.lineTo(px, py);
-  }
-  shape.closePath();
-  const geom = new THREE.ShapeGeometry(shape);
-  const mat = new THREE.MeshBasicMaterial({
-    color, transparent: true, opacity, depthWrite: false, depthTest: false,
-  });
-  const mesh = new THREE.Mesh(geom, mat);
-  mesh.position.set(cx, cy, 0);
-  parent.add(mesh);
-  disposables.push(() => { geom.dispose(); mat.dispose(); });
-}
-
-/** Render crazy polar ink blobs around panel center */
-function renderCrazyInkBlobs(
-  parent: THREE.Group,
-  orbitRadius: number,
-  color: number,
-  dotSize: number,
-  scale: number,
-  blobs: InkBlob[],
-  disposables: (() => void)[],
-) {
-  const blobR = dotSize * scale * CRAZY_INK_BLOB_MULT;
-  for (const blob of blobs) {
-    const [x, y] = crazyPolarPath(blob.slot, orbitRadius);
-    buildCrazyInkBlob(parent, x, y, blobR, color, blob.opacity, blob.seed, disposables);
-  }
-}
-
-/** Render spiral dots emanating from a center point */
-function renderSpiralDots(
-  parent: THREE.Group,
-  centerX: number,
-  centerY: number,
-  color: number,
-  dotSize: number,
-  scale: number,
-  dots: SpiralDot[],
-  panelIndex: number,
-  spiralBaseAngle: number,
-  disposables: (() => void)[],
-) {
-  const blobR = dotSize * scale * 0.6; // smaller than regular ink blobs
-  for (const dot of dots) {
-    if (dot.panelIndex !== panelIndex) continue;
-    // Archimedean spiral: r = a + b*theta
-    const theta = dot.baseAngle + spiralBaseAngle + dot.step * 0.5;
-    const r = SPIRAL_GROWTH * scale * dot.step;
-    const x = centerX + Math.cos(theta) * r;
-    const y = centerY + Math.sin(theta) * r;
-    buildInkBlob(parent, x, y, blobR, color, dot.opacity, dot.seed, disposables);
-  }
+// --- Persistent scene graph holder ---
+interface SceneRefs {
+  // Paper backdrop
+  paperMesh: THREE.Mesh;
+  paperMat: THREE.MeshBasicMaterial;
+  // Background flower
+  bgGroup: THREE.Group;
+  bgLineSet: ManagedLineSet;
+  bgDotSet: ManagedDotSet;
+  bgLineMat: THREE.ShaderMaterial;
+  bgDotMat: THREE.ShaderMaterial;
+  // Mask rectangles
+  masks: THREE.Mesh[];
+  maskMats: THREE.MeshBasicMaterial[];
+  // Foreground panels (3 panels)
+  fgGroups: THREE.Group[];
+  fgLineSets: ManagedLineSet[];
+  fgDotSets: ManagedDotSet[];
+  fgLineMats: THREE.ShaderMaterial[];
+  fgDotMats: THREE.ShaderMaterial[];
+  // Ink blob pools (one per panel → single pool across all panels)
+  inkPool: ManagedBlobPool;
+  crazyInkPool: ManagedBlobPool;
+  spiralPool: ManagedBlobPool;
+  inkBlobGeom: THREE.CircleGeometry;
+  crazyInkBlobGeom: THREE.CircleGeometry;
+  spiralBlobGeom: THREE.CircleGeometry;
+  // Snare patterns (3 panels)
+  snareGroups: THREE.Group[];
+  snareLineSets: ManagedLineSet[];
+  snareDotSets: ManagedDotSet[];
+  snareLineMats: THREE.ShaderMaterial[];
+  snareDotMats: THREE.ShaderMaterial[];
+  // Glow overlay
+  glowMesh: THREE.Mesh;
+  glowMat: THREE.MeshBasicMaterial;
+  // Displacement uniforms (shared by all displacement materials)
+  sharedUniforms: DisplacementUniforms;
 }
 
 function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
@@ -505,6 +330,7 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
   const engineRef = useRef(getVisualPlaybackEngine());
   const bpm = useProjectStore((s) => s.project.bpm);
   const initRef = useRef(false);
+  const sceneRef = useRef<SceneRefs | null>(null);
 
   // Mutable angle state
   const fgKickAngle = useRef(0);
@@ -512,92 +338,438 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
   const bgKickAngle = useRef(0);
   const bgSnareAngle = useRef(0);
   const bgRotation = useRef(0);
-  const inkStep = useRef(0); // current ink rotation slot (0–31)
-  const inkBlobs = useRef<InkBlob[]>([]); // persistent fading blobs
-  const inkSeedCounter = useRef(0); // monotonic seed for blob shapes
-  const inverted = useRef(false); // color inversion toggle
-  const paletteKey = useRef('default'); // active palette name
+  const inkStep = useRef(0);
+  const inkBlobs = useRef<InkBlob[]>([]);
+  const inkSeedCounter = useRef(0);
+  const inverted = useRef(false);
+  const paletteKey = useRef('default');
 
   // Spiral dot state
   const spiralDots = useRef<SpiralDot[]>([]);
   const spiralSeedCounter = useRef(0);
-  const spiralBaseAngle = useRef(0); // rotated by kicks
-  const lastSpiralStepTime = useRef(0); // ms timestamp of last 1/32 advance
+  const spiralBaseAngle = useRef(0);
+  const lastSpiralStepTime = useRef(0);
 
   // Crazy polar ink state
   const crazyInkStep = useRef(0);
   const crazyInkBlobs = useRef<InkBlob[]>([]);
   const crazyInkSeedCounter = useRef(0);
 
-  // Scale pop state — step index into SCALE_POP_STEPS, -1 = inactive
+  // Scale pop state
   const scalePopStep = useRef(-1);
-  const scalePopTickTime = useRef(0); // ms timestamp of last 1/16th tick for this effect
+  const scalePopTickTime = useRef(0);
 
-  // Line weight state — remaining 1/16th ticks of boost, 0 = inactive
+  // Line weight state
   const lineWeightTicks = useRef(0);
   const lineWeightTickTime = useRef(0);
 
-  // Continuous ink fade timer (both regular + crazy ink)
+  // Continuous ink fade timer
   const lastInkFadeTime = useRef(0);
 
-  // Snare bounce pattern state — per panel (L=0, C=1, R=2)
-  const snareActive = useRef([false, false, false]); // true while note is held
+  // Snare bounce pattern state
+  const snareActive = useRef([false, false, false]);
   const snareKickAngle = useRef([deg2rad(20), deg2rad(20), deg2rad(20)]);
   const snareSnareAngle = useRef([deg2rad(15), deg2rad(15), deg2rad(15)]);
-  const snareEvolveTime = useRef(0); // ms timestamp of last 1/32 evolution tick
+  const snareEvolveTime = useRef(0);
 
   // Track params to detect changes
   const prevParamsRef = useRef('');
-
-  // Per-pitch note-on count tracking (previous frame's counts)
   const prevPitchCountsRef = useRef(new Map<number, number>());
 
-  // Glow pulse state
-  const glowMeshRef = useRef<THREE.Mesh | null>(null);
+  // Glow opacity (mutated in useFrame)
   const glowOpacity = useRef(0);
 
-  // Displacement effect state
-  const displaceRef = useRef<DisplaceableGeom[]>([]);
+  // Displacement smoothing
   const waveAmpSmooth = useRef(0);
   const waveFreqSmooth = useRef(WAVE_FREQ_MIN);
   const warpAmpSmooth = useRef(0);
   const warpFoldSmooth = useRef(WARP_FOLD_MIN);
 
-  // Disposable cleanup functions
-  const disposablesRef = useRef<(() => void)[]>([]);
+  // Cached viewport dimensions for resize detection
+  const prevVwRef = useRef(0);
+  const prevVhRef = useRef(0);
 
   const { viewport } = useThree();
 
-  function clearScene() {
-    for (const fn of disposablesRef.current) fn();
-    disposablesRef.current = [];
-    displaceRef.current = [];
+  // --- Build persistent scene graph (called once, or on viewport resize) ---
+  const buildPersistentScene = useCallback(() => {
     const root = rootRef.current;
-    if (!root) return;
-    while (root.children.length > 0) {
-      root.remove(root.children[0]);
+    if (!root) return null;
+
+    // Dispose old scene if any
+    if (sceneRef.current) {
+      disposePersistentScene(sceneRef.current, root);
     }
-  }
-
-  function buildScene(p: {
-    balls: number; kickStep: number; snareStep: number;
-    speed: number; dotSize: number; lineOpacity: number;
-  }) {
-    const root = rootRef.current;
-    if (!root) return;
-    clearScene();
-
-    // Apply line weight boost if active
-    const lwActive = lineWeightTicks.current > 0;
-    const effectiveOpacity = lwActive ? p.lineOpacity * LINE_WEIGHT_OPACITY_MULT : p.lineOpacity;
-    const effectiveDotSize = lwActive ? p.dotSize * LINE_WEIGHT_DOT_MULT : p.dotSize;
 
     const vw = viewport.width;
     const vh = viewport.height;
     const panelWidth = vw / 3;
     const fgScale = panelWidth / PATTERN_EXTENT;
 
-    // Resolve colors from palette + inversion
+    const sharedUniforms = createDisplacementUniforms();
+
+    // === 0. Paper backdrop ===
+    const paperGeom = new THREE.PlaneGeometry(vw * 2, vh * 2);
+    const paperMat = new THREE.MeshBasicMaterial({ color: 0xf5f2eb, depthWrite: false, depthTest: false });
+    const paperMesh = new THREE.Mesh(paperGeom, paperMat);
+    paperMesh.renderOrder = -1;
+    root.add(paperMesh);
+
+    // === 1. Background flower ===
+    const bgGroup = new THREE.Group();
+    bgGroup.renderOrder = 0;
+    root.add(bgGroup);
+
+    const bgLineMat = createDisplacementMaterial(sharedUniforms, new THREE.Color(0xb5563e), BG_LINE_OPACITY);
+    const bgDotMat = createDisplacementMaterial(sharedUniforms, new THREE.Color(0xb5563e), 1.0);
+
+    const bgLineSet = new ManagedLineSet({
+      parent: bgGroup,
+      maxLines: BG_BALLS,
+      maxPointsPerLine: MAX_POINTS_PER_LINE,
+      material: bgLineMat,
+    });
+    const bgDotSet = new ManagedDotSet({
+      parent: bgGroup,
+      maxDots: BG_BALLS,
+      material: bgDotMat,
+      radius: 1, // will be scaled by setDot
+    });
+
+    // === 2. Mask rectangles (3 panels) ===
+    const masks: THREE.Mesh[] = [];
+    const maskMats: THREE.MeshBasicMaterial[] = [];
+    for (let pi = 0; pi < 3; pi++) {
+      const mGeom = new THREE.PlaneGeometry(1, 1); // will be rescaled
+      const mMat = new THREE.MeshBasicMaterial({ color: 0xf5f2eb, depthWrite: false, depthTest: false });
+      const mask = new THREE.Mesh(mGeom, mMat);
+      mask.renderOrder = 1;
+      root.add(mask);
+      masks.push(mask);
+      maskMats.push(mMat);
+    }
+
+    // === 3. Foreground panels ===
+    const fgGroups: THREE.Group[] = [];
+    const fgLineSets: ManagedLineSet[] = [];
+    const fgDotSets: ManagedDotSet[] = [];
+    const fgLineMats: THREE.ShaderMaterial[] = [];
+    const fgDotMats: THREE.ShaderMaterial[] = [];
+    for (let pi = 0; pi < 3; pi++) {
+      const panelGroup = new THREE.Group();
+      panelGroup.renderOrder = 2;
+      panelGroup.position.x = (pi - 1) * panelWidth;
+      root.add(panelGroup);
+      fgGroups.push(panelGroup);
+
+      const fgLineMat = createDisplacementMaterial(sharedUniforms, new THREE.Color(0x1a2744), DEFAULTS.lineOpacity);
+      const fgDotMat = createDisplacementMaterial(sharedUniforms, new THREE.Color(0x1a2744), 1.0);
+      fgLineMats.push(fgLineMat);
+      fgDotMats.push(fgDotMat);
+
+      fgLineSets.push(new ManagedLineSet({
+        parent: panelGroup,
+        maxLines: MAX_BALLS,
+        maxPointsPerLine: MAX_POINTS_PER_LINE,
+        material: fgLineMat,
+      }));
+      fgDotSets.push(new ManagedDotSet({
+        parent: panelGroup,
+        maxDots: MAX_BALLS,
+        material: fgDotMat,
+        radius: 1,
+      }));
+    }
+
+    // === 4. Blob pools (shared across all 3 panels — positions include panel offset) ===
+    const inkBlobGeom = new THREE.CircleGeometry(1, 10);
+    const crazyInkBlobGeom = new THREE.CircleGeometry(1, 8);
+    const spiralBlobGeom = new THREE.CircleGeometry(1, 8);
+
+    // Ink blobs rendered in a group at renderOrder 2 (on top of fg)
+    const inkPoolGroup = new THREE.Group();
+    inkPoolGroup.renderOrder = 2;
+    root.add(inkPoolGroup);
+    const inkPool = new ManagedBlobPool({
+      parent: inkPoolGroup,
+      maxInstances: MAX_INK_BLOBS,
+      geometry: inkBlobGeom,
+      color: new THREE.Color(0x1a2744),
+    });
+
+    const crazyInkPoolGroup = new THREE.Group();
+    crazyInkPoolGroup.renderOrder = 2;
+    root.add(crazyInkPoolGroup);
+    const crazyInkPool = new ManagedBlobPool({
+      parent: crazyInkPoolGroup,
+      maxInstances: MAX_CRAZY_INK_BLOBS,
+      geometry: crazyInkBlobGeom,
+      color: new THREE.Color(0x1a2744),
+    });
+
+    const spiralPoolGroup = new THREE.Group();
+    spiralPoolGroup.renderOrder = 2;
+    root.add(spiralPoolGroup);
+    const spiralPool = new ManagedBlobPool({
+      parent: spiralPoolGroup,
+      maxInstances: MAX_SPIRAL_DOTS,
+      geometry: spiralBlobGeom,
+      color: new THREE.Color(0x1a2744),
+    });
+
+    // === 5. Snare panels ===
+    const snareGroups: THREE.Group[] = [];
+    const snareLineSets: ManagedLineSet[] = [];
+    const snareDotSets: ManagedDotSet[] = [];
+    const snareLineMats: THREE.ShaderMaterial[] = [];
+    const snareDotMats: THREE.ShaderMaterial[] = [];
+    for (let pi = 0; pi < 3; pi++) {
+      const snareGroup = new THREE.Group();
+      snareGroup.renderOrder = 2;
+      snareGroup.position.x = (pi - 1) * panelWidth;
+      snareGroup.visible = false;
+      root.add(snareGroup);
+      snareGroups.push(snareGroup);
+
+      const snareLineMat = createDisplacementMaterial(sharedUniforms, new THREE.Color(0x4a7a6f), SNARE_LINE_OPACITY);
+      const snareDotMat = createDisplacementMaterial(sharedUniforms, new THREE.Color(0x4a7a6f), 1.0);
+      snareLineMats.push(snareLineMat);
+      snareDotMats.push(snareDotMat);
+
+      snareLineSets.push(new ManagedLineSet({
+        parent: snareGroup,
+        maxLines: SNARE_BALLS,
+        maxPointsPerLine: SNARE_SIM_BEATS * STEPS_PER_BEAT + 1,
+        material: snareLineMat,
+      }));
+      snareDotSets.push(new ManagedDotSet({
+        parent: snareGroup,
+        maxDots: SNARE_BALLS,
+        material: snareDotMat,
+        radius: 1,
+      }));
+    }
+
+    // === 6. Glow overlay ===
+    const glowRadius = Math.max(vw, vh) * 0.6;
+    const glowGeom = new THREE.CircleGeometry(glowRadius, 48);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0xb5563e, transparent: true, opacity: 0, depthWrite: false, depthTest: false,
+    });
+    const glowMesh = new THREE.Mesh(glowGeom, glowMat);
+    glowMesh.renderOrder = 3;
+    root.add(glowMesh);
+
+    const refs: SceneRefs = {
+      paperMesh, paperMat,
+      bgGroup, bgLineSet, bgDotSet, bgLineMat, bgDotMat,
+      masks, maskMats,
+      fgGroups, fgLineSets, fgDotSets, fgLineMats, fgDotMats,
+      inkPool, crazyInkPool, spiralPool,
+      inkBlobGeom, crazyInkBlobGeom, spiralBlobGeom,
+      snareGroups, snareLineSets, snareDotSets, snareLineMats, snareDotMats,
+      glowMesh, glowMat,
+      sharedUniforms,
+    };
+
+    sceneRef.current = refs;
+    prevVwRef.current = vw;
+    prevVhRef.current = vh;
+    return refs;
+  }, [viewport.width, viewport.height]);
+
+  function disposePersistentScene(refs: SceneRefs, root: THREE.Group) {
+    // Remove and dispose everything
+    root.remove(refs.paperMesh);
+    refs.paperMesh.geometry.dispose();
+    refs.paperMat.dispose();
+
+    refs.bgLineSet.dispose();
+    refs.bgDotSet.dispose();
+    refs.bgLineMat.dispose();
+    refs.bgDotMat.dispose();
+    root.remove(refs.bgGroup);
+
+    for (const mask of refs.masks) { root.remove(mask); mask.geometry.dispose(); }
+    for (const mat of refs.maskMats) mat.dispose();
+
+    for (let pi = 0; pi < 3; pi++) {
+      refs.fgLineSets[pi].dispose();
+      refs.fgDotSets[pi].dispose();
+      refs.fgLineMats[pi].dispose();
+      refs.fgDotMats[pi].dispose();
+      root.remove(refs.fgGroups[pi]);
+    }
+
+    // Blob pools — their parent groups need removing too
+    const inkParent = refs.inkPool.getMesh().parent!;
+    refs.inkPool.dispose();
+    root.remove(inkParent);
+    const crazyInkParent = refs.crazyInkPool.getMesh().parent!;
+    refs.crazyInkPool.dispose();
+    root.remove(crazyInkParent);
+    const spiralParent = refs.spiralPool.getMesh().parent!;
+    refs.spiralPool.dispose();
+    root.remove(spiralParent);
+    refs.inkBlobGeom.dispose();
+    refs.crazyInkBlobGeom.dispose();
+    refs.spiralBlobGeom.dispose();
+
+    for (let pi = 0; pi < 3; pi++) {
+      refs.snareLineSets[pi].dispose();
+      refs.snareDotSets[pi].dispose();
+      refs.snareLineMats[pi].dispose();
+      refs.snareDotMats[pi].dispose();
+      root.remove(refs.snareGroups[pi]);
+    }
+
+    root.remove(refs.glowMesh);
+    refs.glowMesh.geometry.dispose();
+    refs.glowMat.dispose();
+  }
+
+  // --- Helper: update all fg lines + dots from current trajectories ---
+  function updateFgLines(refs: SceneRefs, trajs: Trajectory[], scale: number, dotScale: number, balls: number) {
+    for (let pi = 0; pi < 3; pi++) {
+      const lineSet = refs.fgLineSets[pi];
+      const dotSet = refs.fgDotSets[pi];
+
+      let visibleCount = balls;
+      for (let bi = 0; bi < balls; bi++) {
+        const traj = trajs[bi];
+        if (!traj || traj.count < 2) {
+          visibleCount = bi;
+          break;
+        }
+        const count = trajectoryToPositions(traj, scale);
+        lineSet.updateLine(bi, _scratchLinePos, count);
+
+        // Dot at final position
+        const lx = traj.points[(traj.count - 1) * 2] * scale;
+        const ly = traj.points[(traj.count - 1) * 2 + 1] * scale;
+        dotSet.setDot(bi, lx, ly, dotScale);
+      }
+
+      // Set count AFTER positioning to avoid briefly showing unpositioned instances
+      lineSet.setLineCount(visibleCount);
+      dotSet.setCount(visibleCount);
+    }
+  }
+
+  // --- Helper: update bg lines + dots ---
+  function updateBgLines(refs: SceneRefs, trajs: Trajectory[], scale: number, dotScale: number) {
+    const lineSet = refs.bgLineSet;
+    const dotSet = refs.bgDotSet;
+
+    for (let bi = 0; bi < BG_BALLS; bi++) {
+      const traj = trajs[bi];
+      if (!traj || traj.count < 2) continue;
+      const count = trajectoryToPositions(traj, scale);
+      lineSet.updateLine(bi, _scratchLinePos, count);
+
+      const lx = traj.points[(traj.count - 1) * 2] * scale;
+      const ly = traj.points[(traj.count - 1) * 2 + 1] * scale;
+      dotSet.setDot(bi, lx, ly, dotScale);
+    }
+
+    // Set count AFTER positioning
+    lineSet.setLineCount(BG_BALLS);
+    dotSet.setCount(BG_BALLS);
+    refs.bgGroup.rotation.z = bgRotation.current;
+  }
+
+  // --- Helper: update snare lines + dots for a panel ---
+  function updateSnareLines(refs: SceneRefs, pi: number, panelWidth: number, dotSize: number) {
+    if (!snareActive.current[pi]) {
+      refs.snareGroups[pi].visible = false;
+      return;
+    }
+    refs.snareGroups[pi].visible = true;
+    const snareScale = (panelWidth * 0.8) / SNARE_BOUNCE_RADIUS;
+    const trajs = computePatternBounce(
+      SNARE_BALLS,
+      snareKickAngle.current[pi],
+      snareSnareAngle.current[pi],
+      SNARE_SPEED,
+      SNARE_BOUNCE_RADIUS,
+      SNARE_SIM_BEATS,
+    );
+    const lineSet = refs.snareLineSets[pi];
+    const dotSet = refs.snareDotSets[pi];
+
+    for (let bi = 0; bi < SNARE_BALLS; bi++) {
+      const traj = trajs[bi];
+      if (!traj || traj.count < 2) continue;
+      const count = trajectoryToPositions(traj, snareScale);
+      lineSet.updateLine(bi, _scratchLinePos, count);
+
+      const lx = traj.points[(traj.count - 1) * 2] * snareScale;
+      const ly = traj.points[(traj.count - 1) * 2 + 1] * snareScale;
+      dotSet.setDot(bi, lx, ly, dotSize * 0.7 * snareScale * 0.5);
+    }
+
+    // Set count AFTER positioning
+    lineSet.setLineCount(SNARE_BALLS);
+    dotSet.setCount(SNARE_BALLS);
+  }
+
+  // --- Helper: update ink blob pool instances ---
+  function updateInkBlobs(refs: SceneRefs, panelWidth: number, dotSize: number, fgScale: number) {
+    const orbitR = panelWidth * INK_ORBIT_FRAC;
+    const blobR = dotSize * fgScale * INK_BLOB_MULT;
+    const blobs = inkBlobs.current;
+    let idx = 0;
+
+    for (let pi = 0; pi < 3; pi++) {
+      const panelX = (pi - 1) * panelWidth;
+      for (const blob of blobs) {
+        if (idx >= MAX_INK_BLOBS) break;
+        const [x, y] = inkPolarPath(blob.slot, orbitR);
+        refs.inkPool.setInstance(idx, panelX + x, y, blob.opacity, blobR);
+        idx++;
+      }
+    }
+    refs.inkPool.setCount(idx);
+  }
+
+  function updateCrazyInkBlobs(refs: SceneRefs, panelWidth: number, dotSize: number, fgScale: number) {
+    const orbitR = panelWidth * CRAZY_INK_ORBIT_FRAC;
+    const blobR = dotSize * fgScale * CRAZY_INK_BLOB_MULT;
+    const blobs = crazyInkBlobs.current;
+    let idx = 0;
+
+    for (let pi = 0; pi < 3; pi++) {
+      const panelX = (pi - 1) * panelWidth;
+      for (const blob of blobs) {
+        if (idx >= MAX_CRAZY_INK_BLOBS) break;
+        const [x, y] = crazyPolarPath(blob.slot, orbitR);
+        refs.crazyInkPool.setInstance(idx, panelX + x, y, blob.opacity, blobR);
+        idx++;
+      }
+    }
+    refs.crazyInkPool.setCount(idx);
+  }
+
+  function updateSpiralDots(refs: SceneRefs, panelWidth: number, dotSize: number, fgScale: number) {
+    const blobR = dotSize * fgScale * 0.6;
+    const dots = spiralDots.current;
+    let idx = 0;
+
+    for (const dot of dots) {
+      if (idx >= MAX_SPIRAL_DOTS) break;
+      const panelX = (dot.panelIndex - 1) * panelWidth;
+      const theta = dot.baseAngle + spiralBaseAngle.current + dot.step * 0.5;
+      const r = SPIRAL_GROWTH * fgScale * dot.step;
+      const x = panelX + Math.cos(theta) * r;
+      const y = Math.sin(theta) * r;
+      refs.spiralPool.setInstance(idx, x, y, dot.opacity, blobR);
+      idx++;
+    }
+    refs.spiralPool.setCount(idx);
+  }
+
+  // --- Helper: update all colors from current palette/inversion ---
+  function updateColors(refs: SceneRefs) {
     const pal = PALETTES[paletteKey.current] ?? PALETTES.default;
     const inv = inverted.current;
     const colBg = inv ? pal.fg : pal.bg;
@@ -606,45 +778,35 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
     const colGlow = inv ? pal.bg : pal.glow;
     const colTertiary = inv ? pal.bg : pal.tertiary;
 
-    // === 0. Full-viewport paper backdrop (renderOrder -1) ===
-    const paperGeom = new THREE.PlaneGeometry(vw * 2, vh * 2);
-    const paperMat = new THREE.MeshBasicMaterial({
-      color: colBg,
-      depthWrite: false,
-      depthTest: false,
-    });
-    const paperPlane = new THREE.Mesh(paperGeom, paperMat);
-    paperPlane.renderOrder = -1;
-    root.add(paperPlane);
-    disposablesRef.current.push(() => { paperGeom.dispose(); paperMat.dispose(); });
+    refs.paperMat.color.set(colBg);
+    refs.bgLineMat.uniforms.uColor.value.set(colAccent);
+    refs.bgDotMat.uniforms.uColor.value.set(colAccent);
 
-    // === 1. Background flower (renderOrder 0) ===
-    const bgGroup = new THREE.Group();
-    bgGroup.renderOrder = 0;
-    bgGroup.position.z = 0;
-    bgGroup.rotation.z = bgRotation.current;
+    for (const mat of refs.maskMats) mat.color.set(colBg);
 
-    const bgS = fgScale * BG_SCALE;
-    const bgTrajs = computePattern(BG_BALLS, bgKickAngle.current, bgSnareAngle.current, BG_SPEED);
-    buildLines(bgGroup, bgTrajs, bgS, colAccent, BG_LINE_OPACITY, p.dotSize, disposablesRef.current, displaceRef.current);
-    root.add(bgGroup);
+    for (let pi = 0; pi < 3; pi++) {
+      refs.fgLineMats[pi].uniforms.uColor.value.set(colFg);
+      refs.fgDotMats[pi].uniforms.uColor.value.set(colFg);
+      refs.snareLineMats[pi].uniforms.uColor.value.set(colTertiary);
+      refs.snareDotMats[pi].uniforms.uColor.value.set(colTertiary);
+    }
 
-    // === 2. Compute foreground trajectories (shared by all 3 panels) ===
-    const fgTrajs = computePattern(p.balls, fgKickAngle.current, fgSnareAngle.current, p.speed);
+    refs.inkPool.setColor(colFg);
+    refs.crazyInkPool.setColor(colFg);
+    refs.spiralPool.setColor(colFg);
+    refs.glowMat.color.set(colGlow);
+  }
 
-    // Compute bounding box of foreground pattern
+  // --- Helper: update mask sizes/positions from fg bounding box ---
+  function updateMasks(refs: SceneRefs, trajs: Trajectory[], fgScale: number, panelWidth: number) {
     let bbMinX = Infinity, bbMinY = Infinity, bbMaxX = -Infinity, bbMaxY = -Infinity;
-    for (const t of fgTrajs) {
+    for (const t of trajs) {
       for (let i = 0; i < t.count; i++) {
-        const px = t.points[i * 2];
-        const py = t.points[i * 2 + 1];
-        if (px < bbMinX) bbMinX = px;
-        if (py < bbMinY) bbMinY = py;
-        if (px > bbMaxX) bbMaxX = px;
-        if (py > bbMaxY) bbMaxY = py;
+        const px = t.points[i * 2], py = t.points[i * 2 + 1];
+        if (px < bbMinX) bbMinX = px; if (py < bbMinY) bbMinY = py;
+        if (px > bbMaxX) bbMaxX = px; if (py > bbMaxY) bbMaxY = py;
       }
     }
-    // Add padding (10 pattern-units)
     const pad = 10;
     bbMinX -= pad; bbMinY -= pad; bbMaxX += pad; bbMaxY += pad;
     const maskW = (bbMaxX - bbMinX) * fgScale;
@@ -652,72 +814,44 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
     const maskCx = ((bbMaxX + bbMinX) / 2) * fgScale;
     const maskCy = ((bbMaxY + bbMinY) / 2) * fgScale;
 
-    // === 3. Mask rectangles (z = -0.25, renderOrder 1) ===
     for (let pi = 0; pi < 3; pi++) {
       const panelX = (pi - 1) * panelWidth;
-      const mGeom = new THREE.PlaneGeometry(maskW, maskH);
-      const mMat = new THREE.MeshBasicMaterial({ color: colBg, depthWrite: false, depthTest: false });
-      const mask = new THREE.Mesh(mGeom, mMat);
-      mask.renderOrder = 1;
-      mask.position.set(panelX + maskCx, maskCy, 0);
-      root.add(mask);
-      disposablesRef.current.push(() => { mGeom.dispose(); mMat.dispose(); });
+      refs.masks[pi].scale.set(maskW, maskH, 1);
+      refs.masks[pi].position.set(panelX + maskCx, maskCy, 0);
     }
-
-    // === 4. Foreground panels (z = 0, renderOrder 2) ===
-    const inkOrbitR = panelWidth * INK_ORBIT_FRAC;
-    const crazyOrbitR = panelWidth * CRAZY_INK_ORBIT_FRAC;
-    for (let pi = 0; pi < 3; pi++) {
-      const panelGroup = new THREE.Group();
-      panelGroup.renderOrder = 2;
-      panelGroup.position.x = (pi - 1) * panelWidth;
-      buildLines(panelGroup, fgTrajs, fgScale, colFg, effectiveOpacity, effectiveDotSize, disposablesRef.current, displaceRef.current);
-      renderInkBlobs(panelGroup, inkOrbitR, colFg, effectiveDotSize, fgScale, inkBlobs.current, disposablesRef.current);
-      renderCrazyInkBlobs(panelGroup, crazyOrbitR, colFg, effectiveDotSize, fgScale, crazyInkBlobs.current, disposablesRef.current);
-      renderSpiralDots(panelGroup, 0, 0, colFg, effectiveDotSize, fgScale, spiralDots.current, pi, spiralBaseAngle.current, disposablesRef.current);
-      root.add(panelGroup);
-    }
-
-    // === 4b. Snare bounce patterns — rendered on top of fg (renderOrder 2.5) ===
-    const snareScale = (panelWidth * 0.8) / SNARE_BOUNCE_RADIUS; // fit inside panel
-    for (let pi = 0; pi < 3; pi++) {
-      if (!snareActive.current[pi]) continue;
-      const snareTrajs = computePatternBounce(
-        SNARE_BALLS,
-        snareKickAngle.current[pi],
-        snareSnareAngle.current[pi],
-        SNARE_SPEED,
-        SNARE_BOUNCE_RADIUS,
-      );
-      const snareGroup = new THREE.Group();
-      snareGroup.renderOrder = 2;
-      snareGroup.position.x = (pi - 1) * panelWidth;
-      buildLines(snareGroup, snareTrajs, snareScale, colTertiary, SNARE_LINE_OPACITY, p.dotSize * 0.7, disposablesRef.current);
-      root.add(snareGroup);
-    }
-
-    // === 5. Glow overlay (renderOrder 3) ===
-    const glowRadius = Math.max(vw, vh) * 0.6;
-    const glowGeom = new THREE.CircleGeometry(glowRadius, 48);
-    const glowMat = new THREE.MeshBasicMaterial({
-      color: colGlow,
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
-      depthTest: false,
-    });
-    const glow = new THREE.Mesh(glowGeom, glowMat);
-    glow.renderOrder = 3;
-    root.add(glow);
-    glowMeshRef.current = glow;
-    disposablesRef.current.push(() => { glowGeom.dispose(); glowMat.dispose(); });
   }
 
+  // --- Helper: update line opacity + dot size for line weight effect ---
+  function updateLineWeight(refs: SceneRefs, lineOpacity: number, dotSize: number, fgScale: number) {
+    const lwActive = lineWeightTicks.current > 0;
+    const effectiveOpacity = lwActive ? lineOpacity * LINE_WEIGHT_OPACITY_MULT : lineOpacity;
+    const effectiveDotSize = lwActive ? dotSize * LINE_WEIGHT_DOT_MULT : dotSize;
+
+    for (let pi = 0; pi < 3; pi++) {
+      refs.fgLineMats[pi].uniforms.uOpacity.value = effectiveOpacity;
+      // Dot size is baked into scale per setDot, so we just need to track this
+      // The dot set material opacity stays at 1.0
+    }
+
+    return { effectiveOpacity, effectiveDotSize };
+  }
+
+  // ============================
+  // useFrame — zero allocations
+  // ============================
   useFrame(() => {
     const root = rootRef.current;
     if (!root) return;
     const state = engineRef.current.getTrackState(trackId);
     if (!state) return;
+
+    // Check for viewport resize → full rebuild
+    const vw = viewport.width;
+    const vh = viewport.height;
+    if (vw !== prevVwRef.current || vh !== prevVhRef.current) {
+      buildPersistentScene();
+      initRef.current = false; // force re-init on next frame
+    }
 
     const balls = (state.params.balls as number) ?? DEFAULTS.balls;
     const kickStep = (state.params.kickStep as number) ?? DEFAULTS.kickStep;
@@ -728,10 +862,16 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
     const fgMultiplier = (state.params.fgMultiplier as number) ?? DEFAULTS.fgMultiplier;
     const bgMultiplier = (state.params.bgMultiplier as number) ?? DEFAULTS.bgMultiplier;
 
-    const p = { balls, kickStep, snareStep, speed, dotSize, lineOpacity };
-
-    // Check if params changed (rebuild without angle change)
     const paramsKey = `${balls},${speed},${dotSize},${lineOpacity},${fgMultiplier},${bgMultiplier}`;
+    const panelWidth = vw / 3;
+    const fgScale = panelWidth / PATTERN_EXTENT;
+
+    // Build persistent scene if not yet created
+    let refs = sceneRef.current;
+    if (!refs) {
+      refs = buildPersistentScene();
+      if (!refs) return;
+    }
 
     // Initial build
     if (!initRef.current) {
@@ -743,20 +883,38 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
       bgKickAngle.current = deg2rad(kickStart);
       bgSnareAngle.current = deg2rad(snareStart);
       prevParamsRef.current = paramsKey;
-      buildScene(p);
+
+      // Full initial update
+      const bgS = fgScale * BG_SCALE;
+      const bgTrajs = computePattern(BG_BALLS, bgKickAngle.current, bgSnareAngle.current, BG_SPEED);
+      updateBgLines(refs, bgTrajs, bgS, dotSize * bgS * 0.5);
+
+      const fgTrajs = computePattern(balls, fgKickAngle.current, fgSnareAngle.current, speed);
+      updateFgLines(refs, fgTrajs, fgScale, dotSize * fgScale * 0.5, balls);
+      updateMasks(refs, fgTrajs, fgScale, panelWidth);
+      updateColors(refs);
+      updateLineWeight(refs, lineOpacity, dotSize, fgScale);
       return;
     }
 
-    // Rebuild on param change
+    // Dirty flags — only update what changed
+    let fgDirty = false;
+    let bgDirty = false;
+    let colorsDirty = false;
+    let inkDirty = false;
+    let snareDirty = false;
+    let lineWeightDirty = false;
+
+    // Param change → recompute fg + bg + masks
     if (paramsKey !== prevParamsRef.current) {
       prevParamsRef.current = paramsKey;
-      buildScene(p);
-      return;
+      fgDirty = true;
+      bgDirty = true;
+      lineWeightDirty = true;
     }
 
-    // Detect per-pitch note-on triggers using deterministic pitch counts
+    // Detect per-pitch note-on triggers
     const prevCounts = prevPitchCountsRef.current;
-    let needsRebuild = false;
 
     for (const [pitch, count] of state.pitchNoteOnCounts) {
       const prevCount = prevCounts.get(pitch) ?? 0;
@@ -764,104 +922,75 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
       if (delta <= 0) continue;
 
       if (pitch === PITCH_FG) {
-        // Foreground update — increment fg angles per trigger
         for (let i = 0; i < delta; i++) {
           fgKickAngle.current += deg2rad(kickStep) * fgMultiplier;
           fgSnareAngle.current += deg2rad(snareStep) * fgMultiplier;
-          // Rotate the spiral base angle on each kick
           spiralBaseAngle.current += SPIRAL_ROTATION_PER_KICK;
         }
-        needsRebuild = true;
+        fgDirty = true;
       } else if (pitch === PITCH_BG) {
-        // Background flower update — increment bg angles + rotate per trigger
         for (let i = 0; i < delta; i++) {
           bgKickAngle.current += deg2rad(kickStep) * bgMultiplier;
           bgSnareAngle.current += deg2rad(snareStep) * bgMultiplier;
           bgRotation.current += BG_ROTATION_STEP;
         }
-        needsRebuild = true;
+        bgDirty = true;
       } else if (pitch === PITCH_INK) {
         for (let i = 0; i < delta; i++) {
-          // Advance rotation
           inkStep.current = (inkStep.current + 1) % INK_POSITIONS;
-
-          // Spawn 4 new blobs at evenly spaced positions from current step
           for (let d = 0; d < INK_DOTS; d++) {
             const slot = (inkStep.current + d * (INK_POSITIONS / INK_DOTS)) % INK_POSITIONS;
-            inkBlobs.current.push({
-              slot,
-              opacity: 1.0,
-              seed: inkSeedCounter.current++,
-            });
+            inkBlobs.current.push({ slot, opacity: 1.0, seed: inkSeedCounter.current++ });
           }
         }
-        needsRebuild = true;
+        inkDirty = true;
       } else if (pitch === PITCH_INVERT) {
-        // Toggle color inversion (each note-on flips)
-        for (let i = 0; i < delta; i++) {
-          inverted.current = !inverted.current;
-        }
-        needsRebuild = true;
+        for (let i = 0; i < delta; i++) inverted.current = !inverted.current;
+        colorsDirty = true;
       } else if (pitch === PITCH_GLOW) {
-        // Glow pulse — flash to full opacity
         glowOpacity.current = 0.25;
       } else if (pitch === PITCH_SPIRAL) {
-        // Spawn spiral dots from center of all 3 panels
         for (let i = 0; i < delta; i++) {
           for (let pi = 0; pi < 3; pi++) {
             for (let arm = 0; arm < SPIRAL_ARMS; arm++) {
               spiralDots.current.push({
                 panelIndex: pi,
                 baseAngle: (arm / SPIRAL_ARMS) * Math.PI * 2,
-                step: 0,
-                opacity: 1.0,
+                step: 0, opacity: 1.0,
                 seed: spiralSeedCounter.current++,
               });
             }
           }
         }
-        // Initialize timing if first spiral
-        if (lastSpiralStepTime.current === 0) {
-          lastSpiralStepTime.current = performance.now();
-        }
-        needsRebuild = true;
+        if (lastSpiralStepTime.current === 0) lastSpiralStepTime.current = performance.now();
+        inkDirty = true;
       } else if (pitch === PITCH_CRAZY_INK) {
         for (let i = 0; i < delta; i++) {
-          // Advance rotation
           crazyInkStep.current = (crazyInkStep.current + 1) % CRAZY_INK_POSITIONS;
-
-          // Spawn dots evenly spaced along the crazy polar path
           for (let d = 0; d < CRAZY_INK_DOTS_PER_TRIGGER; d++) {
             const slot = (crazyInkStep.current + d * Math.floor(CRAZY_INK_POSITIONS / CRAZY_INK_DOTS_PER_TRIGGER)) % CRAZY_INK_POSITIONS;
-            crazyInkBlobs.current.push({
-              slot,
-              opacity: 1.0,
-              seed: crazyInkSeedCounter.current++,
-            });
+            crazyInkBlobs.current.push({ slot, opacity: 1.0, seed: crazyInkSeedCounter.current++ });
           }
         }
-        needsRebuild = true;
+        inkDirty = true;
       } else if (pitch === PITCH_SCALE_POP) {
-        // Start scale pop sequence from step 0
         scalePopStep.current = 0;
         scalePopTickTime.current = performance.now();
       } else if (pitch === PITCH_LINE_WEIGHT) {
-        // Activate line weight boost
         lineWeightTicks.current = LINE_WEIGHT_HOLD_TICKS;
         lineWeightTickTime.current = performance.now();
-        needsRebuild = true;
+        lineWeightDirty = true;
       } else if (SNARE_PITCHES.includes(pitch)) {
-        // Snare note-on: update angles for this panel
         const pi = SNARE_PITCHES.indexOf(pitch);
         for (let i = 0; i < delta; i++) {
           snareKickAngle.current[pi] += deg2rad(SNARE_KICK_STEP);
           snareSnareAngle.current[pi] += deg2rad(SNARE_SNARE_STEP);
         }
-        needsRebuild = true;
+        snareDirty = true;
       }
     }
 
-    // === Snare sustained check — active while note is held ===
+    // Snare sustained check
     {
       let snareChanged = false;
       for (let pi = 0; pi < 3; pi++) {
@@ -871,51 +1000,36 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
           snareChanged = true;
         }
       }
-      // Initialize evolution timer when any snare becomes active
       const anyActive = snareActive.current.some(a => a);
-      if (anyActive && snareEvolveTime.current === 0) {
-        snareEvolveTime.current = performance.now();
-      }
-      if (!anyActive) {
-        snareEvolveTime.current = 0;
-      }
-      if (snareChanged) needsRebuild = true;
+      if (anyActive && snareEvolveTime.current === 0) snareEvolveTime.current = performance.now();
+      if (!anyActive) snareEvolveTime.current = 0;
+      if (snareChanged) snareDirty = true;
     }
 
-    // Palette switches — last (highest pitch) wins, odd repeats toggle on, even toggle off
+    // Palette switches
     const palPitches: [number, string][] = [
-      [PITCH_PAL_SEPIA, 'sepia'],
-      [PITCH_PAL_MIDNIGHT, 'midnight'],
-      [PITCH_PAL_BOTANICAL, 'botanical'],
-      [PITCH_PAL_PLUM, 'plum'],
+      [PITCH_PAL_SEPIA, 'sepia'], [PITCH_PAL_MIDNIGHT, 'midnight'],
+      [PITCH_PAL_BOTANICAL, 'botanical'], [PITCH_PAL_PLUM, 'plum'],
     ];
     let winningPalKey: string | null = null;
     let winningPalDelta = 0;
     for (const [pp, key] of palPitches) {
       const d = (state.pitchNoteOnCounts.get(pp) ?? 0) - (prevCounts.get(pp) ?? 0);
-      if (d > 0) {
-        // Highest pitch seen so far wins
-        winningPalKey = key;
-        winningPalDelta = d;
-      }
+      if (d > 0) { winningPalKey = key; winningPalDelta = d; }
     }
     if (winningPalKey !== null) {
-      // Odd delta = activate, even delta = net no-op (toggle back)
       if (winningPalDelta % 2 === 1) {
-        // Toggle: if already this palette → default, otherwise → this palette
         paletteKey.current = paletteKey.current === winningPalKey ? 'default' : winningPalKey;
       }
-      // Even delta: pairs cancel out, no change
-      needsRebuild = true;
+      colorsDirty = true;
     }
 
-    // Snapshot current counts for next frame comparison
+    // Snapshot counts
     prevPitchCountsRef.current = new Map(state.pitchNoteOnCounts);
 
-    // === Spiral dot advancement (time-based, every 1/32 note) ===
+    // === Spiral dot advancement ===
     if (spiralDots.current.length > 0) {
       const now = performance.now();
-      // Duration of a 1/32 note in ms: (60000 / bpm) / 8
       const thirtySecondMs = (60000 / bpm) / 8;
       const elapsed = now - lastSpiralStepTime.current;
       const steps = Math.floor(elapsed / thirtySecondMs);
@@ -925,15 +1039,12 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
           dot.step += steps;
           dot.opacity -= SPIRAL_FADE_PER_STEP * steps;
         }
-        // Remove dead or maxed-out dots
-        spiralDots.current = spiralDots.current.filter(
-          d => d.opacity > 0.01 && d.step < SPIRAL_MAX_STEPS
-        );
-        needsRebuild = true;
+        spiralDots.current = spiralDots.current.filter(d => d.opacity > 0.01 && d.step < SPIRAL_MAX_STEPS);
+        inkDirty = true;
       }
     }
 
-    // === Continuous ink fade (every 1/8th note) ===
+    // === Continuous ink fade ===
     if (inkBlobs.current.length > 0 || crazyInkBlobs.current.length > 0) {
       const now = performance.now();
       const eighthMs = (60000 / bpm) / 2;
@@ -946,11 +1057,11 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
         for (const blob of crazyInkBlobs.current) blob.opacity -= CRAZY_INK_FADE_PER_STEP * ticks;
         inkBlobs.current = inkBlobs.current.filter(b => b.opacity > 0.01);
         crazyInkBlobs.current = crazyInkBlobs.current.filter(b => b.opacity > 0.01);
-        needsRebuild = true;
+        inkDirty = true;
       }
     }
 
-    // === Snare pattern auto-evolution (every 1/32 note while held) ===
+    // === Snare evolution ===
     if (snareEvolveTime.current > 0) {
       const now = performance.now();
       const thirtySecondMs = (60000 / bpm) / 8;
@@ -963,77 +1074,83 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
           snareKickAngle.current[pi] += deg2rad(SNARE_EVOLVE_KICK_STEP) * ticks;
           snareSnareAngle.current[pi] += deg2rad(SNARE_EVOLVE_SNARE_STEP) * ticks;
         }
-        needsRebuild = true;
+        snareDirty = true;
       }
     }
 
-    // === Scale pop & line weight tick advancement (1/16th note grid) ===
+    // === Scale pop & line weight tick ===
     {
       const now = performance.now();
       const sixteenthMs = (60000 / bpm) / 4;
-
-      // Scale pop: advance step each 1/16th tick
       if (scalePopStep.current >= 0 && scalePopStep.current < SCALE_POP_STEPS.length - 1) {
         const elapsed = now - scalePopTickTime.current;
         const ticks = Math.floor(elapsed / sixteenthMs);
         if (ticks > 0) {
           scalePopTickTime.current += ticks * sixteenthMs;
-          scalePopStep.current = Math.min(
-            scalePopStep.current + ticks,
-            SCALE_POP_STEPS.length - 1,
-          );
+          scalePopStep.current = Math.min(scalePopStep.current + ticks, SCALE_POP_STEPS.length - 1);
         }
       }
-
-      // Line weight: count down ticks each 1/16th
       if (lineWeightTicks.current > 0) {
         const elapsed = now - lineWeightTickTime.current;
         const ticks = Math.floor(elapsed / sixteenthMs);
         if (ticks > 0) {
           lineWeightTickTime.current += ticks * sixteenthMs;
           lineWeightTicks.current = Math.max(0, lineWeightTicks.current - ticks);
-          needsRebuild = true;
+          lineWeightDirty = true;
         }
       }
     }
 
-    if (needsRebuild) {
-      buildScene(p);
+    // === Incremental updates based on dirty flags ===
+    if (colorsDirty) {
+      updateColors(refs);
     }
 
-    // Apply scale pop directly on root (no rebuild needed)
-    if (root && scalePopStep.current >= 0) {
-      const s = SCALE_POP_STEPS[scalePopStep.current];
-      root.scale.set(s, s, 1);
+    if (lineWeightDirty) {
+      updateLineWeight(refs, lineOpacity, dotSize, fgScale);
     }
 
-    // Decay glow pulse (~150ms fade at 60fps)
-    if (glowOpacity.current > 0) {
-      glowOpacity.current = Math.max(0, glowOpacity.current - 0.025);
-      if (glowMeshRef.current) {
-        (glowMeshRef.current.material as THREE.MeshBasicMaterial).opacity = glowOpacity.current;
+    if (fgDirty) {
+      const fgTrajs = computePattern(balls, fgKickAngle.current, fgSnareAngle.current, speed);
+      const { effectiveDotSize } = updateLineWeight(refs, lineOpacity, dotSize, fgScale);
+      updateFgLines(refs, fgTrajs, fgScale, effectiveDotSize * fgScale * 0.5, balls);
+      updateMasks(refs, fgTrajs, fgScale, panelWidth);
+    }
+
+    if (bgDirty) {
+      const bgS = fgScale * BG_SCALE;
+      const bgTrajs = computePattern(BG_BALLS, bgKickAngle.current, bgSnareAngle.current, BG_SPEED);
+      updateBgLines(refs, bgTrajs, bgS, dotSize * bgS * 0.5);
+    }
+
+    if (inkDirty) {
+      const effectiveDotSize = lineWeightTicks.current > 0 ? dotSize * LINE_WEIGHT_DOT_MULT : dotSize;
+      updateInkBlobs(refs, panelWidth, effectiveDotSize, fgScale);
+      updateCrazyInkBlobs(refs, panelWidth, effectiveDotSize, fgScale);
+      updateSpiralDots(refs, panelWidth, effectiveDotSize, fgScale);
+    }
+
+    if (snareDirty) {
+      for (let pi = 0; pi < 3; pi++) {
+        updateSnareLines(refs, pi, panelWidth, dotSize);
       }
     }
 
-    // === Sustained displacement effects (wave & warp) ===
-    const vw = viewport.width;
+    // === Every frame: displacement uniforms ===
     let waveTarget = 0;
     let waveFreqTarget = waveFreqSmooth.current;
     let warpTarget = 0;
     let warpFoldTarget = warpFoldSmooth.current;
 
-    // Scan activeNotes for wave pitches
     for (let p = PITCH_WAVE_MIN; p <= PITCH_WAVE_MAX; p++) {
       const note = state.activeNotes.get(p);
       if (note) {
         const t = (p - PITCH_WAVE_MIN) / (PITCH_WAVE_MAX - PITCH_WAVE_MIN);
         waveFreqTarget = WAVE_FREQ_MIN + t * (WAVE_FREQ_MAX - WAVE_FREQ_MIN);
         waveTarget = (note.velocity / 127) * WAVE_AMP_SCALE * vw;
-        break; // first active note wins
+        break;
       }
     }
-
-    // Scan activeNotes for warp pitches — pitch maps to harmonic complexity
     for (let p = PITCH_WARP_MIN; p <= PITCH_WARP_MAX; p++) {
       const note = state.activeNotes.get(p);
       if (note) {
@@ -1044,70 +1161,39 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
       }
     }
 
-    // Smooth amplitude & frequency toward targets
     waveAmpSmooth.current += (waveTarget - waveAmpSmooth.current) * EFFECT_LERP;
     waveFreqSmooth.current += (waveFreqTarget - waveFreqSmooth.current) * EFFECT_LERP;
     warpAmpSmooth.current += (warpTarget - warpAmpSmooth.current) * EFFECT_LERP;
     warpFoldSmooth.current += (warpFoldTarget - warpFoldSmooth.current) * EFFECT_LERP;
 
-    const wa = waveAmpSmooth.current;
-    const wf = waveFreqSmooth.current;
-    const xa = warpAmpSmooth.current;
-    const N = warpFoldSmooth.current; // fold symmetry order (3–8, continuous)
-    const anyDisplace = wa > 0.0001 || xa > 0.0001;
+    // Update shared displacement uniforms (all materials respond automatically)
+    refs.sharedUniforms.uWaveAmp.value = waveAmpSmooth.current;
+    refs.sharedUniforms.uWaveFreq.value = waveFreqSmooth.current;
+    refs.sharedUniforms.uWaveSpeed.value = WAVE_SPEED;
+    refs.sharedUniforms.uWarpAmp.value = warpAmpSmooth.current;
+    refs.sharedUniforms.uWarpFold.value = warpFoldSmooth.current;
+    refs.sharedUniforms.uTime.value = performance.now() * 0.001;
 
-    if (anyDisplace) {
-      const time = performance.now() * 0.001;
-      const ts = time * WARP_BASE_SPEED;
-      for (const dg of displaceRef.current) {
-        const pos = dg.attr.array as Float32Array;
-        const base = dg.base;
-        const count = base.length / 3;
-        for (let i = 0; i < count; i++) {
-          const bx = base[i * 3];
-          const by = base[i * 3 + 1];
-          let dx = 0, dy = 0;
+    // Scale pop
+    if (scalePopStep.current >= 0) {
+      const s = SCALE_POP_STEPS[scalePopStep.current];
+      root.scale.set(s, s, 1);
+    }
 
-          // Ink-on-water: slow cross-axis sine displacement
-          if (wa > 0.0001) {
-            dx += Math.sin(by * wf + time * WAVE_SPEED) * wa;
-            dy += Math.sin(bx * wf * 1.3 + time * WAVE_SPEED * 0.7) * wa;
-          }
-
-          // Warp field: N-fold polar symmetry (N = 3–8 from pitch, continuous)
-          // Each pitch creates a mathematically distinct radial pattern
-          if (xa > 0.0001) {
-            const r = Math.sqrt(bx * bx + by * by) + 0.001;
-            const theta = Math.atan2(by, bx);
-            const cosT = bx / r;
-            const sinT = by / r;
-
-            // Primary N-fold radial pattern — defines the symmetry
-            let dr = Math.sin(N * theta + ts * 1.3) * Math.cos(r * 3.0 + ts);
-            // Concentric ripple modulated by the same N-fold
-            dr += 0.5 * Math.sin(r * N + ts * 0.7) * Math.cos(N * theta - ts * 0.9);
-            // 2N harmonic — doubles the petal count, creates inner detail
-            dr += 0.35 * Math.sin(2 * N * theta - ts * 1.1) * Math.sin(r * 4.0 + ts * 1.5);
-
-            // Tangential: N-1 fold swirl (interference between N and N-1 = slow rotation)
-            let dt = 0.4 * Math.sin((N - 1) * theta + ts * 0.8) * Math.cos(r * 2.0 + ts * 1.2);
-            // Counter-rotating N+1 fold for spirograph interference
-            dt += 0.25 * Math.cos((N + 1) * theta - ts) * Math.sin(r * 3.5 - ts * 0.6);
-
-            dx += (dr * cosT - dt * sinT) * xa;
-            dy += (dr * sinT + dt * cosT) * xa;
-          }
-
-          pos[i * 3] = bx + dx;
-          pos[i * 3 + 1] = by + dy;
-        }
-        dg.attr.needsUpdate = true;
-      }
+    // Glow decay
+    if (glowOpacity.current > 0) {
+      glowOpacity.current = Math.max(0, glowOpacity.current - 0.025);
+      refs.glowMat.opacity = glowOpacity.current;
     }
   });
 
   useEffect(() => {
-    return () => clearScene();
+    return () => {
+      if (sceneRef.current && rootRef.current) {
+        disposePersistentScene(sceneRef.current, rootRef.current);
+        sceneRef.current = null;
+      }
+    };
   }, []);
 
   return <group ref={rootRef} />;
@@ -1123,7 +1209,7 @@ export const MetronomeBalls: Instrument = {
   hasVisual: true,
   disableBloom: true,
   editorType: 'generic',
-  noteRange: { min: PITCH_FG, max: PITCH_SNARE_R }, // C3–F#6
+  noteRange: { min: PITCH_FG, max: PITCH_SNARE_R },
   rangeLabels: [
     { startPitch: PITCH_FG, endPitch: PITCH_FG, label: 'Foreground' },
     { startPitch: PITCH_BG, endPitch: PITCH_BG, label: 'Background' },

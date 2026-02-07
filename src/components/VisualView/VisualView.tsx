@@ -28,6 +28,7 @@ export function VisualView({ tracks }: VisualViewProps) {
       <Canvas
         camera={{ position: [0, 0, 8], fov: 50 }}
         gl={{ antialias: true, alpha: true }}
+        dpr={[1, 1.5]}
       >
         <color attach="background" args={['#0a0a0f']} />
         <fog attach="fog" args={['#0a0a0f', 10, 30]} />

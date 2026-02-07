@@ -5,13 +5,26 @@ import { VisualTrackInfo } from './VisualView';
 import { TrackRenderer } from './TrackRenderer';
 import { VisualBeatSync } from './VisualBeatSync';
 import { useProjectStore } from '@/stores/projectStore';
+import { useMemo } from 'react';
+import { PluginInstance } from '@/core/types';
+import { useShallow } from 'zustand/react/shallow';
 
 interface VisualSceneProps {
   tracks: VisualTrackInfo[];
 }
 
 export function VisualScene({ tracks }: VisualSceneProps) {
-  const projectTracks = useProjectStore((s) => s.project.tracks);
+  // Narrow selector: only extract visualPlugins for tracks we render
+  const trackIds = useMemo(() => tracks.map((t) => t.id), [tracks]);
+  const pluginsByTrack = useProjectStore(
+    useShallow((s) => {
+      const result: Record<string, PluginInstance[]> = {};
+      for (const id of trackIds) {
+        result[id] = s.project.tracks[id]?.visualPlugins ?? [];
+      }
+      return result;
+    }),
+  );
 
   return (
     <>
@@ -33,19 +46,16 @@ export function VisualScene({ tracks }: VisualSceneProps) {
       />
 
       {/* Render visual instruments through plugin chain */}
-      {tracks.map((track) => {
-        const fullTrack = projectTracks[track.id];
-        return (
-          <TrackRenderer
-            key={track.id}
-            trackId={track.id}
-            instrumentId={track.instrumentId}
-            plugins={fullTrack?.visualPlugins ?? []}
-            isGroup={track.isGroup}
-            childIds={track.childIds}
-          />
-        );
-      })}
+      {tracks.map((track) => (
+        <TrackRenderer
+          key={track.id}
+          trackId={track.id}
+          instrumentId={track.instrumentId}
+          plugins={pluginsByTrack[track.id] ?? []}
+          isGroup={track.isGroup}
+          childIds={track.childIds}
+        />
+      ))}
     </>
   );
 }

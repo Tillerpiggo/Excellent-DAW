@@ -22,6 +22,13 @@ interface CloneData {
   settings: Record<string, unknown>;
 }
 
+// Module-scope scratch objects — reused every frame to avoid allocations
+const _tempMatrix = new THREE.Matrix4();
+const _combinedMatrix = new THREE.Matrix4();
+const _position = new THREE.Vector3();
+const _scale = new THREE.Vector3();
+const _quaternion = new THREE.Quaternion();
+
 export function CloneWrapper({ plugins, children }: CloneWrapperProps) {
   const groupRefs = useRef<(THREE.Group | null)[]>([]);
 
@@ -69,9 +76,7 @@ export function CloneWrapper({ plugins, children }: CloneWrapperProps) {
       // For each clone plugin, calculate which sub-index this clone is
       // and apply the corresponding transform
       let remainingIndex = cloneIndex;
-      const tempMatrix = new THREE.Matrix4();
-      const combinedMatrix = new THREE.Matrix4();
-      combinedMatrix.identity();
+      _combinedMatrix.identity();
 
       for (let i = cloneData.length - 1; i >= 0; i--) {
         const data = cloneData[i];
@@ -79,18 +84,15 @@ export function CloneWrapper({ plugins, children }: CloneWrapperProps) {
         remainingIndex = Math.floor(remainingIndex / data.count);
 
         const transform = data.getTransform(subIndex, data.settings, time);
-        combinedMatrix.premultiply(transform);
+        _combinedMatrix.premultiply(transform);
       }
 
-      // Apply combined transform
-      const position = new THREE.Vector3();
-      const quaternion = new THREE.Quaternion();
-      const scale = new THREE.Vector3();
-      combinedMatrix.decompose(position, quaternion, scale);
+      // Apply combined transform using module-scope scratch objects
+      _combinedMatrix.decompose(_position, _quaternion, _scale);
 
-      group.position.copy(position);
-      group.quaternion.copy(quaternion);
-      group.scale.copy(scale);
+      group.position.copy(_position);
+      group.quaternion.copy(_quaternion);
+      group.scale.copy(_scale);
 
       // Apply opacity falloff via userData (instruments can read this)
       const opacityFalloff = cloneData[0]?.settings.opacityFalloff as number ?? 0.2;

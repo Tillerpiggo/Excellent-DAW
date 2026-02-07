@@ -116,6 +116,18 @@ export function ShaderChain({ inputTexture, plugins, size = 1024 }: ShaderChainP
   // Create a simple quad geometry for rendering
   const quadGeometry = useMemo(() => new THREE.PlaneGeometry(2, 2), []);
 
+  // Persistent quad mesh — created once, material swapped per pass
+  const quadMeshRef = useRef<THREE.Mesh | null>(null);
+  useEffect(() => {
+    const mesh = new THREE.Mesh(quadGeometry);
+    quadMeshRef.current = mesh;
+    sceneRef.current.add(mesh);
+    return () => {
+      sceneRef.current.remove(mesh);
+      quadMeshRef.current = null;
+    };
+  }, [quadGeometry]);
+
   // Final output material
   const outputMaterial = useMemo(() => {
     return new THREE.ShaderMaterial({
@@ -130,6 +142,7 @@ export function ShaderChain({ inputTexture, plugins, size = 1024 }: ShaderChainP
 
   useFrame((state) => {
     const time = state.clock.elapsedTime;
+    const quadMesh = quadMeshRef.current;
 
     // Update time uniform for all passes
     passes.forEach((pass) => {
@@ -138,7 +151,7 @@ export function ShaderChain({ inputTexture, plugins, size = 1024 }: ShaderChainP
       }
     });
 
-    if (passes.length === 0) {
+    if (passes.length === 0 || !quadMesh) {
       // No shader plugins - just pass through input
       outputMaterial.uniforms.tDiffuse.value = inputTexture;
       return;
@@ -147,14 +160,11 @@ export function ShaderChain({ inputTexture, plugins, size = 1024 }: ShaderChainP
     // Chain the shader passes
     let currentTexture: THREE.Texture = inputTexture;
 
-    const quadMesh = new THREE.Mesh(quadGeometry, passes[0].material);
-    sceneRef.current.add(quadMesh);
-
-    passes.forEach((pass, i) => {
+    passes.forEach((pass) => {
       // Set input texture
       pass.material.uniforms.tDiffuse.value = currentTexture;
 
-      // Render to this pass's FBO
+      // Swap material on persistent quad mesh (no add/remove)
       quadMesh.material = pass.material;
       gl.setRenderTarget(pass.fbo);
       gl.render(sceneRef.current, cameraRef.current);
@@ -165,9 +175,6 @@ export function ShaderChain({ inputTexture, plugins, size = 1024 }: ShaderChainP
 
     // Reset render target
     gl.setRenderTarget(null);
-
-    // Clean up
-    sceneRef.current.remove(quadMesh);
 
     // Set final output
     outputMaterial.uniforms.tDiffuse.value = currentTexture;
