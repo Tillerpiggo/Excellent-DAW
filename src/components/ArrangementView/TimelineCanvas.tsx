@@ -1,9 +1,6 @@
 'use client';
 
-import React, { Component, useCallback, useEffect, useMemo, useRef, useState, RefObject } from 'react';
-import { Canvas, ThreeEvent, useFrame, useThree } from '@react-three/fiber';
-import { OrthographicCamera, Text } from '@react-three/drei';
-import * as THREE from 'three';
+import React, { useCallback, useEffect, useMemo, useRef, useState, RefObject } from 'react';
 import { TrackNode } from '@/utils/tree';
 import { Block, Track, getDrumType } from '@/core/types';
 import { useUIStore } from '@/stores/uiStore';
@@ -13,61 +10,7 @@ import { useDragDrop } from '@/hooks/useDragDrop';
 import { isAudioFile } from '@/core/audio';
 import { INSTRUMENT_COLORS, TRACK_TYPE_COLORS, darken, tintWhite } from '@/utils/colors';
 
-// Error boundary to catch R3F/Three.js crashes and allow recovery
-interface CanvasErrorBoundaryProps {
-  children: React.ReactNode;
-  width: number;
-  height: number;
-}
-
-interface CanvasErrorBoundaryState {
-  hasError: boolean;
-  errorCount: number;
-}
-
-class CanvasErrorBoundary extends Component<CanvasErrorBoundaryProps, CanvasErrorBoundaryState> {
-  state: CanvasErrorBoundaryState = { hasError: false, errorCount: 0 };
-
-  static getDerivedStateFromError(): Partial<CanvasErrorBoundaryState> {
-    return { hasError: true };
-  }
-
-  componentDidCatch(error: Error) {
-    console.warn('[TimelineCanvas] R3F error caught, will retry:', error.message);
-
-    // Auto-retry after a short delay (handles transient WebGL issues)
-    const { errorCount } = this.state;
-    if (errorCount < 3) {
-      setTimeout(() => {
-        this.setState(prev => ({ hasError: false, errorCount: prev.errorCount + 1 }));
-      }, 100 * (errorCount + 1));
-    }
-  }
-
-  render() {
-    if (this.state.hasError) {
-      if (this.state.errorCount >= 3) {
-        return (
-          <div
-            style={{ width: this.props.width, height: this.props.height }}
-            className="flex items-center justify-center"
-          >
-            <button
-              onClick={() => this.setState({ hasError: false, errorCount: 0 })}
-              className="px-4 py-2 text-sm rounded bg-muted/50 text-muted-foreground hover:bg-muted/80 transition-colors"
-            >
-              Timeline crashed — click to reload
-            </button>
-          </div>
-        );
-      }
-      return null; // Brief blank while auto-retrying
-    }
-    return this.props.children;
-  }
-}
-
-// Ruler height constant - used for positioning content below the ruler
+// Ruler height constant
 const RULER_HEIGHT = 48;
 
 interface TimelineCanvasProps {
@@ -91,7 +34,6 @@ function findTrackForBlock(tracks: Record<string, Track>, blockId: string): stri
   return null;
 }
 
-// Helper to calculate pattern bars for a block
 // Safe min/max that avoids stack overflow from spreading large arrays
 function safeMax(arr: number[], initial: number): number {
   let max = initial;
@@ -117,409 +59,87 @@ function getPatternBars(block: Block, beatsPerBar: number): number {
   return Math.ceil(patternLengthBeats / beatsPerBar);
 }
 
-// Create a CENTERED rounded rectangle shape (centered at origin)
-function createRoundedRectShape(
-  width: number,
-  height: number,
-  radii: [number, number, number, number] // [topLeft, topRight, bottomRight, bottomLeft]
-): THREE.Shape {
-  const [tl, tr, br, bl] = radii;
-  const shape = new THREE.Shape();
-
-  // Center the shape at origin
-  const hw = width / 2;  // half width
-  const hh = height / 2; // half height
-
-  // Start at top-left after corner, going clockwise
-  // Top edge (y = +hh)
-  shape.moveTo(-hw + tl, hh);
-  shape.lineTo(hw - tr, hh);
-  // Top-right corner
-  if (tr > 0) shape.quadraticCurveTo(hw, hh, hw, hh - tr);
-  else shape.lineTo(hw, hh);
-  // Right edge
-  shape.lineTo(hw, -hh + br);
-  // Bottom-right corner
-  if (br > 0) shape.quadraticCurveTo(hw, -hh, hw - br, -hh);
-  else shape.lineTo(hw, -hh);
-  // Bottom edge
-  shape.lineTo(-hw + bl, -hh);
-  // Bottom-left corner
-  if (bl > 0) shape.quadraticCurveTo(-hw, -hh, -hw, -hh + bl);
-  else shape.lineTo(-hw, -hh);
-  // Left edge
-  shape.lineTo(-hw, hh - tl);
-  // Top-left corner
-  if (tl > 0) shape.quadraticCurveTo(-hw, hh, -hw + tl, hh);
-  else shape.lineTo(-hw, hh);
-
-  return shape;
-}
-
-// Generate points along a quadratic bezier curve
-function quadraticBezierPoints(
-  p0: THREE.Vector3,
-  p1: THREE.Vector3, // control point
-  p2: THREE.Vector3,
-  segments: number = 8
-): THREE.Vector3[] {
-  const points: THREE.Vector3[] = [];
-  for (let i = 0; i <= segments; i++) {
-    const t = i / segments;
-    const t1 = 1 - t;
-    const x = t1 * t1 * p0.x + 2 * t1 * t * p1.x + t * t * p2.x;
-    const y = t1 * t1 * p0.y + 2 * t1 * t * p1.y + t * t * p2.y;
-    const z = p0.z;
-    points.push(new THREE.Vector3(x, y, z));
-  }
-  return points;
-}
-
-// Get a readable text color for selection header (darker version of base color)
+// Get a readable text color for selection header
 function getSelectionTextColor(baseColor: string): string {
-  // Parse color
   const hex = baseColor.replace('#', '');
   const r = parseInt(hex.substr(0, 2), 16);
   const g = parseInt(hex.substr(2, 2), 16);
   const b = parseInt(hex.substr(4, 2), 16);
-
-  // Calculate luminance
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-
-  // For bright colors (like lime green #22c55e), darken significantly more
-  // For darker colors, standard darkening is fine
   const darkenAmount = luminance > 0.5 ? 100 : 50;
-
   const newR = Math.max(0, r - darkenAmount);
   const newG = Math.max(0, g - darkenAmount);
   const newB = Math.max(0, b - darkenAmount);
-
   return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
 }
 
-// Grid Lines Component
-interface GridLinesProps {
-  totalBars: number;
-  barWidth: number;
-  height: number;
-}
-
-function GridLines({ totalBars, barWidth, height }: GridLinesProps) {
-  const geometry = useMemo(() => {
-    const positions: number[] = [];
-    for (let i = 0; i <= totalBars; i++) {
-      const x = i * barWidth;
-      // Grid lines start below the ruler
-      positions.push(x, -RULER_HEIGHT, 0, x, -RULER_HEIGHT - height, 0);
-    }
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    return geom;
-  }, [totalBars, barWidth, height]);
-
-  return (
-    <lineSegments geometry={geometry}>
-      <lineBasicMaterial color="#ffffff" opacity={0.1} transparent />
-    </lineSegments>
-  );
-}
-
-// Ruler Component - renders bar numbers, tick marks, loop region
-interface RulerMeshProps {
-  totalBars: number;
-  barWidth: number;
-  beatsPerBar: number;
-  pixelsPerBeat: number;
-  timelineWidth: number;
-  loopStart: number | null;
-  loopEnd: number | null;
-  onLoopDragStart: (e: ThreeEvent<PointerEvent>) => void;
-  onScrubStart: (e: ThreeEvent<PointerEvent>) => void;
-}
-
-function RulerMesh({
-  totalBars,
-  barWidth,
-  beatsPerBar,
-  pixelsPerBeat,
-  timelineWidth,
-  loopStart,
-  loopEnd,
-  onLoopDragStart,
-  onScrubStart,
-}: RulerMeshProps) {
-  // Bar divider lines
-  const barLinesGeometry = useMemo(() => {
-    const positions: number[] = [];
-    for (let i = 0; i <= totalBars; i++) {
-      const x = i * barWidth;
-      // Full height dividers
-      positions.push(x, 0, 0, x, -RULER_HEIGHT, 0);
-    }
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    return geom;
-  }, [totalBars, barWidth]);
-
-  // Beat tick marks (in bottom half of ruler)
-  const tickGeometry = useMemo(() => {
-    const positions: number[] = [];
-    const tickHeight = 8;
-    const bottomY = -RULER_HEIGHT;
-
-    for (let bar = 0; bar < totalBars; bar++) {
-      for (let beat = 1; beat < beatsPerBar; beat++) {
-        const x = bar * barWidth + beat * pixelsPerBeat;
-        positions.push(x, bottomY + tickHeight + 4, 0, x, bottomY + 4, 0);
-      }
-    }
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    return geom;
-  }, [totalBars, barWidth, beatsPerBar, pixelsPerBeat]);
-
-  // Loop region overlay
-  const loopRegion = useMemo(() => {
-    if (loopStart === null || loopEnd === null || loopStart === loopEnd) return null;
-
-    const startX = loopStart * pixelsPerBeat;
-    const endX = loopEnd * pixelsPerBeat;
-    const width = endX - startX;
-    const height = RULER_HEIGHT / 2; // Top half of ruler
-
-    return (
-      <group>
-        {/* Loop region fill */}
-        <mesh position={[startX + width / 2, -height / 2, 0.1]}>
-          <planeGeometry args={[width, height]} />
-          <meshBasicMaterial color="#fbbf24" opacity={0.3} transparent />
-        </mesh>
-        {/* Loop region top border */}
-        <mesh position={[startX + width / 2, -1, 0.2]}>
-          <planeGeometry args={[width, 2]} />
-          <meshBasicMaterial color="#fbbf24" />
-        </mesh>
-      </group>
-    );
-  }, [loopStart, loopEnd, pixelsPerBeat]);
-
-  // Bar numbers using Three.js Text - centered in top half of ruler
-  const barNumbers = useMemo(() => {
-    const topHalfCenter = -RULER_HEIGHT / 4; // Center of top half (0 to -24)
-    return Array.from({ length: totalBars }).map((_, i) => (
-      <Text
-        key={i}
-        position={[i * barWidth + 8, topHalfCenter, 0]}
-        fontSize={11}
-        color="#9ca3af"
-        fillOpacity={0.9}
-        anchorX="left"
-        anchorY="middle"
-      >
-        {String(i + 1)}
-      </Text>
-    ));
-  }, [totalBars, barWidth]);
-
-  return (
-    <group>
-      {/* Ruler background */}
-      <mesh position={[timelineWidth / 2, -RULER_HEIGHT / 2, -0.5]}>
-        <planeGeometry args={[timelineWidth, RULER_HEIGHT]} />
-        <meshBasicMaterial color="#1a1a1a" />
-      </mesh>
-
-      {/* Divider between ruler halves */}
-      <mesh position={[timelineWidth / 2, -RULER_HEIGHT / 2, 0.05]}>
-        <planeGeometry args={[timelineWidth, 1]} />
-        <meshBasicMaterial color="#333333" opacity={0.5} transparent />
-      </mesh>
-
-      {/* Bottom border of ruler */}
-      <mesh position={[timelineWidth / 2, -RULER_HEIGHT + 0.5, 0.05]}>
-        <planeGeometry args={[timelineWidth, 1]} />
-        <meshBasicMaterial color="#333333" />
-      </mesh>
-
-      {/* Bar divider lines */}
-      <lineSegments geometry={barLinesGeometry}>
-        <lineBasicMaterial color="#333333" />
-      </lineSegments>
-
-      {/* Beat tick marks */}
-      <lineSegments geometry={tickGeometry}>
-        <lineBasicMaterial color="#444444" />
-      </lineSegments>
-
-      {/* Loop region */}
-      {loopRegion}
-
-      {/* Bar numbers */}
-      {barNumbers}
-
-      {/* Top half hit area - loop region dragging */}
-      <mesh
-        position={[timelineWidth / 2, -RULER_HEIGHT / 4, 0.5]}
-        onPointerDown={onLoopDragStart}
-      >
-        <planeGeometry args={[timelineWidth, RULER_HEIGHT / 2]} />
-        <meshBasicMaterial transparent opacity={0} />
-      </mesh>
-
-      {/* Bottom half hit area - scrubbing */}
-      <mesh
-        position={[timelineWidth / 2, -RULER_HEIGHT * 3 / 4, 0.5]}
-        onPointerDown={onScrubStart}
-      >
-        <planeGeometry args={[timelineWidth, RULER_HEIGHT / 2]} />
-        <meshBasicMaterial transparent opacity={0} />
-      </mesh>
-    </group>
-  );
-}
-
-// Single Block Component
-interface BlockMeshProps {
-  block: Block;
-  track: Track;
-  trackIndex: number;
-  pixelsPerBeat: number;
-  beatsPerBar: number;
-  trackHeight: number;
-  bpm: number;
-  isSelected: boolean;
-  onPointerDown: (e: ThreeEvent<PointerEvent>, block: Block, track: Track, trackIndex: number, zone: string) => void;
-  onPointerOver: (blockId: string, zone: string) => void;
-  onPointerOut: () => void;
-  isHovered: boolean;
-  hoveredZone: string | null;
-}
-
-function BlockMesh({
+// Per-block canvas for event dots
+function BlockEventCanvas({
   block,
   track,
-  trackIndex,
   pixelsPerBeat,
   beatsPerBar,
-  trackHeight,
+  contentWidth,
+  contentHeight,
   bpm,
-  isSelected,
-  onPointerDown,
-  onPointerOver,
-  onPointerOut,
-  isHovered,
-  hoveredZone,
-}: BlockMeshProps) {
+}: {
+  block: Block;
+  track: Track;
+  pixelsPerBeat: number;
+  beatsPerBar: number;
+  contentWidth: number;
+  contentHeight: number;
+  bpm: number;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const isAudioBlock = track.instrumentId === 'audioPlayer' && block.audioData;
-  const barWidth = beatsPerBar * pixelsPerBeat;
-  const handleWidthPx = 12;
 
-  // Calculate position and size (offset by ruler height)
-  const blockLeft = block.startBar * barWidth;
-  const fullBlockWidth = block.durationBars * barWidth;
-  const blockWidth = Math.max(fullBlockWidth - 2, 20);
-  const blockTop = RULER_HEIGHT + trackIndex * trackHeight + 4;
-  const blockHeight = trackHeight - 8;
-  const contentAreaWidth = blockWidth - handleWidthPx;
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-  // Colors
-  const baseColor = (track.instrumentId
-    ? INSTRUMENT_COLORS[track.instrumentId]
-    : TRACK_TYPE_COLORS[track.typeId]) || '#64748b';
-  const handleColor = darken(baseColor, 40);
-  const selectionColor = tintWhite(baseColor, 0.85);
-  const selectedHandleColor = tintWhite(baseColor, 0.5);
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = contentWidth * dpr;
+    canvas.height = contentHeight * dpr;
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, contentWidth, contentHeight);
 
-  // Pattern info for loops
-  const allEvents = block.streams?.flatMap((s) => s.events) || [];
-  const patternLengthBeats = allEvents.length > 0
-    ? safeMax(allEvents.map((e) => e.startTimeInBeats + (e.duration || 0.25)), beatsPerBar)
-    : beatsPerBar;
-  const patternBars = Math.ceil(patternLengthBeats / beatsPerBar);
-  const patternBeats = patternBars * beatsPerBar;
-  const patternWidthPx = patternBeats * pixelsPerBeat;
-  const blockTotalBeats = block.durationBars * beatsPerBar;
-  const loopCount = block.loop ? Math.ceil(blockTotalBeats / patternBeats) : 1;
+    if (isAudioBlock && block.audioData?.waveformPeaks) {
+      // Draw waveform
+      const peaks = block.audioData.waveformPeaks;
+      const barWidth = beatsPerBar * pixelsPerBeat;
+      const beatsPerSecond = bpm / 60;
+      const audioBeats = block.audioData.duration * beatsPerSecond;
+      const audioBars = audioBeats / beatsPerBar;
+      const audioWidthPx = audioBars * barWidth;
 
-  // Create iteration shapes
-  const iterationMeshes = useMemo(() => {
-    const meshes: React.ReactNode[] = [];
+      const centerY = contentHeight / 2;
+      const maxAmplitude = contentHeight / 2 - 2;
+      const drawWidth = Math.min(audioWidthPx, contentWidth);
+      const samplesPerPixel = peaks.length / Math.max(1, audioWidthPx);
 
-    if (block.loop && loopCount > 1) {
-      for (let i = 0; i < loopCount; i++) {
-        const iterationLeftPx = i * patternWidthPx;
-        const visibleBeats = Math.min(patternBeats, blockTotalBeats - i * patternBeats);
-        let iterationWidthPx = visibleBeats * pixelsPerBeat;
-        if (iterationWidthPx <= 0) continue;
-
-        const isFirst = i === 0;
-        const isLast = i === loopCount - 1;
-
-        if (isLast) {
-          iterationWidthPx = Math.min(iterationWidthPx, contentAreaWidth - iterationLeftPx);
-        }
-        if (iterationWidthPx <= 4) iterationWidthPx = 4;
-
-        const iterColor = isFirst ? baseColor : darken(baseColor, 20);
-        const leftRadius = 6;
-        const rightRadius = isLast ? 0 : 6;
-
-        const shape = createRoundedRectShape(
-          iterationWidthPx,
-          blockHeight,
-          [leftRadius, rightRadius, rightRadius, leftRadius]
-        );
-
-        meshes.push(
-          <mesh
-            key={`iter-${i}`}
-            position={[blockLeft + iterationLeftPx + iterationWidthPx / 2, -(blockTop + blockHeight / 2), 0]}
-          >
-            <shapeGeometry args={[shape]} />
-            <meshBasicMaterial color={iterColor} />
-          </mesh>
-        );
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      for (let x = 0; x < drawWidth; x++) {
+        const sampleIndex = Math.floor(x * samplesPerPixel);
+        const peak = peaks[Math.min(sampleIndex, peaks.length - 1)] || 0;
+        const barHeight = Math.max(1, peak * maxAmplitude);
+        ctx.fillRect(x, centerY - barHeight, 1, barHeight * 2);
       }
-    } else {
-      // Non-looped: single block
-      const shape = createRoundedRectShape(
-        Math.max(4, contentAreaWidth),
-        blockHeight,
-        [6, 0, 0, 6]
-      );
-
-      meshes.push(
-        <mesh
-          key="single"
-          position={[blockLeft + contentAreaWidth / 2, -(blockTop + blockHeight / 2), 0]}
-        >
-          <shapeGeometry args={[shape]} />
-          <meshBasicMaterial color={baseColor} />
-        </mesh>
-      );
+      return;
     }
 
-    return meshes;
-  }, [block.loop, loopCount, patternWidthPx, patternBeats, blockTotalBeats, contentAreaWidth, baseColor, blockLeft, blockTop, blockHeight]);
+    // Draw event dots
+    const allEvents = block.streams?.flatMap((s) => s.events) || [];
+    if (allEvents.length === 0) return;
 
-  // Handle mesh
-  const handleLeft = blockLeft + blockWidth - handleWidthPx;
-  const handleShape = useMemo(() =>
-    createRoundedRectShape(handleWidthPx, blockHeight, [0, 6, 6, 0]),
-    [blockHeight]
-  );
-
-  const handleOpacity = isSelected ? 1.0 : (isHovered && (hoveredZone === 'right-loop' || hoveredZone === 'right-extend') ? 1.0 : 0.8);
-
-  // Events rendering
-  const eventMeshes = useMemo(() => {
-    if (allEvents.length === 0) return null;
-
-    const meshes: React.ReactNode[] = [];
-    const contentTop = blockTop + 24;
-    const contentHeight = blockHeight - 28;
-    const contentLeft = blockLeft + 3;
-    const contentWidth = contentAreaWidth - 6;
+    const patternLengthBeats = safeMax(allEvents.map((e) => e.startTimeInBeats + (e.duration || 0.25)), beatsPerBar);
+    const patternBars = Math.ceil(patternLengthBeats / beatsPerBar);
+    const patternBeats = patternBars * beatsPerBar;
+    const patternWidthPx = patternBeats * pixelsPerBeat;
+    const blockTotalBeats = block.durationBars * beatsPerBar;
+    const loopCount = block.loop ? Math.ceil(blockTotalBeats / patternBeats) : 1;
 
     const pitches = allEvents.filter((e) => e.pitch !== undefined).map((e) => e.pitch!);
     const minPitch = pitches.length > 0 ? safeMin(pitches, 60) : 60;
@@ -529,8 +149,7 @@ function BlockMesh({
     for (let loopIdx = 0; loopIdx < loopCount; loopIdx++) {
       const offsetPx = loopIdx * patternWidthPx;
 
-      for (let eventIdx = 0; eventIdx < allEvents.length; eventIdx++) {
-        const event = allEvents[eventIdx];
+      for (const event of allEvents) {
         const eventStartBeat = event.startTimeInBeats + loopIdx * patternBeats;
         if (eventStartBeat >= blockTotalBeats) continue;
 
@@ -557,108 +176,105 @@ function BlockMesh({
         const baseOpacity = Math.max((event.velocity || 100) / 127, 0.4);
         const opacity = loopIdx === 0 ? baseOpacity : baseOpacity * 0.85;
 
-        const y = contentTop + topPercent * contentHeight;
+        const y = topPercent * contentHeight;
         const h = heightPercent * contentHeight;
-        const x = contentLeft + eventStartPx;
+        const x = eventStartPx;
 
-        if (x >= contentLeft + contentWidth) continue;
-        const drawWidth = Math.min(eventWidthPx, contentLeft + contentWidth - x);
+        if (x >= contentWidth) continue;
+        const drawWidth = Math.min(eventWidthPx, contentWidth - x);
 
-        meshes.push(
-          <mesh
-            key={`event-${loopIdx}-${eventIdx}`}
-            position={[x + drawWidth / 2, -(y + h / 2), 0.1]}
-          >
-            <planeGeometry args={[drawWidth, h]} />
-            <meshBasicMaterial color="#ffffff" opacity={0.8 * opacity} transparent />
-          </mesh>
-        );
+        ctx.fillStyle = `rgba(255,255,255,${0.8 * opacity})`;
+        ctx.fillRect(x, y, drawWidth, h);
       }
     }
+  }, [block, track, pixelsPerBeat, beatsPerBar, contentWidth, contentHeight, bpm, isAudioBlock]);
 
-    return meshes;
-  }, [allEvents, loopCount, patternWidthPx, patternBeats, blockTotalBeats, pixelsPerBeat, blockTop, blockHeight, blockLeft, contentAreaWidth]);
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        width: contentWidth,
+        height: contentHeight,
+        position: 'absolute',
+        left: 3,
+        top: 24,
+        pointerEvents: 'none',
+      }}
+    />
+  );
+}
 
-  // Selection border - follows iteration contours with rounded corners and divets
-  const selectionBorder = useMemo(() => {
-    if (!isSelected) return null;
+// SVG selection border with bezier divets for looped blocks
+function SelectionBorderSVG({
+  block,
+  blockHeight,
+  contentAreaWidth,
+  selectionColor,
+  beatsPerBar,
+  pixelsPerBeat,
+}: {
+  block: Block;
+  blockHeight: number;
+  contentAreaWidth: number;
+  selectionColor: string;
+  beatsPerBar: number;
+  pixelsPerBeat: number;
+}) {
+  const allEvents = block.streams?.flatMap((s) => s.events) || [];
+  const patternLengthBeats = allEvents.length > 0
+    ? safeMax(allEvents.map((e) => e.startTimeInBeats + (e.duration || 0.25)), beatsPerBar)
+    : beatsPerBar;
+  const patternBars = Math.ceil(patternLengthBeats / beatsPerBar);
+  const patternBeats = patternBars * beatsPerBar;
+  const patternWidthPx = patternBeats * pixelsPerBeat;
+  const blockTotalBeats = block.durationBars * beatsPerBar;
+  const loopCount = block.loop ? Math.ceil(blockTotalBeats / patternBeats) : 1;
 
-    const radius = 6;
-    const hh = blockHeight / 2;
-    const z = 0.2;
-    const curveSegments = 6;
+  const radius = 6;
+  const h = blockHeight;
 
-    // Build a path that follows the outer contour of all iterations with curved corners
-    const points: THREE.Vector3[] = [];
+  const d = useMemo(() => {
+    const parts: string[] = [];
 
     if (block.loop && loopCount > 1) {
-      // Multiple iterations - need curved divets between them
+      // Start at top-left corner
+      parts.push(`M 0,${radius}`);
+      parts.push(`Q 0,0 ${radius},0`);
 
-      // Top-left corner curve (going from left edge to top edge)
-      points.push(...quadraticBezierPoints(
-        new THREE.Vector3(0, hh - radius, z),
-        new THREE.Vector3(0, hh, z),
-        new THREE.Vector3(radius, hh, z),
-        curveSegments
-      ));
-
-      // Trace top edge with curved divets
+      // Trace top edge with divets
       for (let i = 0; i < loopCount; i++) {
         const iterLeft = i * patternWidthPx;
         const visibleBeats = Math.min(patternBeats, blockTotalBeats - i * patternBeats);
         let iterWidth = visibleBeats * pixelsPerBeat;
         const isLast = i === loopCount - 1;
 
-        if (isLast) {
-          iterWidth = Math.min(iterWidth, contentAreaWidth - iterLeft);
-        }
+        if (isLast) iterWidth = Math.min(iterWidth, contentAreaWidth - iterLeft);
         if (iterWidth <= 4) iterWidth = 4;
 
         const iterRight = iterLeft + iterWidth;
 
         if (i === 0) {
-          // First iteration - go to right corner
           if (!isLast) {
-            points.push(new THREE.Vector3(iterRight - radius, hh, z));
-            // Curved corner going down into divet
-            points.push(...quadraticBezierPoints(
-              new THREE.Vector3(iterRight - radius, hh, z),
-              new THREE.Vector3(iterRight, hh, z),
-              new THREE.Vector3(iterRight, hh - radius, z),
-              curveSegments
-            ));
+            parts.push(`L ${iterRight - radius},0`);
+            parts.push(`Q ${iterRight},0 ${iterRight},${radius}`);
           } else {
-            points.push(new THREE.Vector3(contentAreaWidth, hh, z));
+            parts.push(`L ${contentAreaWidth},0`);
           }
         } else {
-          // Subsequent iterations - curved divet up, across, then curved divet down
-          // Curve coming up from divet
-          points.push(...quadraticBezierPoints(
-            new THREE.Vector3(iterLeft, hh - radius, z),
-            new THREE.Vector3(iterLeft, hh, z),
-            new THREE.Vector3(iterLeft + radius, hh, z),
-            curveSegments
-          ));
-
+          parts.push(`Q ${iterLeft},0 ${iterLeft + radius},0`);
           if (!isLast) {
-            points.push(new THREE.Vector3(iterRight - radius, hh, z));
-            // Curve going down into next divet
-            points.push(...quadraticBezierPoints(
-              new THREE.Vector3(iterRight - radius, hh, z),
-              new THREE.Vector3(iterRight, hh, z),
-              new THREE.Vector3(iterRight, hh - radius, z),
-              curveSegments
-            ));
+            parts.push(`L ${iterRight - radius},0`);
+            parts.push(`Q ${iterRight},0 ${iterRight},${radius}`);
           } else {
-            points.push(new THREE.Vector3(contentAreaWidth, hh, z));
+            parts.push(`L ${contentAreaWidth},0`);
           }
         }
       }
 
       // Right edge (handle area - straight down)
-      points.push(new THREE.Vector3(contentAreaWidth, -hh, z));
+      parts.push(`L ${contentAreaWidth},${h}`);
 
-      // Trace bottom edge with curved divets (going right to left)
+      // Trace bottom edge with divets (right to left)
       for (let i = loopCount - 1; i >= 0; i--) {
         const iterLeft = i * patternWidthPx;
         const visibleBeats = Math.min(patternBeats, blockTotalBeats - i * patternBeats);
@@ -666,563 +282,87 @@ function BlockMesh({
         const isFirst = i === 0;
         const isLast = i === loopCount - 1;
 
-        if (isLast) {
-          iterWidth = Math.min(iterWidth, contentAreaWidth - iterLeft);
-        }
+        if (isLast) iterWidth = Math.min(iterWidth, contentAreaWidth - iterLeft);
         if (iterWidth <= 4) iterWidth = 4;
 
         const iterRight = iterLeft + iterWidth;
 
         if (isLast) {
-          // Rightmost iteration (first in reverse) - straight segment only, divet is at left edge
-          points.push(new THREE.Vector3(iterLeft + radius, -hh, z));
+          parts.push(`L ${iterLeft + radius},${h}`);
         } else {
-          // Divet exists at iterRight (between this iter and the one to our right)
-          // First: curve going UP into divet (right wall)
-          points.push(...quadraticBezierPoints(
-            new THREE.Vector3(iterRight + radius, -hh, z),
-            new THREE.Vector3(iterRight, -hh, z),
-            new THREE.Vector3(iterRight, -hh + radius, z),
-            curveSegments
-          ));
-          // Then: curve going DOWN from divet (left wall)
-          points.push(...quadraticBezierPoints(
-            new THREE.Vector3(iterRight, -hh + radius, z),
-            new THREE.Vector3(iterRight, -hh, z),
-            new THREE.Vector3(iterRight - radius, -hh, z),
-            curveSegments
-          ));
-          // Straight segment to this iter's left edge (or to corner if first)
+          parts.push(`L ${iterRight + radius},${h}`);
+          parts.push(`Q ${iterRight},${h} ${iterRight},${h - radius}`);
+          parts.push(`Q ${iterRight},${h} ${iterRight - radius},${h}`);
           if (isFirst) {
-            points.push(new THREE.Vector3(radius, -hh, z));
+            parts.push(`L ${radius},${h}`);
           } else {
-            points.push(new THREE.Vector3(iterLeft + radius, -hh, z));
+            parts.push(`L ${iterLeft + radius},${h}`);
           }
         }
       }
 
-      // Bottom-left corner curve
-      points.push(...quadraticBezierPoints(
-        new THREE.Vector3(radius, -hh, z),
-        new THREE.Vector3(0, -hh, z),
-        new THREE.Vector3(0, -hh + radius, z),
-        curveSegments
-      ));
-
+      // Bottom-left corner
+      parts.push(`Q 0,${h} 0,${h - radius}`);
+      parts.push('Z');
     } else {
-      // Single block (no loop) - simple rounded rectangle on left, square on right
-      const hw = contentAreaWidth / 2;
-
-      // Top-left corner curve
-      points.push(...quadraticBezierPoints(
-        new THREE.Vector3(-hw, hh - radius, z),
-        new THREE.Vector3(-hw, hh, z),
-        new THREE.Vector3(-hw + radius, hh, z),
-        curveSegments
-      ));
-      // Top edge
-      points.push(new THREE.Vector3(hw, hh, z));
-      // Right edge (square - connects to handle)
-      points.push(new THREE.Vector3(hw, -hh, z));
-      // Bottom edge
-      points.push(new THREE.Vector3(-hw + radius, -hh, z));
-      // Bottom-left corner curve
-      points.push(...quadraticBezierPoints(
-        new THREE.Vector3(-hw + radius, -hh, z),
-        new THREE.Vector3(-hw, -hh, z),
-        new THREE.Vector3(-hw, -hh + radius, z),
-        curveSegments
-      ));
+      // Simple rectangle with rounded left corners
+      parts.push(`M 0,${radius}`);
+      parts.push(`Q 0,0 ${radius},0`);
+      parts.push(`L ${contentAreaWidth},0`);
+      parts.push(`L ${contentAreaWidth},${h}`);
+      parts.push(`L ${radius},${h}`);
+      parts.push(`Q 0,${h} 0,${h - radius}`);
+      parts.push('Z');
     }
 
-    const lineGeom = new THREE.BufferGeometry().setFromPoints(points);
-
-    // Position depends on whether looped or not
-    const posX = block.loop && loopCount > 1 ? blockLeft : blockLeft + contentAreaWidth / 2;
-    const posY = -(blockTop + blockHeight / 2);
-
-    return (
-      <lineLoop
-        position={[posX, posY, 0]}
-        geometry={lineGeom}
-      >
-        <lineBasicMaterial color={selectionColor} linewidth={2} />
-      </lineLoop>
-    );
-  }, [isSelected, block.loop, loopCount, patternWidthPx, patternBeats, blockTotalBeats, contentAreaWidth, blockWidth, blockHeight, blockLeft, blockTop, selectionColor]);
-
-  // Header background when selected - follows iteration contours with divets
-  // Shared radius constant for block corners (used by both border and header)
-  const blockRadius = 6;
-
-  const headerBg = useMemo(() => {
-    if (!isSelected) return null;
-
-    const headerHeight = 20;
-    const radius = blockRadius; // Match block border radius
-    const hh = headerHeight / 2;
-
-    if (block.loop && loopCount > 1) {
-      // Create individual header pieces for each iteration to follow divets
-      const meshes: React.ReactNode[] = [];
-
-      for (let i = 0; i < loopCount; i++) {
-        const iterLeft = i * patternWidthPx;
-        const visibleBeats = Math.min(patternBeats, blockTotalBeats - i * patternBeats);
-        let iterWidth = visibleBeats * pixelsPerBeat;
-        const isFirst = i === 0;
-        const isLast = i === loopCount - 1;
-
-        if (isLast) {
-          iterWidth = Math.min(iterWidth, contentAreaWidth - iterLeft);
-        }
-        if (iterWidth <= 4) iterWidth = 4;
-
-        // Create header shape for this iteration
-        // Use divet radius (6px) to create visual gaps matching border divets
-        const divetRadius = 6;
-        const leftRadius = isFirst ? radius : divetRadius;   // Edge radius for first, divet radius otherwise
-        const rightRadius = isLast ? 0 : divetRadius;        // Square where handle connects, divet radius otherwise
-        const shape = createRoundedRectShape(iterWidth, headerHeight, [leftRadius, rightRadius, 0, 0]);
-
-        meshes.push(
-          <mesh
-            key={`header-${i}`}
-            position={[blockLeft + iterLeft + iterWidth / 2, -(blockTop + hh), 0.05]}
-          >
-            <shapeGeometry args={[shape]} />
-            <meshBasicMaterial color={selectionColor} />
-          </mesh>
-        );
-      }
-
-      return <>{meshes}</>;
-    } else {
-      // Non-looped: simple header
-      const shape = createRoundedRectShape(contentAreaWidth, headerHeight, [radius, 0, 0, 0]);
-      return (
-        <mesh position={[blockLeft + contentAreaWidth / 2, -(blockTop + hh), 0.05]}>
-          <shapeGeometry args={[shape]} />
-          <meshBasicMaterial color={selectionColor} />
-        </mesh>
-      );
-    }
-  }, [isSelected, block.loop, loopCount, patternWidthPx, patternBeats, blockTotalBeats, contentAreaWidth, blockLeft, blockTop, selectionColor]);
-
-  // Invisible hit areas for interaction
-  const bodyHitArea = (
-    <mesh
-      position={[blockLeft + contentAreaWidth / 2, -(blockTop + blockHeight / 2), 0.5]}
-      onPointerDown={(e) => {
-        e.stopPropagation();
-        onPointerDown(e, block, track, trackIndex, 'body');
-      }}
-      onPointerOver={() => onPointerOver(block.id, 'body')}
-      onPointerOut={onPointerOut}
-    >
-      <planeGeometry args={[contentAreaWidth - 24, blockHeight]} />
-      <meshBasicMaterial transparent opacity={0} />
-    </mesh>
-  );
-
-  const leftEdgeHitArea = (
-    <mesh
-      position={[blockLeft + 6, -(blockTop + blockHeight / 2), 0.5]}
-      onPointerDown={(e) => {
-        e.stopPropagation();
-        onPointerDown(e, block, track, trackIndex, 'left-edge');
-      }}
-      onPointerOver={() => onPointerOver(block.id, 'left-edge')}
-      onPointerOut={onPointerOut}
-    >
-      <planeGeometry args={[12, blockHeight]} />
-      <meshBasicMaterial transparent opacity={0} />
-    </mesh>
-  );
-
-  const rightLoopHitArea = (
-    <mesh
-      position={[handleLeft + handleWidthPx / 2, -(blockTop + blockHeight / 4), 0.5]}
-      onPointerDown={(e) => {
-        e.stopPropagation();
-        onPointerDown(e, block, track, trackIndex, 'right-loop');
-      }}
-      onPointerOver={() => onPointerOver(block.id, 'right-loop')}
-      onPointerOut={onPointerOut}
-    >
-      <planeGeometry args={[handleWidthPx, blockHeight / 2]} />
-      <meshBasicMaterial transparent opacity={0} />
-    </mesh>
-  );
-
-  const rightExtendHitArea = (
-    <mesh
-      position={[handleLeft + handleWidthPx / 2, -(blockTop + blockHeight * 3 / 4), 0.5]}
-      onPointerDown={(e) => {
-        e.stopPropagation();
-        onPointerDown(e, block, track, trackIndex, 'right-extend');
-      }}
-      onPointerOver={() => onPointerOver(block.id, 'right-extend')}
-      onPointerOut={onPointerOut}
-    >
-      <planeGeometry args={[handleWidthPx, blockHeight / 2]} />
-      <meshBasicMaterial transparent opacity={0} />
-    </mesh>
-  );
-
-  // Waveform rendering for audio blocks
-  const waveformMesh = useMemo(() => {
-    if (!isAudioBlock || !block.audioData?.waveformPeaks) return null;
-
-    const peaks = block.audioData.waveformPeaks;
-    const contentTop = blockTop + 24;
-    const contentHeight = blockHeight - 28;
-    const contentLeft = blockLeft + 3;
-    const contentWidth = contentAreaWidth - 6;
-
-    const beatsPerSecond = bpm / 60;
-    const audioBeats = block.audioData.duration * beatsPerSecond;
-    const audioBars = audioBeats / beatsPerBar;
-    const audioWidthPx = audioBars * barWidth;
-
-    const centerY = contentTop + contentHeight / 2;
-    const maxAmplitude = contentHeight / 2 - 2;
-
-    // Create waveform geometry
-    const positions: number[] = [];
-    const drawWidth = Math.min(audioWidthPx, contentWidth);
-    const samplesPerPixel = peaks.length / Math.max(1, audioWidthPx);
-
-    for (let x = 0; x < drawWidth; x++) {
-      const sampleIndex = Math.floor(x * samplesPerPixel);
-      const peak = peaks[Math.min(sampleIndex, peaks.length - 1)] || 0;
-      const barHeight = Math.max(1, peak * maxAmplitude);
-
-      // Top of bar
-      positions.push(contentLeft + x, -(centerY - barHeight), 0.1);
-      // Bottom of bar
-      positions.push(contentLeft + x, -(centerY + barHeight), 0.1);
-    }
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-
-    return (
-      <lineSegments geometry={geometry}>
-        <lineBasicMaterial color="#ffffff" opacity={0.85} transparent />
-      </lineSegments>
-    );
-  }, [isAudioBlock, block.audioData, bpm, beatsPerBar, barWidth, blockTop, blockHeight, blockLeft, contentAreaWidth]);
+    return parts.join(' ');
+  }, [block.loop, loopCount, patternWidthPx, patternBeats, blockTotalBeats, contentAreaWidth, h, radius]);
 
   return (
-    <group>
-      {/* Iteration backgrounds */}
-      {iterationMeshes}
-
-      {/* Handle */}
-      <mesh position={[handleLeft + handleWidthPx / 2, -(blockTop + blockHeight / 2), 0.02]}>
-        <shapeGeometry args={[handleShape]} />
-        <meshBasicMaterial
-          color={isSelected ? selectedHandleColor : handleColor}
-          opacity={handleOpacity}
-          transparent={handleOpacity < 1}
-        />
-      </mesh>
-
-      {/* Header background */}
-      {headerBg}
-
-      {/* Track name and loop indicator */}
-      <Text
-        position={[blockLeft + 8, -(blockTop + 10), 0.15]}
-        fontSize={11}
-        color={isSelected ? getSelectionTextColor(baseColor) : 'white'}
-        fillOpacity={isSelected ? 1 : 0.9}
-        anchorX="left"
-        anchorY="middle"
-        maxWidth={contentAreaWidth - (block.loop ? 32 : 16)}
-      >
-        {track.name}
-      </Text>
-      {block.loop && (
-        <Text
-          position={[blockLeft + contentAreaWidth - 12, -(blockTop + 10), 0.15]}
-          fontSize={10}
-          color={isSelected ? getSelectionTextColor(baseColor) : 'white'}
-          fillOpacity={isSelected ? 0.7 : 0.7}
-          anchorX="right"
-          anchorY="middle"
-        >
-          ⟳
-        </Text>
-      )}
-
-      {/* Events or Waveform */}
-      {isAudioBlock ? waveformMesh : eventMeshes}
-
-      {/* Selection border */}
-      {selectionBorder}
-
-      {/* Hit areas */}
-      {bodyHitArea}
-      {leftEdgeHitArea}
-      {rightLoopHitArea}
-      {rightExtendHitArea}
-    </group>
+    <svg
+      style={{
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        width: contentAreaWidth,
+        height: h,
+        pointerEvents: 'none',
+        overflow: 'visible',
+        zIndex: 5,
+      }}
+    >
+      <path d={d} fill="none" stroke={selectionColor} strokeWidth={1.5} />
+    </svg>
   );
 }
 
-// Marquee selection overlay
-interface MarqueeProps {
-  startX: number;
-  startY: number;
-  currentX: number;
-  currentY: number;
-}
-
-function Marquee({ startX, startY, currentX, currentY }: MarqueeProps) {
-  const x1 = Math.min(startX, currentX);
-  const y1 = Math.min(startY, currentY);
-  const w = Math.abs(currentX - startX);
-  const h = Math.abs(currentY - startY);
-
-  const lineGeometry = useMemo(() => {
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute([
-      -w/2, h/2, 0,
-      w/2, h/2, 0,
-      w/2, -h/2, 0,
-      -w/2, -h/2, 0,
-    ], 3));
-    return geom;
-  }, [w, h]);
-
-  if (w < 2 || h < 2) return null;
-
-  return (
-    <group position={[x1 + w / 2, -(y1 + h / 2), 1]}>
-      <mesh>
-        <planeGeometry args={[w, h]} />
-        <meshBasicMaterial color="#3b82f6" opacity={0.15} transparent />
-      </mesh>
-      <lineLoop geometry={lineGeometry}>
-        <lineBasicMaterial color="#3b82f6" opacity={0.6} transparent />
-      </lineLoop>
-    </group>
-  );
-}
-
-// Playhead Component
-interface PlayheadMeshProps {
-  currentBeat: number;
-  pixelsPerBeat: number;
-  totalHeight: number;
-  onScrubStart: () => void;
-}
-
-function PlayheadMesh({
-  currentBeat,
-  pixelsPerBeat,
-  totalHeight,
-  onScrubStart,
-}: PlayheadMeshProps) {
-  const xPosition = currentBeat * pixelsPerBeat;
-  const lineWidth = 2;
-
-  // Playhead triangle dimensions
-  const triangleWidth = 20;
-  const triangleHeight = 12;
-  const cornerRadius = 3;
-
-  // Playhead color
-  const baseColor = '#ffd93d';
-
-  // Triangle sits at bottom of ruler
-  const headCenterY = -RULER_HEIGHT + triangleHeight / 2;
-  const triangleTopY = headCenterY + triangleHeight / 2;
-
-  // Stem extends from ruler midpoint down to top of triangle
-  const stemWidth = triangleWidth;
-  const stemTopY = -RULER_HEIGHT / 2;
-  const stemBottomY = triangleTopY;
-  const stemHeight = stemTopY - stemBottomY;
-  const stemCenterY = (stemTopY + stemBottomY) / 2;
-
-  // Line extends from center of triangle down to bottom of content
-  const lineStartY = headCenterY;
-  const lineEndY = -RULER_HEIGHT - totalHeight;
-  const lineHeight = lineStartY - lineEndY;
-  const lineCenterY = (lineStartY + lineEndY) / 2;
-
-  // Create stem shape (top half of rounded rectangle - rounded top, flat bottom)
-  const stemShape = useMemo(() => {
-    const shape = new THREE.Shape();
-    const hw = stemWidth / 2;
-    const hh = stemHeight / 2;
-    const r = Math.min(cornerRadius, hw); // radius can't exceed half width
-
-    // Start at bottom-left, go clockwise
-    shape.moveTo(-hw, -hh);
-    // Left edge going up
-    shape.lineTo(-hw, hh - r);
-    // Top-left corner (rounded)
-    shape.quadraticCurveTo(-hw, hh, -hw + r, hh);
-    // Top edge
-    shape.lineTo(hw - r, hh);
-    // Top-right corner (rounded)
-    shape.quadraticCurveTo(hw, hh, hw, hh - r);
-    // Right edge going down
-    shape.lineTo(hw, -hh);
-    // Bottom edge (flat, connects to triangle)
-    shape.lineTo(-hw, -hh);
-
-    shape.closePath();
-    return shape;
-  }, [stemHeight]);
-
-  // Create head shape (rounded downward-pointing triangle)
-  const headShape = useMemo(() => {
-    const shape = new THREE.Shape();
-    const hw = triangleWidth / 2;
-    const hh = triangleHeight / 2;
-    const r = cornerRadius;
-
-    // Start at left corner (top-left of triangle), going clockwise
-    // The triangle points down: flat top, pointed bottom
-
-    // Top-left corner (rounded)
-    shape.moveTo(-hw + r, hh);
-
-    // Top edge to top-right corner
-    shape.lineTo(hw - r, hh);
-
-    // Top-right corner (rounded)
-    shape.quadraticCurveTo(hw, hh, hw - r * 0.3, hh - r * 0.7);
-
-    // Right edge going down to bottom point
-    shape.lineTo(r * 0.5, -hh + r);
-
-    // Bottom point (rounded)
-    shape.quadraticCurveTo(0, -hh, -r * 0.5, -hh + r);
-
-    // Left edge going up
-    shape.lineTo(-hw + r * 0.3, hh - r * 0.7);
-
-    // Top-left corner (rounded)
-    shape.quadraticCurveTo(-hw, hh, -hw + r, hh);
-
-    shape.closePath();
-    return shape;
-  }, []);
-
-  return (
-    <group position={[xPosition, 0, 5]}>
-      {/* Main line - content area only (starts at bottom of ruler) */}
-      <mesh position={[0, lineCenterY, 0]}>
-        <planeGeometry args={[lineWidth, lineHeight]} />
-        <meshBasicMaterial color={baseColor} />
-      </mesh>
-
-      {/* Stem - top half of rounded rectangle connecting to triangle */}
-      <mesh position={[0, stemCenterY, 0.02]}>
-        <shapeGeometry args={[stemShape]} />
-        <meshBasicMaterial color={baseColor} />
-      </mesh>
-
-      {/* Head - rounded downward triangle at bottom of ruler */}
-      <mesh position={[0, headCenterY, 0.02]}>
-        <shapeGeometry args={[headShape]} />
-        <meshBasicMaterial color={baseColor} />
-      </mesh>
-
-      {/* Invisible hit area for dragging - covers the triangle */}
-      <mesh
-        position={[0, headCenterY, 0.1]}
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          onScrubStart();
-        }}
-      >
-        <circleGeometry args={[triangleWidth, 16]} />
-        <meshBasicMaterial transparent opacity={0} />
-      </mesh>
-    </group>
-  );
-}
-
-// Main Scene Component
-interface TimelineSceneProps {
-  flatTracks: TrackNode[];
-  pixelsPerBeat: number;
-  beatsPerBar: number;
-  totalBars: number;
-  bpm: number;
-  trackHeight: number;
-  timelineWidth: number;
-  totalHeight: number;
-  currentBeat: number;
-  // Canvas dimensions (includes buffer)
-  canvasWidth: number;
-  canvasHeight: number;
-  scrollContainerRef: RefObject<HTMLDivElement | null>;
-  canvasWrapperRef: RefObject<HTMLDivElement | null>;
-  scrollBuffer: number;
-}
-
-function TimelineScene({
+// Main Component
+export function TimelineCanvas({
   flatTracks,
   pixelsPerBeat,
   beatsPerBar,
   totalBars,
   bpm,
-  trackHeight,
-  timelineWidth,
-  totalHeight,
-  currentBeat,
-  canvasWidth,
-  canvasHeight,
+  viewportWidth,
+  viewportHeight,
   scrollContainerRef,
-  canvasWrapperRef,
-  scrollBuffer,
-}: TimelineSceneProps) {
-  const { camera } = useThree();
+}: TimelineCanvasProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const playheadRef = useRef<HTMLDivElement>(null);
+  const trackHeightScale = useUIStore((state) => state.trackHeightScale);
+  const currentBeat = useUIStore((state) => state.currentBeat);
+  const { handleAudioFileDrop, isProcessingAudio } = useDragDrop();
 
-  // Helper to get current scroll values directly from DOM
-  const getScrollValues = useCallback(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return { scrollLeft: 0, scrollTop: 0 };
-    return { scrollLeft: container.scrollLeft, scrollTop: container.scrollTop };
-  }, [scrollContainerRef]);
+  const [isDraggingAudioFile, setIsDraggingAudioFile] = useState(false);
+  const dragCounter = useRef(0);
 
-  // Total scrollable content height (including ruler)
-  const totalContentHeight = RULER_HEIGHT + totalHeight;
-
-  // Lusion scroll sync: Update camera and canvas position every frame
-  // This reads scroll directly from DOM, bypassing React state for perfect sync
-  useFrame(() => {
-    const { scrollLeft, scrollTop } = getScrollValues();
-
-    // Calculate canvas offset with proper edge clamping
-    // At minimum: offset should be 0 (can't go before start)
-    // At maximum: offset should ensure canvas covers to the end of content
-    const maxOffsetX = Math.max(0, timelineWidth - canvasWidth);
-    const maxOffsetY = Math.max(0, totalContentHeight - canvasHeight);
-
-    const canvasOffsetX = Math.max(0, Math.min(scrollLeft - scrollBuffer, maxOffsetX));
-    const canvasOffsetY = Math.max(0, Math.min(scrollTop - scrollBuffer, maxOffsetY));
-
-    // Update camera position to match scroll
-    const cameraX = canvasOffsetX + canvasWidth / 2;
-    const cameraY = -(canvasOffsetY + canvasHeight / 2);
-    camera.position.set(cameraX, cameraY, 100);
-
-    // Lusion technique: Update canvas wrapper position with top/left
-    // This allows the canvas to physically scroll with the page between frames
-    if (canvasWrapperRef.current) {
-      canvasWrapperRef.current.style.top = `${canvasOffsetY}px`;
-      canvasWrapperRef.current.style.left = `${canvasOffsetX}px`;
-    }
-  });
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    trackId: string | null;
+    bar: number;
+  } | null>(null);
 
   const selectedBlockIds = useUIStore((state) => state.selectedBlockIds);
   const selectBlock = useUIStore((state) => state.selectBlock);
@@ -1236,16 +376,21 @@ function TimelineScene({
   const timelineQuantize = useUIStore((state) => state.timelineQuantize);
   const updateBlock = useProjectStore((state) => state.updateBlock);
   const addBlock = useProjectStore((state) => state.addBlock);
+  const addTrack = useProjectStore((state) => state.addTrack);
   const tracks = useProjectStore((state) => state.project.tracks);
   const { isPlaying, seekTo, setLoopRegion } = usePlayback();
+
+  const trackHeight = Math.round(64 * trackHeightScale);
+  const barWidth = beatsPerBar * pixelsPerBeat;
+  const timelineWidth = totalBars * barWidth;
+  const contentHeight = Math.max(flatTracks.length * trackHeight, 400);
+  const totalHeight = RULER_HEIGHT + contentHeight;
 
   // Scrubbing state
   const [isScrubbing, setLocalScrubbing] = useState(false);
   // Loop dragging state
   const [isLoopDragging, setIsLoopDragging] = useState(false);
   const [loopDragStart, setLoopDragStart] = useState(0);
-
-  const barWidth = beatsPerBar * pixelsPerBeat;
 
   // Drag state
   const [dragState, setDragState] = useState<{
@@ -1271,14 +416,63 @@ function TimelineScene({
   const [hoverBlockId, setHoverBlockId] = useState<string | null>(null);
   const [hoverZone, setHoverZone] = useState<string | null>(null);
 
+  // Grid background CSS
+  const gridBackground = useMemo(() => {
+    return {
+      backgroundImage: `repeating-linear-gradient(to right, rgba(255,255,255,0.1) 0px 1px, transparent 1px ${barWidth}px)`,
+      backgroundSize: `${barWidth}px 100%`,
+    };
+  }, [barWidth]);
+
+  // Playhead update via direct DOM mutation (rAF loop)
+  useEffect(() => {
+    let rafId: number;
+    const update = () => {
+      if (playheadRef.current) {
+        const beat = useUIStore.getState().currentBeat;
+        playheadRef.current.style.transform = `translateX(${beat * pixelsPerBeat}px)`;
+      }
+      rafId = requestAnimationFrame(update);
+    };
+    rafId = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(rafId);
+  }, [pixelsPerBeat]);
+
+  // screenToWorld: convert client coords to content coords
+  const screenToWorld = useCallback((clientX: number, clientY: number) => {
+    const container = scrollContainerRef.current;
+    if (!container) return { x: 0, y: 0 };
+    const rect = container.getBoundingClientRect();
+    const x = clientX - rect.left + container.scrollLeft;
+    const y = clientY - rect.top + container.scrollTop;
+    return { x, y };
+  }, [scrollContainerRef]);
+
+  const totalBeats = totalBars * beatsPerBar;
+
+  const pixelToBeat = useCallback((pixelX: number) => {
+    const beat = pixelX / pixelsPerBeat;
+    const quantize = 0.25;
+    const quantized = Math.round(beat / quantize) * quantize;
+    return Math.max(0, Math.min(totalBeats - quantize, quantized));
+  }, [pixelsPerBeat, totalBeats]);
+
+  const pixelToBar = useCallback((pixelX: number) => {
+    const beat = pixelX / pixelsPerBeat;
+    const bar = Math.round(beat / beatsPerBar);
+    return Math.max(0, Math.min(totalBars, bar)) * beatsPerBar;
+  }, [pixelsPerBeat, beatsPerBar, totalBars]);
+
+  // Block pointer down
   const handleBlockPointerDown = useCallback((
-    e: ThreeEvent<PointerEvent>,
+    e: React.PointerEvent,
     block: Block,
     track: Track,
     trackIndex: number,
     zone: string
   ) => {
-    const point = e.point;
+    e.stopPropagation();
+    const { x, y } = screenToWorld(e.clientX, e.clientY);
     const isAltHeld = e.altKey;
 
     // Handle selection
@@ -1300,13 +494,9 @@ function TimelineScene({
     else if (zone === 'right-extend') dragType = 'resize-right-extend';
     else dragType = 'drag';
 
-    // Determine which blocks to work with (current selection or just clicked block)
     const blocksToProcess = selectedBlockIds.has(block.id) ? selectedBlockIds : new Set([block.id]);
-
-    // Opt/Alt + drag = copy blocks
     const shouldCopy = isAltHeld && dragType === 'drag';
 
-    // Capture original positions (and create copies if copying)
     const originalPositions = new Map<string, { startBar: number; durationBars: number; trackId: string }>();
     const newBlockIds: string[] = [];
 
@@ -1316,7 +506,6 @@ function TimelineScene({
         const foundBlock = tracks[trackId].blocks.find(b => b.id === blockId);
         if (foundBlock) {
           if (shouldCopy) {
-            // Create a copy of the block
             const newBlockId = addBlock(trackId, {
               startBar: foundBlock.startBar,
               durationBars: foundBlock.durationBars,
@@ -1343,39 +532,29 @@ function TimelineScene({
       }
     }
 
-    // If we created copies, select them instead
     if (shouldCopy && newBlockIds.length > 0) {
       selectBlocks(newBlockIds);
     }
 
     setDragState({
       type: dragType,
-      startX: point.x,
-      startY: -point.y,
-      currentX: point.x,
-      currentY: -point.y,
+      startX: x,
+      startY: y,
+      currentX: x,
+      currentY: y,
       block,
       track,
       trackIndex,
       originalPositions,
       isCopying: shouldCopy,
     });
-  }, [selectedBlockIds, selectBlock, selectBlocks, tracks, addBlock]);
+  }, [selectedBlockIds, selectBlock, selectBlocks, tracks, addBlock, screenToWorld]);
 
-  const handleBackgroundPointerDown = useCallback((e: ThreeEvent<PointerEvent>) => {
+  // Background pointer down (marquee)
+  const handleBackgroundPointerDown = useCallback((e: React.PointerEvent) => {
     if (dragState.type !== 'none') return;
-
-    e.stopPropagation();
-
-    // e.point gives world coordinates directly
-    // Y is negative in Three.js (goes down), so negate it to get our coordinate system
-    const x = e.point.x;
-    const y = -e.point.y;
-
-    if (!e.shiftKey) {
-      clearBlockSelection();
-    }
-
+    const { x, y } = screenToWorld(e.clientX, e.clientY);
+    if (!e.shiftKey) clearBlockSelection();
     setDragState({
       type: 'marquee',
       startX: x,
@@ -1383,40 +562,47 @@ function TimelineScene({
       currentX: x,
       currentY: y,
     });
-  }, [dragState.type, clearBlockSelection]);
+  }, [dragState.type, clearBlockSelection, screenToWorld]);
 
-  // Helper to convert screen coordinates to world coordinates
-  // Must account for canvas offset (Lusion technique) not just scroll position
-  const screenToWorld = useCallback((clientX: number, clientY: number) => {
-    const canvas = document.querySelector('canvas');
-    if (!canvas) return { x: 0, y: 0 };
+  // Ruler loop drag
+  const handleRulerLoopDragStart = useCallback((e: React.PointerEvent) => {
+    e.stopPropagation();
+    const { x } = screenToWorld(e.clientX, e.clientY);
+    const startBeat = pixelToBar(x);
+    setIsLoopDragging(true);
+    setLoopDragStart(startBeat);
+    setLoopRegion(startBeat, startBeat);
+    setLoopEnabled(true);
+  }, [pixelToBar, setLoopRegion, setLoopEnabled, screenToWorld]);
 
-    const rect = canvas.getBoundingClientRect();
-    const { scrollLeft, scrollTop } = getScrollValues();
+  // Ruler scrub
+  const handleRulerScrubStart = useCallback((e: React.PointerEvent) => {
+    e.stopPropagation();
+    const { x } = screenToWorld(e.clientX, e.clientY);
+    const beat = pixelToBeat(x);
+    setLocalScrubbing(true);
+    setIsScrubbing(true);
+    if (isPlaying) {
+      seekTo(beat);
+    } else {
+      setCurrentBeat(beat);
+    }
+  }, [pixelToBeat, setIsScrubbing, isPlaying, seekTo, setCurrentBeat, screenToWorld]);
 
-    // Calculate canvas offset the same way as in useFrame
-    const maxOffsetX = Math.max(0, timelineWidth - canvasWidth);
-    const maxOffsetY = Math.max(0, totalContentHeight - canvasHeight);
-    const canvasOffsetX = Math.max(0, Math.min(scrollLeft - scrollBuffer, maxOffsetX));
-    const canvasOffsetY = Math.max(0, Math.min(scrollTop - scrollBuffer, maxOffsetY));
+  // Playhead scrub start
+  const handleScrubStart = useCallback(() => {
+    setLocalScrubbing(true);
+    setIsScrubbing(true);
+  }, [setIsScrubbing]);
 
-    // Convert: screen -> canvas local -> world
-    const x = (clientX - rect.left) + canvasOffsetX;
-    const y = (clientY - rect.top) + canvasOffsetY;
-
-    return { x, y };
-  }, [getScrollValues, timelineWidth, totalContentHeight, canvasWidth, canvasHeight, scrollBuffer]);
-
-  // Handle pointer move and up globally
+  // Drag move/up for blocks and marquee
   useEffect(() => {
     if (dragState.type === 'none') return;
 
     const handleMove = (e: PointerEvent) => {
       const { x, y } = screenToWorld(e.clientX, e.clientY);
-      if (x === 0 && y === 0) return; // Canvas not found
+      if (x === 0 && y === 0) return;
 
-      // Calculate quantized delta in bars
-      // timelineQuantize is in beats, so we snap to that grid
       const quantizePixels = timelineQuantize * pixelsPerBeat;
 
       if (dragState.type === 'marquee') {
@@ -1438,7 +624,7 @@ function TimelineScene({
         for (const [blockId, original] of dragState.originalPositions) {
           const newStartBar = Math.max(0, original.startBar + deltaBars);
           const startDelta = newStartBar - original.startBar;
-          const minDurationBars = timelineQuantize / beatsPerBar; // Minimum is one quantize unit
+          const minDurationBars = timelineQuantize / beatsPerBar;
           const newDuration = Math.max(minDurationBars, original.durationBars - startDelta);
           const originalEndBar = original.startBar + original.durationBars;
           const clampedDuration = Math.min(newDuration, originalEndBar - newStartBar);
@@ -1458,10 +644,10 @@ function TimelineScene({
         for (const [blockId, original] of dragState.originalPositions) {
           const minDurationBars = timelineQuantize / beatsPerBar;
           const newDuration = Math.max(minDurationBars, original.durationBars + deltaBars);
-          const block = tracks[original.trackId]?.blocks.find(b => b.id === blockId);
+          const blk = tracks[original.trackId]?.blocks.find(b => b.id === blockId);
 
-          if (dragState.type === 'resize-right-loop' && block) {
-            const patternBars = getPatternBars(block, beatsPerBar);
+          if (dragState.type === 'resize-right-loop' && blk) {
+            const patternBars = getPatternBars(blk, beatsPerBar);
             const shouldLoop = newDuration > patternBars;
             updateBlock(original.trackId, blockId, {
               durationBars: newDuration,
@@ -1476,7 +662,6 @@ function TimelineScene({
 
     const handleUp = () => {
       if (dragState.type === 'marquee') {
-        // Calculate blocks in marquee
         const { startX, startY, currentX, currentY } = dragState;
         const minX = Math.min(startX, currentX);
         const maxX = Math.max(startX, currentX);
@@ -1487,7 +672,6 @@ function TimelineScene({
 
         flatTracks.forEach((node, trackIndex) => {
           const track = node.track;
-          // Track positions are offset by RULER_HEIGHT
           const trackTop = RULER_HEIGHT + trackIndex * trackHeight;
           const trackBottom = trackTop + trackHeight;
 
@@ -1524,94 +708,39 @@ function TimelineScene({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [dragState, barWidth, trackHeight, flatTracks, updateBlock, selectBlocks, tracks, beatsPerBar, getScrollValues]);
+  }, [dragState, barWidth, trackHeight, flatTracks, updateBlock, selectBlocks, tracks, beatsPerBar, screenToWorld, pixelsPerBeat, timelineQuantize]);
 
-  // Scrubbing handlers
-  const totalBeats = totalBars * beatsPerBar;
-
-  const handleScrubStart = useCallback(() => {
-    setLocalScrubbing(true);
-    setIsScrubbing(true);
-  }, [setIsScrubbing]);
-
-  const pixelToBeat = useCallback((pixelX: number) => {
-    const beat = pixelX / pixelsPerBeat;
-    const quantize = 0.25; // 1/16th note
-    const quantized = Math.round(beat / quantize) * quantize;
-    return Math.max(0, Math.min(totalBeats - quantize, quantized));
-  }, [pixelsPerBeat, totalBeats]);
-
-  // Convert pixel to bar-aligned beat (for loop region)
-  const pixelToBar = useCallback((pixelX: number) => {
-    const beat = pixelX / pixelsPerBeat;
-    const bar = Math.round(beat / beatsPerBar);
-    return Math.max(0, Math.min(totalBars, bar)) * beatsPerBar;
-  }, [pixelsPerBeat, beatsPerBar, totalBars]);
-
-  // Ruler loop drag handler
-  const handleRulerLoopDragStart = useCallback((e: ThreeEvent<PointerEvent>) => {
-    e.stopPropagation();
-    const x = e.point.x;
-    const startBeat = pixelToBar(x);
-    setIsLoopDragging(true);
-    setLoopDragStart(startBeat);
-    setLoopRegion(startBeat, startBeat);
-    setLoopEnabled(true);
-  }, [pixelToBar, setLoopRegion, setLoopEnabled]);
-
-  // Ruler scrub handler
-  const handleRulerScrubStart = useCallback((e: ThreeEvent<PointerEvent>) => {
-    e.stopPropagation();
-    const x = e.point.x;
-    const beat = pixelToBeat(x);
-    setLocalScrubbing(true);
-    setIsScrubbing(true);
-    if (isPlaying) {
-      seekTo(beat);
-    } else {
-      setCurrentBeat(beat);
-    }
-  }, [pixelToBeat, setIsScrubbing, isPlaying, seekTo, setCurrentBeat]);
-
-  // Handle loop drag move and up
+  // Loop drag move/up
   useEffect(() => {
     if (!isLoopDragging) return;
 
     const handleMove = (e: PointerEvent) => {
       const { x } = screenToWorld(e.clientX, e.clientY);
-      const currentBeat = pixelToBar(x);
-
-      const loopStartBeat = Math.min(loopDragStart, currentBeat);
-      const loopEndBeat = Math.max(loopDragStart, currentBeat);
+      const cb = pixelToBar(x);
+      const loopStartBeat = Math.min(loopDragStart, cb);
+      const loopEndBeat = Math.max(loopDragStart, cb);
       setLoopRegion(loopStartBeat, loopEndBeat);
     };
 
-    const handleUp = () => {
-      setIsLoopDragging(false);
-    };
+    const handleUp = () => setIsLoopDragging(false);
 
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleUp);
-
     return () => {
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
   }, [isLoopDragging, loopDragStart, pixelToBar, setLoopRegion, screenToWorld]);
 
-  // Handle scrubbing pointer move and up
+  // Scrub move/up
   useEffect(() => {
     if (!isScrubbing) return;
 
     const handleMove = (e: PointerEvent) => {
       const { x } = screenToWorld(e.clientX, e.clientY);
       const beat = pixelToBeat(x);
-
-      if (isPlaying) {
-        seekTo(beat);
-      } else {
-        setCurrentBeat(beat);
-      }
+      if (isPlaying) seekTo(beat);
+      else setCurrentBeat(beat);
     };
 
     const handleUp = () => {
@@ -1621,247 +750,24 @@ function TimelineScene({
 
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleUp);
-
     return () => {
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
   }, [isScrubbing, pixelToBeat, isPlaying, seekTo, setCurrentBeat, setIsScrubbing, screenToWorld]);
 
-  // Camera position is now updated in useFrame for perfect scroll sync
-  // Initial position will be set on first frame
-  return (
-    <>
-      <OrthographicCamera
-        makeDefault
-        position={[canvasWidth / 2, -canvasHeight / 2, 100]}
-        zoom={1}
-        near={0.1}
-        far={1000}
-      />
-
-      {/* Content area background - matches ruler background */}
-      <mesh position={[timelineWidth / 2, -RULER_HEIGHT - totalHeight / 2, -0.6]}>
-        <planeGeometry args={[timelineWidth, totalHeight]} />
-        <meshBasicMaterial color="#1a1a1a" />
-      </mesh>
-
-      {/* Ruler */}
-      <RulerMesh
-        totalBars={totalBars}
-        barWidth={barWidth}
-        beatsPerBar={beatsPerBar}
-        pixelsPerBeat={pixelsPerBeat}
-        timelineWidth={timelineWidth}
-        loopStart={loopStart}
-        loopEnd={loopEnd}
-        onLoopDragStart={handleRulerLoopDragStart}
-        onScrubStart={handleRulerScrubStart}
-      />
-
-      {/* Grid lines */}
-      <GridLines totalBars={totalBars} barWidth={barWidth} height={totalHeight} />
-
-      {/* Blocks */}
-      {flatTracks.map((node, trackIndex) => (
-        node.track.blocks.map((block) => (
-          <BlockMesh
-            key={block.id}
-            block={block}
-            track={node.track}
-            trackIndex={trackIndex}
-            pixelsPerBeat={pixelsPerBeat}
-            beatsPerBar={beatsPerBar}
-            trackHeight={trackHeight}
-            bpm={bpm}
-            isSelected={selectedBlockIds.has(block.id)}
-            onPointerDown={handleBlockPointerDown}
-            onPointerOver={(blockId, zone) => {
-              setHoverBlockId(blockId);
-              setHoverZone(zone);
-            }}
-            onPointerOut={() => {
-              setHoverBlockId(null);
-              setHoverZone(null);
-            }}
-            isHovered={hoverBlockId === block.id}
-            hoveredZone={hoverBlockId === block.id ? hoverZone : null}
-          />
-        ))
-      ))}
-
-      {/* Marquee */}
-      {dragState.type === 'marquee' && (
-        <Marquee
-          startX={dragState.startX}
-          startY={dragState.startY}
-          currentX={dragState.currentX}
-          currentY={dragState.currentY}
-        />
-      )}
-
-      {/* Playhead */}
-      <PlayheadMesh
-        currentBeat={currentBeat}
-        pixelsPerBeat={pixelsPerBeat}
-        totalHeight={totalHeight}
-        onScrubStart={handleScrubStart}
-      />
-
-      {/* Background for marquee selection - content area only (below ruler) */}
-      <mesh
-        position={[timelineWidth / 2, -RULER_HEIGHT - totalHeight / 2, -1]}
-        onPointerDown={handleBackgroundPointerDown}
-      >
-        <planeGeometry args={[timelineWidth, totalHeight]} />
-        <meshBasicMaterial transparent opacity={0} />
-      </mesh>
-    </>
-  );
-}
-
-// Main Component
-export function TimelineCanvas({
-  flatTracks,
-  pixelsPerBeat,
-  beatsPerBar,
-  totalBars,
-  bpm,
-  viewportWidth,
-  viewportHeight,
-  scrollContainerRef,
-}: TimelineCanvasProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const canvasWrapperRef = useRef<HTMLDivElement>(null);
-  const trackHeightScale = useUIStore((state) => state.trackHeightScale);
-  const currentBeat = useUIStore((state) => state.currentBeat);
-  const { handleAudioFileDrop, isProcessingAudio } = useDragDrop();
-
-  const [isDraggingAudioFile, setIsDraggingAudioFile] = useState(false);
-  const [isMounted, setIsMounted] = useState(false);
-  const dragCounter = useRef(0);
-
-  // Context menu state
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    trackId: string | null;
-    bar: number;
-  } | null>(null);
-
-  const addBlock = useProjectStore((state) => state.addBlock);
-  const addTrack = useProjectStore((state) => state.addTrack);
-
-  // Only render Canvas on client side
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
-  const trackHeight = Math.round(64 * trackHeightScale);
-  const barWidth = beatsPerBar * pixelsPerBeat;
-  const timelineWidth = totalBars * barWidth;
-  // Content height (tracks area, not including ruler)
-  const contentHeight = Math.max(flatTracks.length * trackHeight, 400);
-  // Total height including ruler
-  const totalHeight = RULER_HEIGHT + contentHeight;
-
-  // Canvas dimensions - use viewport size plus buffer for smooth scrolling
-  // Buffer adds extra rendering area so content is pre-rendered before scrolling into view
-  const SCROLL_BUFFER = 200;
-  const canvasWidth = Math.max(viewportWidth + SCROLL_BUFFER * 2, 100);
-  const canvasHeight = Math.max(viewportHeight + SCROLL_BUFFER * 2, 100);
-
-  // Helper to get scroll values from container ref
-  const getScrollValues = useCallback(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return { scrollLeft: 0, scrollTop: 0 };
-    return { scrollLeft: container.scrollLeft, scrollTop: container.scrollTop };
-  }, [scrollContainerRef]);
-
   // File drag handlers
   const handleFileDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     dragCounter.current++;
-    if (e.dataTransfer.types.includes('Files')) {
-      setIsDraggingAudioFile(true);
-    }
+    if (e.dataTransfer.types.includes('Files')) setIsDraggingAudioFile(true);
   }, []);
 
   const handleFileDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     dragCounter.current--;
-    if (dragCounter.current === 0) {
-      setIsDraggingAudioFile(false);
-    }
+    if (dragCounter.current === 0) setIsDraggingAudioFile(false);
   }, []);
-
-  // Context menu handler
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    // Calculate position relative to container
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    // Calculate which bar was clicked
-    const bar = Math.floor(x / barWidth);
-
-    // Calculate which track was clicked (accounting for ruler height)
-    const trackY = y - RULER_HEIGHT;
-    const trackIndex = Math.floor(trackY / trackHeight);
-    const targetTrack = trackIndex >= 0 && trackIndex < flatTracks.length
-      ? flatTracks[trackIndex]?.track
-      : null;
-
-    setContextMenu({
-      x: e.clientX,
-      y: e.clientY,
-      trackId: targetTrack?.id || null,
-      bar: Math.max(0, bar),
-    });
-  }, [barWidth, trackHeight, flatTracks]);
-
-  // Close context menu
-  const closeContextMenu = useCallback(() => {
-    setContextMenu(null);
-  }, []);
-
-  // Close context menu when clicking elsewhere
-  useEffect(() => {
-    if (contextMenu) {
-      const handleClick = () => closeContextMenu();
-      window.addEventListener('click', handleClick);
-      return () => window.removeEventListener('click', handleClick);
-    }
-  }, [contextMenu, closeContextMenu]);
-
-  // Add a new empty block at the context menu position
-  const handleAddBlock = useCallback(() => {
-    if (!contextMenu) return;
-
-    if (contextMenu.trackId) {
-      // Add block to existing track
-      addBlock(contextMenu.trackId, {
-        startBar: contextMenu.bar,
-        durationBars: 1,
-        loop: true,
-        streams: [{ events: [] }],
-      });
-    } else {
-      // Create a new track first
-      const trackId = addTrack();
-      addBlock(trackId, {
-        startBar: contextMenu.bar,
-        durationBars: 1,
-        loop: true,
-        streams: [{ events: [] }],
-      });
-    }
-    closeContextMenu();
-  }, [contextMenu, addBlock, addTrack, closeContextMenu]);
 
   const handleFileDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -1882,18 +788,103 @@ export function TimelineCanvas({
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
 
-    // getBoundingClientRect already accounts for scroll position
-    // so we just need the position relative to the content div
     const x = e.clientX - rect.left;
     const bar = Math.max(0, Math.floor(x / barWidth));
-
-    // Y coordinate offset by ruler height to get track position
     const y = e.clientY - rect.top - RULER_HEIGHT;
     const trackIndex = Math.floor(y / trackHeight);
     const targetTrack = trackIndex >= 0 ? flatTracks[trackIndex]?.track : undefined;
 
     await handleAudioFileDrop(file, targetTrack?.id || null, bar);
   }, [barWidth, trackHeight, flatTracks, handleAudioFileDrop]);
+
+  // Context menu
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const { x, y } = screenToWorld(e.clientX, e.clientY);
+    const bar = Math.floor(x / barWidth);
+    const trackY = y - RULER_HEIGHT;
+    const trackIndex = Math.floor(trackY / trackHeight);
+    const targetTrack = trackIndex >= 0 && trackIndex < flatTracks.length
+      ? flatTracks[trackIndex]?.track
+      : null;
+
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      trackId: targetTrack?.id || null,
+      bar: Math.max(0, bar),
+    });
+  }, [barWidth, trackHeight, flatTracks, screenToWorld]);
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
+  useEffect(() => {
+    if (contextMenu) {
+      const handleClick = () => closeContextMenu();
+      window.addEventListener('click', handleClick);
+      return () => window.removeEventListener('click', handleClick);
+    }
+  }, [contextMenu, closeContextMenu]);
+
+  const handleAddBlock = useCallback(() => {
+    if (!contextMenu) return;
+    if (contextMenu.trackId) {
+      addBlock(contextMenu.trackId, {
+        startBar: contextMenu.bar,
+        durationBars: 1,
+        loop: true,
+        streams: [{ events: [] }],
+      });
+    } else {
+      const trackId = addTrack();
+      addBlock(trackId, {
+        startBar: contextMenu.bar,
+        durationBars: 1,
+        loop: true,
+        streams: [{ events: [] }],
+      });
+    }
+    closeContextMenu();
+  }, [contextMenu, addBlock, addTrack, closeContextMenu]);
+
+  // Marquee overlay
+  const marqueeStyle = useMemo(() => {
+    if (dragState.type !== 'marquee') return null;
+    const x1 = Math.min(dragState.startX, dragState.currentX);
+    const y1 = Math.min(dragState.startY, dragState.currentY);
+    const w = Math.abs(dragState.currentX - dragState.startX);
+    const h = Math.abs(dragState.currentY - dragState.startY);
+    if (w < 2 || h < 2) return null;
+    return {
+      position: 'absolute' as const,
+      left: x1,
+      top: y1,
+      width: w,
+      height: h,
+      backgroundColor: 'rgba(59, 130, 246, 0.15)',
+      border: '1px solid rgba(59, 130, 246, 0.6)',
+      pointerEvents: 'none' as const,
+      zIndex: 20,
+    };
+  }, [dragState]);
+
+  // Loop region overlay
+  const loopRegionStyle = useMemo(() => {
+    if (loopStart === null || loopEnd === null || loopStart === loopEnd) return null;
+    const startX = loopStart * pixelsPerBeat;
+    const endX = loopEnd * pixelsPerBeat;
+    return {
+      position: 'absolute' as const,
+      left: startX,
+      top: 0,
+      width: endX - startX,
+      height: RULER_HEIGHT / 2,
+      backgroundColor: 'rgba(251, 191, 36, 0.3)',
+      borderTop: '2px solid #fbbf24',
+      pointerEvents: 'none' as const,
+      zIndex: 2,
+    };
+  }, [loopStart, loopEnd, pixelsPerBeat]);
 
   return (
     <div
@@ -1906,56 +897,467 @@ export function TimelineCanvas({
       onDrop={handleFileDrop}
       onContextMenu={handleContextMenu}
     >
-      {/*
-        Lusion scroll sync technique:
-        - Canvas wrapper uses position: absolute with top/left (not transform)
-        - Position is updated every frame in useFrame, reading scroll directly from DOM
-        - Between frames, canvas physically scrolls with the page, keeping visuals in sync
-        - This eliminates the lag from React state updates
-      */}
-      {isMounted && (
-        <CanvasErrorBoundary width={canvasWidth} height={canvasHeight}>
+      {/* Ruler */}
+      <div
+        style={{
+          position: 'sticky',
+          top: 0,
+          left: 0,
+          width: timelineWidth,
+          height: RULER_HEIGHT,
+          backgroundColor: '#1a1a1a',
+          borderBottom: '1px solid #333333',
+          zIndex: 10,
+          userSelect: 'none',
+        }}
+      >
+        {/* Ruler divider line */}
+        <div style={{
+          position: 'absolute',
+          top: RULER_HEIGHT / 2,
+          left: 0,
+          right: 0,
+          height: 1,
+          backgroundColor: 'rgba(51,51,51,0.5)',
+        }} />
+
+        {/* Bar numbers and tick marks */}
+        {Array.from({ length: totalBars }).map((_, i) => (
+          <React.Fragment key={i}>
+            {/* Bar number */}
+            <span
+              style={{
+                position: 'absolute',
+                left: i * barWidth + 8,
+                top: RULER_HEIGHT / 4,
+                transform: 'translateY(-50%)',
+                fontSize: 11,
+                color: '#9ca3af',
+                opacity: 0.9,
+                pointerEvents: 'none',
+              }}
+            >
+              {i + 1}
+            </span>
+            {/* Bar divider line */}
+            <div style={{
+              position: 'absolute',
+              left: i * barWidth,
+              top: 0,
+              width: 1,
+              height: RULER_HEIGHT,
+              backgroundColor: '#333333',
+              pointerEvents: 'none',
+            }} />
+            {/* Beat tick marks */}
+            {Array.from({ length: beatsPerBar - 1 }).map((_, beat) => (
+              <div
+                key={beat}
+                style={{
+                  position: 'absolute',
+                  left: i * barWidth + (beat + 1) * pixelsPerBeat,
+                  bottom: 4,
+                  width: 1,
+                  height: 8,
+                  backgroundColor: '#444444',
+                  pointerEvents: 'none',
+                }}
+              />
+            ))}
+          </React.Fragment>
+        ))}
+
+        {/* Loop region overlay */}
+        {loopRegionStyle && <div style={loopRegionStyle} />}
+
+        {/* Top half hit area - loop dragging */}
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: timelineWidth,
+            height: RULER_HEIGHT / 2,
+            cursor: 'crosshair',
+            zIndex: 3,
+          }}
+          onPointerDown={handleRulerLoopDragStart}
+        />
+
+        {/* Bottom half hit area - scrubbing */}
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: RULER_HEIGHT / 2,
+            width: timelineWidth,
+            height: RULER_HEIGHT / 2,
+            cursor: 'pointer',
+            zIndex: 3,
+          }}
+          onPointerDown={handleRulerScrubStart}
+        />
+      </div>
+
+      {/* Grid area */}
+      <div
+        style={{
+          position: 'absolute',
+          top: RULER_HEIGHT,
+          left: 0,
+          width: timelineWidth,
+          height: contentHeight,
+          backgroundColor: '#1a1a1a',
+          ...gridBackground,
+        }}
+        onPointerDown={handleBackgroundPointerDown}
+      >
+        {/* Blocks */}
+        {flatTracks.map((node, trackIndex) =>
+          node.track.blocks.map((block) => {
+            const track = node.track;
+            const handleWidthPx = 12;
+            const blockLeft = block.startBar * barWidth;
+            const fullBlockWidth = block.durationBars * barWidth;
+            const blockWidth = Math.max(fullBlockWidth - 2, 20);
+            const blockTop = trackIndex * trackHeight + 4;
+            const blockHeight = trackHeight - 8;
+            const contentAreaWidth = blockWidth - handleWidthPx;
+
+            const baseColor = (track.instrumentId
+              ? INSTRUMENT_COLORS[track.instrumentId]
+              : TRACK_TYPE_COLORS[track.typeId]) || '#64748b';
+            const handleColor = darken(baseColor, 40);
+            const selectionColor = tintWhite(baseColor, 0.85);
+            const selectedHandleColor = tintWhite(baseColor, 0.5);
+            const isSelected = selectedBlockIds.has(block.id);
+            const isHovered = hoverBlockId === block.id;
+            const hoveredZone = isHovered ? hoverZone : null;
+            const handleOpacity = isSelected ? 1.0 : (isHovered && (hoveredZone === 'right-loop' || hoveredZone === 'right-extend') ? 1.0 : 0.8);
+
+            // Pattern info for loops
+            const allEvents = block.streams?.flatMap((s) => s.events) || [];
+            const patternLengthBeats = allEvents.length > 0
+              ? safeMax(allEvents.map((e) => e.startTimeInBeats + (e.duration || 0.25)), beatsPerBar)
+              : beatsPerBar;
+            const patternBars = Math.ceil(patternLengthBeats / beatsPerBar);
+            const patternBeats = patternBars * beatsPerBar;
+            const patternWidthPx = patternBeats * pixelsPerBeat;
+            const blockTotalBeats = block.durationBars * beatsPerBar;
+            const loopCount = block.loop ? Math.ceil(blockTotalBeats / patternBeats) : 1;
+
+            return (
+              <div
+                key={block.id}
+                style={{
+                  position: 'absolute',
+                  left: blockLeft,
+                  top: blockTop,
+                  width: blockWidth,
+                  height: blockHeight,
+                  zIndex: isSelected ? 3 : 1,
+                }}
+              >
+                {/* Iteration backgrounds */}
+                {block.loop && loopCount > 1 ? (
+                  Array.from({ length: loopCount }).map((_, i) => {
+                    const iterLeftPx = i * patternWidthPx;
+                    const visibleBeats = Math.min(patternBeats, blockTotalBeats - i * patternBeats);
+                    let iterWidthPx = visibleBeats * pixelsPerBeat;
+                    if (iterWidthPx <= 0) return null;
+                    const isFirst = i === 0;
+                    const isLast = i === loopCount - 1;
+                    if (isLast) iterWidthPx = Math.min(iterWidthPx, contentAreaWidth - iterLeftPx);
+                    if (iterWidthPx <= 4) iterWidthPx = 4;
+                    const iterColor = isFirst ? baseColor : darken(baseColor, 20);
+
+                    return (
+                      <div
+                        key={`iter-${i}`}
+                        style={{
+                          position: 'absolute',
+                          left: iterLeftPx,
+                          top: 0,
+                          width: iterWidthPx,
+                          height: blockHeight,
+                          backgroundColor: iterColor,
+                          borderRadius: `6px ${isLast ? '0' : '6px'} ${isLast ? '0' : '6px'} 6px`,
+                        }}
+                      />
+                    );
+                  })
+                ) : (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      top: 0,
+                      width: Math.max(4, contentAreaWidth),
+                      height: blockHeight,
+                      backgroundColor: baseColor,
+                      borderRadius: '6px 0 0 6px',
+                    }}
+                  />
+                )}
+
+                {/* Handle */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    right: 0,
+                    top: 0,
+                    width: handleWidthPx,
+                    height: blockHeight,
+                    backgroundColor: isSelected ? selectedHandleColor : handleColor,
+                    borderRadius: '0 6px 6px 0',
+                    opacity: handleOpacity,
+                  }}
+                />
+
+                {/* Selected header background */}
+                {isSelected && (
+                  block.loop && loopCount > 1 ? (
+                    Array.from({ length: loopCount }).map((_, i) => {
+                      const iterLeft = i * patternWidthPx;
+                      const visibleBeats = Math.min(patternBeats, blockTotalBeats - i * patternBeats);
+                      let iterWidth = visibleBeats * pixelsPerBeat;
+                      const isFirst = i === 0;
+                      const isLast = i === loopCount - 1;
+                      if (isLast) iterWidth = Math.min(iterWidth, contentAreaWidth - iterLeft);
+                      if (iterWidth <= 4) iterWidth = 4;
+                      const leftRadius = isFirst ? 6 : 6;
+                      const rightRadius = isLast ? 0 : 6;
+
+                      return (
+                        <div
+                          key={`header-${i}`}
+                          style={{
+                            position: 'absolute',
+                            left: iterLeft,
+                            top: 0,
+                            width: iterWidth,
+                            height: 20,
+                            backgroundColor: selectionColor,
+                            borderRadius: `${leftRadius}px ${rightRadius}px 0 0`,
+                            zIndex: 2,
+                          }}
+                        />
+                      );
+                    })
+                  ) : (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: 0,
+                        top: 0,
+                        width: contentAreaWidth,
+                        height: 20,
+                        backgroundColor: selectionColor,
+                        borderRadius: '6px 0 0 0',
+                        zIndex: 2,
+                      }}
+                    />
+                  )
+                )}
+
+                {/* Track name */}
+                <span
+                  style={{
+                    position: 'absolute',
+                    left: 8,
+                    top: 10,
+                    transform: 'translateY(-50%)',
+                    fontSize: 11,
+                    color: isSelected ? getSelectionTextColor(baseColor) : 'white',
+                    opacity: isSelected ? 1 : 0.9,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    maxWidth: contentAreaWidth - (block.loop ? 32 : 16),
+                    pointerEvents: 'none',
+                    zIndex: 3,
+                  }}
+                >
+                  {track.name}
+                </span>
+
+                {/* Loop indicator */}
+                {block.loop && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      right: handleWidthPx + 4,
+                      top: 10,
+                      transform: 'translateY(-50%)',
+                      fontSize: 10,
+                      color: isSelected ? getSelectionTextColor(baseColor) : 'white',
+                      opacity: 0.7,
+                      pointerEvents: 'none',
+                      zIndex: 3,
+                    }}
+                  >
+                    ⟳
+                  </span>
+                )}
+
+                {/* Event dots / waveform canvas */}
+                <BlockEventCanvas
+                  block={block}
+                  track={track}
+                  pixelsPerBeat={pixelsPerBeat}
+                  beatsPerBar={beatsPerBar}
+                  contentWidth={contentAreaWidth - 6}
+                  contentHeight={blockHeight - 28}
+                  bpm={bpm}
+                />
+
+                {/* Selection border */}
+                {isSelected && (
+                  <SelectionBorderSVG
+                    block={block}
+                    blockHeight={blockHeight}
+                    contentAreaWidth={contentAreaWidth}
+                    selectionColor={selectionColor}
+                    beatsPerBar={beatsPerBar}
+                    pixelsPerBeat={pixelsPerBeat}
+                  />
+                )}
+
+                {/* Hit areas */}
+                {/* Body */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 12,
+                    top: 0,
+                    width: contentAreaWidth - 24,
+                    height: blockHeight,
+                    cursor: 'grab',
+                    zIndex: 4,
+                  }}
+                  onPointerDown={(e) => handleBlockPointerDown(e, block, track, trackIndex, 'body')}
+                  onPointerOver={() => { setHoverBlockId(block.id); setHoverZone('body'); }}
+                  onPointerOut={() => { setHoverBlockId(null); setHoverZone(null); }}
+                />
+                {/* Left edge */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 0,
+                    width: 12,
+                    height: blockHeight,
+                    cursor: 'ew-resize',
+                    zIndex: 4,
+                  }}
+                  onPointerDown={(e) => handleBlockPointerDown(e, block, track, trackIndex, 'left-edge')}
+                  onPointerOver={() => { setHoverBlockId(block.id); setHoverZone('left-edge'); }}
+                  onPointerOut={() => { setHoverBlockId(null); setHoverZone(null); }}
+                />
+                {/* Right loop (top half of handle) */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    right: 0,
+                    top: 0,
+                    width: handleWidthPx,
+                    height: blockHeight / 2,
+                    cursor: 'col-resize',
+                    zIndex: 4,
+                  }}
+                  onPointerDown={(e) => handleBlockPointerDown(e, block, track, trackIndex, 'right-loop')}
+                  onPointerOver={() => { setHoverBlockId(block.id); setHoverZone('right-loop'); }}
+                  onPointerOut={() => { setHoverBlockId(null); setHoverZone(null); }}
+                />
+                {/* Right extend (bottom half of handle) */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    right: 0,
+                    top: blockHeight / 2,
+                    width: handleWidthPx,
+                    height: blockHeight / 2,
+                    cursor: 'e-resize',
+                    zIndex: 4,
+                  }}
+                  onPointerDown={(e) => handleBlockPointerDown(e, block, track, trackIndex, 'right-extend')}
+                  onPointerOver={() => { setHoverBlockId(block.id); setHoverZone('right-extend'); }}
+                  onPointerOut={() => { setHoverBlockId(null); setHoverZone(null); }}
+                />
+              </div>
+            );
+          })
+        )}
+
+        {/* Playhead */}
+        <div
+          ref={playheadRef}
+          style={{
+            position: 'absolute',
+            top: -RULER_HEIGHT,
+            left: 0,
+            width: 0,
+            height: contentHeight + RULER_HEIGHT,
+            zIndex: 15,
+            pointerEvents: 'none',
+            transform: `translateX(${currentBeat * pixelsPerBeat}px)`,
+          }}
+        >
+          {/* Playhead stem (top of ruler to triangle) */}
+          <div style={{
+            position: 'absolute',
+            left: -10,
+            top: RULER_HEIGHT / 2,
+            width: 20,
+            height: Math.max(0, RULER_HEIGHT / 2 - 12),
+            backgroundColor: '#ffd93d',
+            borderRadius: '3px 3px 0 0',
+            pointerEvents: 'none',
+          }} />
+          {/* Playhead head (triangle) */}
+          <div style={{
+            position: 'absolute',
+            left: -10,
+            top: RULER_HEIGHT - 12,
+            width: 20,
+            height: 12,
+            backgroundColor: '#ffd93d',
+            clipPath: 'polygon(0 0, 100% 0, 50% 100%)',
+            pointerEvents: 'none',
+          }} />
+          {/* Playhead line */}
+          <div style={{
+            position: 'absolute',
+            left: -1,
+            top: RULER_HEIGHT,
+            width: 2,
+            height: contentHeight,
+            backgroundColor: '#ffd93d',
+          }} />
+          {/* Playhead hit area */}
           <div
-            ref={canvasWrapperRef}
             style={{
               position: 'absolute',
-              // Initial position at 0,0 - useFrame will update top/left each frame
-              left: 0,
-              top: 0,
-              width: canvasWidth,
-              height: canvasHeight,
+              left: -15,
+              top: RULER_HEIGHT / 2,
+              width: 30,
+              height: RULER_HEIGHT / 2,
+              cursor: 'pointer',
               pointerEvents: 'auto',
-              // willChange hints to browser for optimization
-              willChange: 'top, left',
+              zIndex: 16,
             }}
-          >
-            <Canvas
-              style={{ width: canvasWidth, height: canvasHeight }}
-              gl={{ antialias: true, alpha: true }}
-              dpr={[1, 2]}
-            >
-              <TimelineScene
-                flatTracks={flatTracks}
-                pixelsPerBeat={pixelsPerBeat}
-                beatsPerBar={beatsPerBar}
-                totalBars={totalBars}
-                bpm={bpm}
-                trackHeight={trackHeight}
-                timelineWidth={timelineWidth}
-                totalHeight={contentHeight}
-                currentBeat={currentBeat}
-                canvasWidth={canvasWidth}
-                canvasHeight={canvasHeight}
-                scrollContainerRef={scrollContainerRef}
-                canvasWrapperRef={canvasWrapperRef}
-                scrollBuffer={SCROLL_BUFFER}
-              />
-            </Canvas>
-          </div>
-        </CanvasErrorBoundary>
-      )}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              handleScrubStart();
+            }}
+          />
+        </div>
 
-      {/* Empty state - uses sticky positioning to stay in viewport */}
+        {/* Marquee */}
+        {marqueeStyle && <div style={marqueeStyle} />}
+      </div>
+
+      {/* Empty state */}
       {flatTracks.length === 0 && (
         <div
           className="flex items-center justify-center pointer-events-none"
@@ -1973,7 +1375,7 @@ export function TimelineCanvas({
         </div>
       )}
 
-      {/* Audio file drop zone overlay - uses sticky positioning */}
+      {/* Audio file drop zone overlay */}
       {isDraggingAudioFile && (
         <div
           className="z-50 flex items-center justify-center pointer-events-none"

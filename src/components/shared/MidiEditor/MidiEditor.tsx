@@ -1,9 +1,6 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, ThreeEvent, useThree } from '@react-three/fiber';
-import { OrthographicCamera, Html } from '@react-three/drei';
-import * as THREE from 'three';
 import { generateId } from '@/utils/id';
 
 export interface MidiRow {
@@ -60,376 +57,65 @@ function lightenColor(hex: string, amount: number): string {
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
 
-// Glow shader material for rounded rectangle
-const glowVertexShader = `
-  varying vec2 vUv;
-  void main() {
-    vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
-const glowFragmentShader = `
-  uniform vec3 uColor;
-  uniform float uIntensity;
-  uniform vec2 uSize;
-  uniform float uRadius;
-  uniform float uGlowSize;
-  varying vec2 vUv;
-
-  // SDF for rounded rectangle (centered at origin)
-  float sdRoundedBox(vec2 p, vec2 b, float r) {
-    vec2 q = abs(p) - b + r;
-    return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
-  }
-
-  void main() {
-    // Convert UV to local coordinates centered on the note
-    vec2 totalSize = uSize + uGlowSize * 2.0;
-    vec2 p = (vUv - 0.5) * totalSize;
-
-    // Calculate SDF to the inner rounded rectangle
-    float d = sdRoundedBox(p, uSize * 0.5, uRadius);
-
-    // Create smooth glow falloff
-    float glow = 1.0 - smoothstep(0.0, uGlowSize, d);
-    glow = pow(glow, 1.5); // Adjust falloff curve
-
-    gl_FragColor = vec4(uColor, glow * uIntensity);
-  }
-`;
-
-// Create a centered rounded rectangle shape
-function createRoundedRectShape(width: number, height: number, radius: number): THREE.Shape {
-  const shape = new THREE.Shape();
-  const hw = width / 2;
-  const hh = height / 2;
-  const r = Math.min(radius, hw, hh);
-
-  shape.moveTo(-hw + r, hh);
-  shape.lineTo(hw - r, hh);
-  if (r > 0) shape.quadraticCurveTo(hw, hh, hw, hh - r);
-  shape.lineTo(hw, -hh + r);
-  if (r > 0) shape.quadraticCurveTo(hw, -hh, hw - r, -hh);
-  shape.lineTo(-hw + r, -hh);
-  if (r > 0) shape.quadraticCurveTo(-hw, -hh, -hw, -hh + r);
-  shape.lineTo(-hw, hh - r);
-  if (r > 0) shape.quadraticCurveTo(-hw, hh, -hw + r, hh);
-
-  return shape;
-}
-
-// Grid Lines Component
-interface GridLinesProps {
-  totalBeats: number;
-  beatsPerBar: number;
-  quantize: number;
-  pixelsPerBeat: number;
-  labelWidth: number;
-  height: number;
-}
-
-function GridLines({ totalBeats, beatsPerBar, quantize, pixelsPerBeat, labelWidth, height }: GridLinesProps) {
-  const geometry = useMemo(() => {
-    const positions: number[] = [];
-    const colors: number[] = [];
-
-    for (let beat = 0; beat <= totalBeats; beat += quantize) {
-      const x = labelWidth + beat * pixelsPerBeat;
-      const isBar = beat % beatsPerBar === 0;
-      const isBeat = beat % 1 === 0;
-
-      // Line from top to bottom
-      positions.push(x, 0, 0, x, -height, 0);
-
-      // Color based on beat type
-      const alpha = isBar ? 0.15 : isBeat ? 0.08 : 0.03;
-      colors.push(1, 1, 1, alpha, 1, 1, 1, alpha);
-    }
-
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
-    return geom;
-  }, [totalBeats, beatsPerBar, quantize, pixelsPerBeat, labelWidth, height]);
-
-  return (
-    <lineSegments geometry={geometry}>
-      <lineBasicMaterial vertexColors transparent />
-    </lineSegments>
-  );
-}
-
-// Row Dividers Component
-interface RowDividersProps {
-  rows: MidiRow[];
-  rowHeight: number;
-  labelWidth: number;
-  width: number;
-}
-
-function RowDividers({ rows, rowHeight, labelWidth, width }: RowDividersProps) {
-  const geometry = useMemo(() => {
-    const positions: number[] = [];
-
-    rows.forEach((_, i) => {
-      const y = -(i * rowHeight + rowHeight - 1);
-      positions.push(labelWidth, y, 0, width, y, 0);
-    });
-
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    return geom;
-  }, [rows, rowHeight, labelWidth, width]);
-
-  return (
-    <lineSegments geometry={geometry}>
-      <lineBasicMaterial color="#ffffff" opacity={0.05} transparent />
-    </lineSegments>
-  );
-}
-
-// Glow Mesh Component using custom shader
-interface GlowMeshProps {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  color: string;
-  glowSize?: number;
-  intensity?: number;
-}
-
-function GlowMesh({ x, y, w, h, color, glowSize = 12, intensity = 0.8 }: GlowMeshProps) {
-  const shaderMaterial = useMemo(() => {
-    const threeColor = new THREE.Color(color);
-    return new THREE.ShaderMaterial({
-      uniforms: {
-        uColor: { value: threeColor },
-        uIntensity: { value: intensity },
-        uSize: { value: new THREE.Vector2(w, h) },
-        uRadius: { value: 3 },
-        uGlowSize: { value: glowSize },
-      },
-      vertexShader: glowVertexShader,
-      fragmentShader: glowFragmentShader,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
-  }, [color, w, h, glowSize, intensity]);
-
-  // Total size including glow
-  const totalW = w + glowSize * 2;
-  const totalH = h + glowSize * 2;
-
-  return (
-    <mesh position={[x + w / 2, -(y + h / 2), -0.05]} material={shaderMaterial}>
-      <planeGeometry args={[totalW, totalH]} />
-    </mesh>
-  );
-}
-
-// Selection Ring Component
-interface SelectionRingProps {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-function SelectionRing({ x, y, w, h }: SelectionRingProps) {
-  const ringGeometry = useMemo(() => {
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute([
-      -w / 2, h / 2, 0,
-      w / 2, h / 2, 0,
-      w / 2, -h / 2, 0,
-      -w / 2, -h / 2, 0,
-    ], 3));
-    return geom;
-  }, [w, h]);
-
-  return (
-    <lineLoop position={[x + w / 2, -(y + h / 2), 0.1]} geometry={ringGeometry}>
-      <lineBasicMaterial color="#ffffff" opacity={0.6} transparent />
-    </lineLoop>
-  );
-}
-
-// Single Note Mesh Component
-interface NoteMeshProps {
-  note: MidiNote;
-  row: MidiRow;
-  rowIndex: number;
-  rowHeight: number;
-  pixelsPerBeat: number;
-  labelWidth: number;
-  isSelected: boolean;
-  onPointerDown: (e: ThreeEvent<PointerEvent>, note: MidiNote) => void;
-  onEdgePointerDown: (e: ThreeEvent<PointerEvent>, note: MidiNote) => void;
-  onHoverChange: (target: 'noteBody' | 'noteEdge' | null) => void;
-}
-
-function NoteMesh({
-  note,
-  row,
-  rowIndex,
-  rowHeight,
-  pixelsPerBeat,
-  labelWidth,
-  isSelected,
-  onPointerDown,
-  onEdgePointerDown,
-  onHoverChange,
-}: NoteMeshProps) {
-  const x = labelWidth + note.time * pixelsPerBeat;
-  const y = rowIndex * rowHeight + 2;
-  const w = Math.max(note.duration * pixelsPerBeat, 8);
-  const h = rowHeight - 4;
-
-  const noteColor = isSelected ? lightenColor(row.color, 0.3) : row.color;
-
-  const shape = useMemo(() => createRoundedRectShape(w, h, 3), [w, h]);
-
-  const handlePointerDown = useCallback((e: ThreeEvent<PointerEvent>) => {
-    e.stopPropagation();
-    // Check if click is near the right edge (resize zone)
-    const localX = e.point.x - x;
-    if (w > NOTE_EDGE_WIDTH * 2 && localX > w - NOTE_EDGE_WIDTH) {
-      onEdgePointerDown(e, note);
-    } else {
-      onPointerDown(e, note);
-    }
-  }, [x, w, note, onPointerDown, onEdgePointerDown]);
-
-  const handlePointerMove = useCallback((e: ThreeEvent<PointerEvent>) => {
-    const localX = e.point.x - x;
-    if (w > NOTE_EDGE_WIDTH * 2 && localX > w - NOTE_EDGE_WIDTH) {
-      onHoverChange('noteEdge');
-    } else {
-      onHoverChange('noteBody');
-    }
-  }, [x, w, onHoverChange]);
-
-  return (
-    <group>
-      {/* Glow effect for selected notes */}
-      {isSelected && (
-        <GlowMesh x={x} y={y} w={w} h={h} color={row.color} glowSize={14} intensity={0.9} />
-      )}
-
-      {/* Shadow (only for non-selected) */}
-      {!isSelected && (
-        <mesh position={[x + w / 2 + 1, -(y + h / 2 + 1), -0.1]}>
-          <shapeGeometry args={[shape]} />
-          <meshBasicMaterial color="#000000" opacity={0.3} transparent />
-        </mesh>
-      )}
-
-      {/* Note body */}
-      <mesh position={[x + w / 2, -(y + h / 2), 0]}>
-        <shapeGeometry args={[shape]} />
-        <meshBasicMaterial color={noteColor} />
-      </mesh>
-
-      {/* Selection ring */}
-      {isSelected && (
-        <SelectionRing x={x} y={y} w={w} h={h} />
-      )}
-
-      {/* Hit area - z=1 ensures notes are clicked before background */}
-      <mesh
-        position={[x + w / 2, -(y + h / 2), 1]}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerOut={() => onHoverChange(null)}
-      >
-        {/* Slightly larger hit area for easier clicking */}
-        <planeGeometry args={[w + 4, h + 4]} />
-        <meshBasicMaterial transparent opacity={0} />
-      </mesh>
-    </group>
-  );
-}
-
-// Marquee selection overlay
-interface MarqueeProps {
-  startX: number;
-  startY: number;
-  currentX: number;
-  currentY: number;
-}
-
-function Marquee({ startX, startY, currentX, currentY }: MarqueeProps) {
-  const x1 = Math.min(startX, currentX);
-  const y1 = Math.min(startY, currentY);
-  const w = Math.abs(currentX - startX);
-  const h = Math.abs(currentY - startY);
-
-  if (w < 2 || h < 2) return null;
-
-  const lineGeometry = useMemo(() => {
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute([
-      -w / 2, h / 2, 0,
-      w / 2, h / 2, 0,
-      w / 2, -h / 2, 0,
-      -w / 2, -h / 2, 0,
-    ], 3));
-    return geom;
-  }, [w, h]);
-
-  return (
-    <group position={[x1 + w / 2, -(y1 + h / 2), 1]}>
-      <mesh>
-        <planeGeometry args={[w, h]} />
-        <meshBasicMaterial color="#3b82f6" opacity={0.15} transparent />
-      </mesh>
-      <lineLoop geometry={lineGeometry}>
-        <lineBasicMaterial color="#3b82f6" opacity={0.6} transparent />
-      </lineLoop>
-    </group>
-  );
-}
-
-// Main Scene Component
-interface MidiSceneProps {
-  rows: MidiRow[];
-  notes: MidiNote[];
-  onNotesChange: (notes: MidiNote[]) => void;
-  totalBeats: number;
-  beatsPerBar: number;
-  quantize: number;
-  pixelsPerBeat: number;
-  rowHeight: number;
-  labelWidth: number;
-  canvasWidth: number;
-  canvasHeight: number;
-  setCursor: (cursor: string) => void;
-}
-
-function MidiScene({
+export function MidiEditor({
   rows,
   notes,
   onNotesChange,
   totalBeats,
   beatsPerBar,
   quantize,
-  pixelsPerBeat,
-  rowHeight,
-  labelWidth,
-  canvasWidth,
-  canvasHeight,
-  setCursor,
-}: MidiSceneProps) {
+  pixelsPerBeat = 40,
+  rowHeight = 28,
+}: MidiEditorProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
   const [drawingNote, setDrawingNote] = useState<MidiNote | null>(null);
   const [dragState, setDragState] = useState<DragState>(DRAG_NONE);
   const dragStateRef = useRef(dragState);
   dragStateRef.current = dragState;
 
-  const { gl } = useThree();
+  // Direct DOM cursor updates (no re-renders)
+  const setCursor = useCallback((cursor: string) => {
+    if (containerRef.current) containerRef.current.style.cursor = cursor;
+  }, []);
+
+  // Canvas dimensions
+  const labelWidth = 64;
+  const canvasWidth = totalBeats * pixelsPerBeat + labelWidth + 20;
+  const canvasHeight = rows.length * rowHeight;
+
+  // Grid line CSS background
+  const barWidthPx = beatsPerBar * pixelsPerBeat;
+  const beatWidthPx = pixelsPerBeat;
+  const subdivWidthPx = quantize * pixelsPerBeat;
+
+  const gridBackground = useMemo(() => {
+    const images: string[] = [];
+    const sizes: string[] = [];
+
+    // Bar lines (strongest)
+    images.push(`repeating-linear-gradient(to right, rgba(255,255,255,0.15) 0px 1px, transparent 1px ${barWidthPx}px)`);
+    sizes.push(`${barWidthPx}px 100%`);
+
+    // Beat lines (medium) - only if different from bar lines
+    if (beatWidthPx !== barWidthPx) {
+      images.push(`repeating-linear-gradient(to right, rgba(255,255,255,0.08) 0px 1px, transparent 1px ${beatWidthPx}px)`);
+      sizes.push(`${beatWidthPx}px 100%`);
+    }
+
+    // Subdivision lines (faint) - only if different from beat lines
+    if (subdivWidthPx !== beatWidthPx) {
+      images.push(`repeating-linear-gradient(to right, rgba(255,255,255,0.03) 0px 1px, transparent 1px ${subdivWidthPx}px)`);
+      sizes.push(`${subdivWidthPx}px 100%`);
+    }
+
+    return {
+      backgroundImage: images.join(', '),
+      backgroundSize: sizes.join(', '),
+    };
+  }, [barWidthPx, beatWidthPx, subdivWidthPx]);
 
   // Create pitch-to-row index lookup
   const pitchToRowIndex = useCallback((pitch: number) => {
@@ -445,7 +131,44 @@ function MidiScene({
   }, [setCursor]);
 
   // Handle note body pointer down -> start moving
-  const handleNotePointerDown = useCallback((e: ThreeEvent<PointerEvent>, note: MidiNote) => {
+  const handleNotePointerDown = useCallback((e: React.PointerEvent, note: MidiNote) => {
+    e.stopPropagation();
+
+    // Check if near right edge (resize)
+    const noteEl = e.currentTarget as HTMLDivElement;
+    const localX = e.nativeEvent.offsetX;
+    const noteW = noteEl.offsetWidth;
+    if (noteW > NOTE_EDGE_WIDTH * 2 && localX > noteW - NOTE_EDGE_WIDTH) {
+      // Resize mode
+      let newSelectedIds: Set<string>;
+      if (!selectedNoteIds.has(note.id)) {
+        newSelectedIds = new Set([note.id]);
+        setSelectedNoteIds(newSelectedIds);
+      } else {
+        newSelectedIds = selectedNoteIds;
+      }
+
+      const originalDurations = new Map<string, number>();
+      for (const n of notes) {
+        if (newSelectedIds.has(n.id)) {
+          originalDurations.set(n.id, n.duration);
+        }
+      }
+
+      setDragState({
+        type: 'resizing',
+        startX: e.clientX,
+        startY: e.clientY,
+        currentX: e.clientX,
+        currentY: e.clientY,
+        noteId: note.id,
+        originalDurations,
+      });
+      setCursor('ew-resize');
+      return;
+    }
+
+    // Move mode
     let newSelectedIds: Set<string>;
     if (e.shiftKey) {
       newSelectedIds = new Set(selectedNoteIds);
@@ -459,7 +182,6 @@ function MidiScene({
       newSelectedIds = selectedNoteIds;
     }
 
-    // Store original times AND pitches for all selected notes
     const originalTimes = new Map<string, number>();
     const originalPitches = new Map<string, number>();
     for (const n of notes) {
@@ -471,10 +193,10 @@ function MidiScene({
 
     setDragState({
       type: 'moving',
-      startX: e.nativeEvent.clientX,
-      startY: e.nativeEvent.clientY,
-      currentX: e.nativeEvent.clientX,
-      currentY: e.nativeEvent.clientY,
+      startX: e.clientX,
+      startY: e.clientY,
+      currentX: e.clientX,
+      currentY: e.clientY,
       noteId: note.id,
       originalTime: note.time,
       originalPitch: note.pitch,
@@ -484,50 +206,35 @@ function MidiScene({
     setCursor('grabbing');
   }, [selectedNoteIds, notes, setCursor]);
 
-  // Handle note edge pointer down -> start resizing
-  const handleEdgePointerDown = useCallback((e: ThreeEvent<PointerEvent>, note: MidiNote) => {
-    let newSelectedIds: Set<string>;
-    if (!selectedNoteIds.has(note.id)) {
-      newSelectedIds = new Set([note.id]);
-      setSelectedNoteIds(newSelectedIds);
+  // Handle note hover for cursor changes
+  const handleNotePointerMove = useCallback((e: React.PointerEvent) => {
+    if (dragStateRef.current.type !== 'none') return;
+    const noteEl = e.currentTarget as HTMLDivElement;
+    const localX = e.nativeEvent.offsetX;
+    const noteW = noteEl.offsetWidth;
+    if (noteW > NOTE_EDGE_WIDTH * 2 && localX > noteW - NOTE_EDGE_WIDTH) {
+      handleHoverChange('noteEdge');
     } else {
-      newSelectedIds = selectedNoteIds;
+      handleHoverChange('noteBody');
     }
-
-    const originalDurations = new Map<string, number>();
-    for (const n of notes) {
-      if (newSelectedIds.has(n.id)) {
-        originalDurations.set(n.id, n.duration);
-      }
-    }
-
-    setDragState({
-      type: 'resizing',
-      startX: e.nativeEvent.clientX,
-      startY: e.nativeEvent.clientY,
-      currentX: e.nativeEvent.clientX,
-      currentY: e.nativeEvent.clientY,
-      noteId: note.id,
-      originalDurations,
-    });
-    setCursor('ew-resize');
-  }, [selectedNoteIds, notes, setCursor]);
+  }, [handleHoverChange]);
 
   // Handle background click (for drawing new notes or marquee)
-  const handleBackgroundPointerDown = useCallback((e: ThreeEvent<PointerEvent>) => {
-    const worldX = e.point.x;
-    const gridY = -e.point.y;
-
-    if (worldX <= labelWidth) return;
+  const handleBackgroundPointerDown = useCallback((e: React.PointerEvent) => {
+    if (!gridRef.current) return;
+    const rect = gridRef.current.getBoundingClientRect();
+    const gridX = e.clientX - rect.left;
+    const gridY = e.clientY - rect.top;
 
     // Cmd/Ctrl + drag = marquee selection
     if (e.metaKey || e.ctrlKey) {
       if (!e.shiftKey) setSelectedNoteIds(new Set());
+      // Store world coordinates (grid-relative + labelWidth offset for marquee matching)
       setDragState({
         type: 'marquee',
-        startX: worldX,
+        startX: gridX + labelWidth,
         startY: gridY,
-        currentX: worldX,
+        currentX: gridX + labelWidth,
         currentY: gridY,
       });
       setCursor('crosshair');
@@ -535,7 +242,6 @@ function MidiScene({
     }
 
     // Draw new note on the grid
-    const gridX = worldX - labelWidth;
     const rowIndex = Math.floor(gridY / rowHeight);
 
     if (rowIndex >= 0 && rowIndex < rows.length) {
@@ -561,24 +267,16 @@ function MidiScene({
 
         setDragState({
           type: 'drawing',
-          startX: worldX,
-          startY: gridY,
-          currentX: worldX,
-          currentY: gridY,
-          startWorldX: worldX,
+          startX: e.clientX,
+          startY: e.clientY,
+          currentX: e.clientX,
+          currentY: e.clientY,
+          startWorldX: gridX + labelWidth,
           pitch,
         });
       }
     }
   }, [labelWidth, rowHeight, rows, pixelsPerBeat, quantize, totalBeats, setCursor]);
-
-  // Handle pointer missed (clicks outside all Three.js meshes)
-  const handlePointerMissed = useCallback((e: MouseEvent) => {
-    if (dragStateRef.current.type !== 'none') return;
-    if (!e.shiftKey) {
-      setSelectedNoteIds(new Set());
-    }
-  }, []);
 
   // Get notes within marquee bounds
   const getNotesInMarquee = useCallback((x1: number, y1: number, x2: number, y2: number): string[] => {
@@ -610,15 +308,9 @@ function MidiScene({
   useEffect(() => {
     if (dragState.type === 'none') return;
 
-    const canvas = gl.domElement;
-
     const handleMove = (e: PointerEvent) => {
-      const rect = canvas.getBoundingClientRect();
-
       if (dragState.type === 'drawing' && drawingNote) {
-        // Use screen-relative X (equals world X at zoom=1)
-        const currentWorldX = e.clientX - rect.left;
-        const deltaX = currentWorldX - dragState.startX;
+        const deltaX = e.clientX - dragState.startX;
         const deltaDuration = deltaX / pixelsPerBeat;
         let newDuration = Math.round((quantize + deltaDuration) / quantize) * quantize;
         newDuration = Math.max(quantize, Math.min(totalBeats - drawingNote.time, newDuration));
@@ -627,12 +319,10 @@ function MidiScene({
           setDrawingNote(prev => prev ? { ...prev, duration: newDuration } : null);
         }
       } else if (dragState.type === 'moving' && dragState.originalTimes && dragState.originalPitches) {
-        // Horizontal: time change
         const deltaX = e.clientX - dragState.startX;
         const deltaBeats = deltaX / pixelsPerBeat;
         const snappedDelta = Math.round(deltaBeats / quantize) * quantize;
 
-        // Vertical: pitch change (row offset)
         const deltaY = e.clientY - dragState.startY;
         const rowDelta = Math.round(deltaY / rowHeight);
 
@@ -649,7 +339,6 @@ function MidiScene({
           return n;
         }));
       } else if (dragState.type === 'resizing' && dragState.originalDurations) {
-        // Resize: change duration of all selected notes
         const deltaX = e.clientX - dragState.startX;
         const deltaBeats = deltaX / pixelsPerBeat;
         const snappedDelta = Math.round(deltaBeats / quantize) * quantize;
@@ -662,8 +351,9 @@ function MidiScene({
           }
           return n;
         }));
-      } else if (dragState.type === 'marquee') {
-        const currentX = e.clientX - rect.left;
+      } else if (dragState.type === 'marquee' && gridRef.current) {
+        const rect = gridRef.current.getBoundingClientRect();
+        const currentX = e.clientX - rect.left + labelWidth;
         const currentY = e.clientY - rect.top;
         setDragState(prev => ({ ...prev, currentX, currentY }));
       }
@@ -691,7 +381,7 @@ function MidiScene({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [dragState, drawingNote, pixelsPerBeat, quantize, totalBeats, rowHeight, rows, notes, onNotesChange, getNotesInMarquee, gl, setCursor]);
+  }, [dragState, drawingNote, pixelsPerBeat, quantize, totalBeats, rowHeight, rows, notes, onNotesChange, getNotesInMarquee, setCursor]);
 
   // Keyboard handler
   useEffect(() => {
@@ -715,186 +405,155 @@ function MidiScene({
     return () => document.removeEventListener('keydown', handleKeyDown, true);
   }, [selectedNoteIds, notes, onNotesChange]);
 
+  // Click on background deselects (if not dragging)
+  const handleContainerClick = useCallback((e: React.MouseEvent) => {
+    // Only deselect if the click target is the grid background itself
+    if (e.target === gridRef.current && !e.shiftKey && dragStateRef.current.type === 'none') {
+      setSelectedNoteIds(new Set());
+    }
+  }, []);
+
   // All notes including the one being drawn
   const allNotes = drawingNote ? [...notes, drawingNote] : notes;
 
-  return (
-    <>
-      <OrthographicCamera
-        makeDefault
-        position={[canvasWidth / 2, -canvasHeight / 2, 100]}
-        zoom={1}
-        near={0.1}
-        far={1000}
-      />
-
-      {/* Background */}
-      <mesh position={[canvasWidth / 2, -canvasHeight / 2, -2]}>
-        <planeGeometry args={[canvasWidth, canvasHeight]} />
-        <meshBasicMaterial color="#1a1a1a" />
-      </mesh>
-
-      {/* Labels column background */}
-      <mesh position={[labelWidth / 2, -canvasHeight / 2, -1]}>
-        <planeGeometry args={[labelWidth, canvasHeight]} />
-        <meshBasicMaterial color="#242424" />
-      </mesh>
-
-      {/* Label area cursor zone - default cursor over labels */}
-      <mesh
-        position={[labelWidth / 2, -canvasHeight / 2, 0.5]}
-        onPointerMove={() => {
-          if (dragStateRef.current.type === 'none') setCursor('default');
-        }}
-      >
-        <planeGeometry args={[labelWidth, canvasHeight]} />
-        <meshBasicMaterial transparent opacity={0} />
-      </mesh>
-
-      {/* Row labels using Html overlay */}
-      {rows.map((row, i) => (
-        <Html
-          key={row.pitch}
-          position={[labelWidth - 8, -(i * rowHeight + rowHeight / 2), 0]}
-          style={{ pointerEvents: 'none' }}
-          transform={false}
-          zIndexRange={[0, 0]}
-        >
-          <div
-            style={{
-              fontSize: '11px',
-              color: '#888',
-              whiteSpace: 'nowrap',
-              textAlign: 'right',
-              transform: 'translateX(-100%) translateY(-50%)',
-            }}
-          >
-            {row.label}
-          </div>
-        </Html>
-      ))}
-
-      {/* Row dividers */}
-      <RowDividers rows={rows} rowHeight={rowHeight} labelWidth={labelWidth} width={canvasWidth} />
-
-      {/* Grid lines */}
-      <GridLines
-        totalBeats={totalBeats}
-        beatsPerBar={beatsPerBar}
-        quantize={quantize}
-        pixelsPerBeat={pixelsPerBeat}
-        labelWidth={labelWidth}
-        height={canvasHeight}
-      />
-
-      {/* Notes */}
-      {allNotes.map((note) => {
-        const rowIndex = pitchToRowIndex(note.pitch);
-        if (rowIndex === -1) return null;
-
-        return (
-          <NoteMesh
-            key={note.id}
-            note={note}
-            row={rows[rowIndex]}
-            rowIndex={rowIndex}
-            rowHeight={rowHeight}
-            pixelsPerBeat={pixelsPerBeat}
-            labelWidth={labelWidth}
-            isSelected={selectedNoteIds.has(note.id)}
-            onPointerDown={handleNotePointerDown}
-            onEdgePointerDown={handleEdgePointerDown}
-            onHoverChange={handleHoverChange}
-          />
-        );
-      })}
-
-      {/* Marquee */}
-      {dragState.type === 'marquee' && (
-        <Marquee
-          startX={dragState.startX}
-          startY={dragState.startY}
-          currentX={dragState.currentX}
-          currentY={dragState.currentY}
-        />
-      )}
-
-      {/* Grid hit area for new note drawing / marquee - z=0 so notes (z=1) are clicked first */}
-      <mesh
-        position={[(labelWidth + canvasWidth) / 2, -canvasHeight / 2, 0]}
-        onPointerDown={handleBackgroundPointerDown}
-        onPointerMissed={handlePointerMissed}
-        onPointerMove={() => {
-          if (dragStateRef.current.type === 'none') setCursor('crosshair');
-        }}
-      >
-        <planeGeometry args={[canvasWidth - labelWidth, canvasHeight]} />
-        <meshBasicMaterial transparent opacity={0} />
-      </mesh>
-
-    </>
-  );
-}
-
-// Main Component
-export function MidiEditor({
-  rows,
-  notes,
-  onNotesChange,
-  totalBeats,
-  beatsPerBar,
-  quantize,
-  pixelsPerBeat = 40,
-  rowHeight = 28,
-}: MidiEditorProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [isMounted, setIsMounted] = useState(false);
-
-  // Only render Canvas on client side
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
-  // Direct DOM cursor updates (no re-renders)
-  const setCursor = useCallback((cursor: string) => {
-    if (containerRef.current) containerRef.current.style.cursor = cursor;
-  }, []);
-
-  // Canvas dimensions
-  const labelWidth = 64;
-  const canvasWidth = totalBeats * pixelsPerBeat + labelWidth + 20;
-  const canvasHeight = rows.length * rowHeight;
+  // Marquee overlay
+  const marqueeStyle = useMemo(() => {
+    if (dragState.type !== 'marquee') return null;
+    const x1 = Math.min(dragState.startX, dragState.currentX) - labelWidth;
+    const y1 = Math.min(dragState.startY, dragState.currentY);
+    const w = Math.abs(dragState.currentX - dragState.startX);
+    const h = Math.abs(dragState.currentY - dragState.startY);
+    if (w < 2 || h < 2) return null;
+    return {
+      position: 'absolute' as const,
+      left: x1,
+      top: y1,
+      width: w,
+      height: h,
+      backgroundColor: 'rgba(59, 130, 246, 0.15)',
+      border: '1px solid rgba(59, 130, 246, 0.6)',
+      pointerEvents: 'none' as const,
+      zIndex: 10,
+    };
+  }, [dragState, labelWidth]);
 
   return (
     <div
       ref={containerRef}
       className="flex-1 overflow-auto bg-background"
-      style={{ cursor: 'default' }}
+      style={{ cursor: 'crosshair' }}
+      onClick={handleContainerClick}
     >
-      <div style={{ width: canvasWidth, height: canvasHeight }}>
-        {isMounted && (
-          <Canvas
-            style={{ width: canvasWidth, height: canvasHeight }}
-            gl={{ antialias: true, alpha: true }}
-            dpr={[1, 2]}
-            frameloop="always"
-          >
-            <MidiScene
-              rows={rows}
-              notes={notes}
-              onNotesChange={onNotesChange}
-              totalBeats={totalBeats}
-              beatsPerBar={beatsPerBar}
-              quantize={quantize}
-              pixelsPerBeat={pixelsPerBeat}
-              rowHeight={rowHeight}
-              labelWidth={labelWidth}
-              canvasWidth={canvasWidth}
-              canvasHeight={canvasHeight}
-              setCursor={setCursor}
+      <div style={{ width: canvasWidth, height: canvasHeight, position: 'relative', display: 'flex' }}>
+        {/* Labels column */}
+        <div
+          style={{
+            width: labelWidth,
+            height: canvasHeight,
+            flexShrink: 0,
+            backgroundColor: '#242424',
+            position: 'relative',
+            zIndex: 2,
+            cursor: 'default',
+          }}
+          onPointerMove={() => {
+            if (dragStateRef.current.type === 'none') setCursor('default');
+          }}
+        >
+          {rows.map((row, i) => (
+            <div
+              key={row.pitch}
+              style={{
+                height: rowHeight,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                paddingRight: 8,
+                fontSize: 11,
+                color: '#888',
+                whiteSpace: 'nowrap',
+                borderBottom: '1px solid rgba(255,255,255,0.05)',
+              }}
+            >
+              {row.label}
+            </div>
+          ))}
+        </div>
+
+        {/* Grid area */}
+        <div
+          ref={gridRef}
+          style={{
+            flex: 1,
+            height: canvasHeight,
+            position: 'relative',
+            backgroundColor: '#1a1a1a',
+            ...gridBackground,
+          }}
+          onPointerDown={handleBackgroundPointerDown}
+          onPointerMove={() => {
+            if (dragStateRef.current.type === 'none') setCursor('crosshair');
+          }}
+        >
+          {/* Row dividers */}
+          {rows.map((_, i) => (
+            <div
+              key={i}
+              style={{
+                position: 'absolute',
+                top: i * rowHeight + rowHeight - 1,
+                left: 0,
+                right: 0,
+                height: 1,
+                backgroundColor: 'rgba(255,255,255,0.05)',
+                pointerEvents: 'none',
+              }}
             />
-          </Canvas>
-        )}
+          ))}
+
+          {/* Notes */}
+          {allNotes.map((note) => {
+            const rowIndex = pitchToRowIndex(note.pitch);
+            if (rowIndex === -1) return null;
+            const row = rows[rowIndex];
+
+            const x = note.time * pixelsPerBeat;
+            const y = rowIndex * rowHeight + 2;
+            const w = Math.max(note.duration * pixelsPerBeat, 8);
+            const h = rowHeight - 4;
+            const isSelected = selectedNoteIds.has(note.id);
+            const noteColor = isSelected ? lightenColor(row.color, 0.3) : row.color;
+
+            return (
+              <div
+                key={note.id}
+                style={{
+                  position: 'absolute',
+                  left: x,
+                  top: y,
+                  width: w,
+                  height: h,
+                  backgroundColor: noteColor,
+                  borderRadius: 3,
+                  // Glow effect for selected notes via box-shadow
+                  boxShadow: isSelected
+                    ? `0 0 14px ${row.color}, 0 0 6px ${row.color}`
+                    : `1px 1px 3px rgba(0,0,0,0.3)`,
+                  // Selection outline
+                  outline: isSelected ? '1px solid rgba(255,255,255,0.6)' : 'none',
+                  cursor: 'inherit',
+                  zIndex: isSelected ? 3 : 1,
+                }}
+                onPointerDown={(e) => handleNotePointerDown(e, note)}
+                onPointerMove={handleNotePointerMove}
+                onPointerOut={() => handleHoverChange(null)}
+              />
+            );
+          })}
+
+          {/* Marquee overlay */}
+          {marqueeStyle && <div style={marqueeStyle} />}
+        </div>
       </div>
     </div>
   );
