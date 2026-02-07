@@ -36,6 +36,7 @@ function createVisualInstrumentState(
     colorShift: 0,
     params: { ...defaultSettings, ...settings },
     noteOnCount: 0,
+    pitchNoteOnCounts: new Map(),
   };
 }
 
@@ -121,6 +122,13 @@ export class VisualPlaybackEngine {
         }
       }
       state.noteOnCount = lo;
+
+      // Compute per-pitch note-on counts (how many events of each pitch have started)
+      state.pitchNoteOnCounts.clear();
+      for (let i = 0; i < lo; i++) {
+        const p = events[i].pitch;
+        state.pitchNoteOnCounts.set(p, (state.pitchNoteOnCounts.get(p) ?? 0) + 1);
+      }
 
       // Find active notes: notes that started <= beat and haven't ended yet
       state.activeNotes.clear();

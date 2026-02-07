@@ -15,16 +15,22 @@ const COL_FG = 0x1a2744;     // deep ink blue
 const COL_ACCENT = 0xb5563e; // warm terracotta
 const COL_MASK = 0xf5f2eb;   // paper white
 
+// MIDI trigger pitches
+const PITCH_FG = 48;   // C3 — foreground (orange) update
+const PITCH_BG = 50;   // D3 — background flower update
+const PITCH_GLOW = 52; // E3 — glow pulse
+
 const DEFAULTS = {
   balls: 24,
   kickStart: 37,      // degrees
   snareStart: 53,     // degrees
-  kickStep: 1.5,      // degrees per trigger
-  snareStep: 1.0,     // degrees per trigger
+  kickStep: 3,        // degrees per trigger
+  snareStep: 2,       // degrees per trigger
   speed: 2,
   dotSize: 2,
   lineOpacity: 0.2,
-  bgMultiplier: 8,
+  fgMultiplier: 1,    // multiplier for foreground angle changes
+  bgMultiplier: 4,    // multiplier for background angle changes
 };
 
 // Simulation constants
@@ -40,6 +46,9 @@ const MAX_EXTENT = PATTERN_EXTENT * 2; // ball cutoff distance
 function deg2rad(d: number): number {
   return (d * Math.PI) / 180;
 }
+
+// Background rotation per trigger
+const BG_ROTATION_STEP = (Math.PI * 2) / 24;
 
 interface Trajectory {
   points: Float32Array; // interleaved x,y pairs
@@ -124,6 +133,7 @@ function buildLines(
       transparent: true,
       opacity,
       depthWrite: false,
+      depthTest: false,
     });
     const line = new THREE.Line(geom, mat);
     parent.add(line);
@@ -133,9 +143,9 @@ function buildLines(
     const lx = traj.points[(traj.count - 1) * 2] * scale;
     const ly = traj.points[(traj.count - 1) * 2 + 1] * scale;
     const dotGeom = new THREE.CircleGeometry(dotSize * scale * 0.5, 12);
-    const dotMat = new THREE.MeshBasicMaterial({ color, depthWrite: false });
+    const dotMat = new THREE.MeshBasicMaterial({ color, depthWrite: false, depthTest: false });
     const dot = new THREE.Mesh(dotGeom, dotMat);
-    dot.position.set(lx, ly, 0.01);
+    dot.position.set(lx, ly, 0);
     parent.add(dot);
     disposables.push(() => { dotGeom.dispose(); dotMat.dispose(); });
   }
@@ -144,7 +154,6 @@ function buildLines(
 function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
   const rootRef = useRef<THREE.Group>(null);
   const engineRef = useRef(getVisualPlaybackEngine());
-  const lastNoteOnCountRef = useRef(0);
   const initRef = useRef(false);
 
   // Mutable angle state
@@ -156,6 +165,13 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
 
   // Track params to detect changes
   const prevParamsRef = useRef('');
+
+  // Per-pitch note-on count tracking (previous frame's counts)
+  const prevPitchCountsRef = useRef(new Map<number, number>());
+
+  // Glow pulse state
+  const glowMeshRef = useRef<THREE.Mesh | null>(null);
+  const glowOpacity = useRef(0);
 
   // Disposable cleanup functions
   const disposablesRef = useRef<(() => void)[]>([]);
@@ -175,7 +191,7 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
 
   function buildScene(p: {
     balls: number; kickStep: number; snareStep: number;
-    speed: number; dotSize: number; lineOpacity: number; bgMultiplier: number;
+    speed: number; dotSize: number; lineOpacity: number;
   }) {
     const root = rootRef.current;
     if (!root) return;
@@ -186,10 +202,22 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
     const panelWidth = vw / 3;
     const fgScale = panelWidth / PATTERN_EXTENT;
 
-    // === 1. Background flower (z = -0.5, renderOrder 0) ===
+    // === 0. Full-viewport paper backdrop (renderOrder -1) ===
+    const paperGeom = new THREE.PlaneGeometry(vw * 2, vh * 2);
+    const paperMat = new THREE.MeshBasicMaterial({
+      color: COL_MASK,
+      depthWrite: false,
+      depthTest: false,
+    });
+    const paperPlane = new THREE.Mesh(paperGeom, paperMat);
+    paperPlane.renderOrder = -1;
+    root.add(paperPlane);
+    disposablesRef.current.push(() => { paperGeom.dispose(); paperMat.dispose(); });
+
+    // === 1. Background flower (renderOrder 0) ===
     const bgGroup = new THREE.Group();
     bgGroup.renderOrder = 0;
-    bgGroup.position.z = -0.5;
+    bgGroup.position.z = 0;
     bgGroup.rotation.z = bgRotation.current;
 
     const bgS = fgScale * BG_SCALE;
@@ -224,10 +252,10 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
     for (let pi = 0; pi < 3; pi++) {
       const panelX = (pi - 1) * panelWidth;
       const mGeom = new THREE.PlaneGeometry(maskW, maskH);
-      const mMat = new THREE.MeshBasicMaterial({ color: COL_MASK, depthWrite: false });
+      const mMat = new THREE.MeshBasicMaterial({ color: COL_MASK, depthWrite: false, depthTest: false });
       const mask = new THREE.Mesh(mGeom, mMat);
       mask.renderOrder = 1;
-      mask.position.set(panelX + maskCx, maskCy, -0.25);
+      mask.position.set(panelX + maskCx, maskCy, 0);
       root.add(mask);
       disposablesRef.current.push(() => { mGeom.dispose(); mMat.dispose(); });
     }
@@ -240,6 +268,22 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
       buildLines(panelGroup, fgTrajs, fgScale, COL_FG, p.lineOpacity, p.dotSize, disposablesRef.current);
       root.add(panelGroup);
     }
+
+    // === 5. Glow overlay (renderOrder 3) ===
+    const glowRadius = Math.max(vw, vh) * 0.6;
+    const glowGeom = new THREE.CircleGeometry(glowRadius, 48);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: COL_ACCENT,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      depthTest: false,
+    });
+    const glow = new THREE.Mesh(glowGeom, glowMat);
+    glow.renderOrder = 3;
+    root.add(glow);
+    glowMeshRef.current = glow;
+    disposablesRef.current.push(() => { glowGeom.dispose(); glowMat.dispose(); });
   }
 
   useFrame(() => {
@@ -254,12 +298,13 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
     const speed = (state.params.speed as number) ?? DEFAULTS.speed;
     const dotSize = (state.params.dotSize as number) ?? DEFAULTS.dotSize;
     const lineOpacity = (state.params.lineOpacity as number) ?? DEFAULTS.lineOpacity;
+    const fgMultiplier = (state.params.fgMultiplier as number) ?? DEFAULTS.fgMultiplier;
     const bgMultiplier = (state.params.bgMultiplier as number) ?? DEFAULTS.bgMultiplier;
 
-    const p = { balls, kickStep, snareStep, speed, dotSize, lineOpacity, bgMultiplier };
+    const p = { balls, kickStep, snareStep, speed, dotSize, lineOpacity };
 
     // Check if params changed (rebuild without angle change)
-    const paramsKey = `${balls},${speed},${dotSize},${lineOpacity},${bgMultiplier}`;
+    const paramsKey = `${balls},${speed},${dotSize},${lineOpacity},${fgMultiplier},${bgMultiplier}`;
 
     // Initial build
     if (!initRef.current) {
@@ -282,25 +327,49 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
       return;
     }
 
-    // Detect note-on events (any drum hit acts as trigger)
-    const rawDelta = state.noteOnCount - lastNoteOnCountRef.current;
-    lastNoteOnCountRef.current = state.noteOnCount;
+    // Detect per-pitch note-on triggers using deterministic pitch counts
+    const prevCounts = prevPitchCountsRef.current;
+    let needsRebuild = false;
 
-    if (rawDelta > 0 && rawDelta <= 8) {
-      const kicks = Math.min(rawDelta, 4);
-      for (let k = 0; k < kicks; k++) {
-        // Foreground: increment angles
-        fgKickAngle.current += deg2rad(kickStep);
-        fgSnareAngle.current += deg2rad(snareStep);
+    for (const [pitch, count] of state.pitchNoteOnCounts) {
+      const prevCount = prevCounts.get(pitch) ?? 0;
+      const delta = count - prevCount;
+      if (delta <= 0) continue;
 
-        // Background: tick bgMultiplier times per kick
-        for (let b = 0; b < bgMultiplier; b++) {
-          bgKickAngle.current += deg2rad(kickStep);
-          bgSnareAngle.current += deg2rad(snareStep);
-          bgRotation.current += (Math.PI * 2) / 32;
+      if (pitch === PITCH_FG) {
+        // Foreground update — increment fg angles per trigger
+        for (let i = 0; i < delta; i++) {
+          fgKickAngle.current += deg2rad(kickStep) * fgMultiplier;
+          fgSnareAngle.current += deg2rad(snareStep) * fgMultiplier;
         }
+        needsRebuild = true;
+      } else if (pitch === PITCH_BG) {
+        // Background flower update — increment bg angles + rotate per trigger
+        for (let i = 0; i < delta; i++) {
+          bgKickAngle.current += deg2rad(kickStep) * bgMultiplier;
+          bgSnareAngle.current += deg2rad(snareStep) * bgMultiplier;
+          bgRotation.current += BG_ROTATION_STEP;
+        }
+        needsRebuild = true;
+      } else if (pitch === PITCH_GLOW) {
+        // Glow pulse — flash to full opacity
+        glowOpacity.current = 0.25;
       }
+    }
+
+    // Snapshot current counts for next frame comparison
+    prevPitchCountsRef.current = new Map(state.pitchNoteOnCounts);
+
+    if (needsRebuild) {
       buildScene(p);
+    }
+
+    // Decay glow pulse (~150ms fade at 60fps)
+    if (glowOpacity.current > 0) {
+      glowOpacity.current = Math.max(0, glowOpacity.current - 0.025);
+      if (glowMeshRef.current) {
+        (glowMeshRef.current.material as THREE.MeshBasicMaterial).opacity = glowOpacity.current;
+      }
     }
   });
 
@@ -319,7 +388,14 @@ export const MetronomeBalls: Instrument = {
   color: '#1a2744',
   hasAudio: false,
   hasVisual: true,
+  disableBloom: true,
   editorType: 'generic',
+  noteRange: { min: PITCH_FG, max: PITCH_GLOW }, // C3–E3
+  rangeLabels: [
+    { startPitch: PITCH_FG, endPitch: PITCH_FG, label: 'Foreground' },
+    { startPitch: PITCH_BG, endPitch: PITCH_BG, label: 'Background' },
+    { startPitch: PITCH_GLOW, endPitch: PITCH_GLOW, label: 'Glow' },
+  ],
 
   defaultSettings: {
     balls: DEFAULTS.balls,
@@ -330,6 +406,7 @@ export const MetronomeBalls: Instrument = {
     speed: DEFAULTS.speed,
     dotSize: DEFAULTS.dotSize,
     lineOpacity: DEFAULTS.lineOpacity,
+    fgMultiplier: DEFAULTS.fgMultiplier,
     bgMultiplier: DEFAULTS.bgMultiplier,
   },
 
@@ -342,16 +419,8 @@ export const MetronomeBalls: Instrument = {
     speed: { type: 'number', label: 'Speed', min: 0.5, max: 8, step: 0.1, default: DEFAULTS.speed },
     dotSize: { type: 'number', label: 'Dot Size', min: 0.5, max: 8, step: 0.5, default: DEFAULTS.dotSize },
     lineOpacity: { type: 'number', label: 'Line Opacity', min: 0.02, max: 0.6, step: 0.02, default: DEFAULTS.lineOpacity },
-    bgMultiplier: {
-      type: 'select', label: 'BG Multiplier',
-      options: [
-        { value: 2, label: '2x' },
-        { value: 4, label: '4x' },
-        { value: 8, label: '8x' },
-        { value: 16, label: '16x' },
-      ],
-      default: DEFAULTS.bgMultiplier,
-    },
+    fgMultiplier: { type: 'number', label: 'FG Multiplier', min: 0.1, max: 10, step: 0.1, default: DEFAULTS.fgMultiplier },
+    bgMultiplier: { type: 'number', label: 'BG Multiplier', min: 0.1, max: 20, step: 0.1, default: DEFAULTS.bgMultiplier },
   },
 
   VisualComponent: MetronomeBallsVisual,

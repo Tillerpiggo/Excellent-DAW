@@ -15,6 +15,12 @@ export const LeadSynth: Instrument = {
   hasAudio: true,
   hasVisual: false,
   editorType: 'chord',
+  noteRange: { min: 48, max: 84 }, // C3–C6
+  rangeLabels: [
+    { startPitch: 48, endPitch: 59, label: 'Low' },
+    { startPitch: 60, endPitch: 71, label: 'Mid' },
+    { startPitch: 72, endPitch: 84, label: 'High' },
+  ],
 
   defaultSettings: {
     attack: 0.005,

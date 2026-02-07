@@ -67,7 +67,7 @@ function createDefaultTrack(
   const track: Track = {
     id: generateId(),
     name: preset?.name || 'New Track',
-    typeId: preset?.defaultTrackType || 'base',
+    typeId: preset?.defaultTrackType || (parentId ? 'add' : 'base'),
     instrumentId: preset?.defaultInstrument,
     muted: false,
     collapsed: false,

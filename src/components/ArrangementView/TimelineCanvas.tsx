@@ -362,6 +362,7 @@ export function TimelineCanvas({
     y: number;
     trackId: string | null;
     bar: number;
+    blockId: string | null;
   } | null>(null);
 
   const selectedBlockIds = useUIStore((state) => state.selectedBlockIds);
@@ -439,14 +440,16 @@ export function TimelineCanvas({
   }, [pixelsPerBeat]);
 
   // screenToWorld: convert client coords to content coords
+  // Uses the timeline container ref (not the scroll container) so the track label
+  // offset is already accounted for by the element's own position in the grid.
   const screenToWorld = useCallback((clientX: number, clientY: number) => {
-    const container = scrollContainerRef.current;
-    if (!container) return { x: 0, y: 0 };
-    const rect = container.getBoundingClientRect();
-    const x = clientX - rect.left + container.scrollLeft;
-    const y = clientY - rect.top + container.scrollTop;
+    const el = containerRef.current;
+    if (!el) return { x: 0, y: 0 };
+    const rect = el.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
     return { x, y };
-  }, [scrollContainerRef]);
+  }, []);
 
   const totalBeats = totalBars * beatsPerBar;
 
@@ -808,11 +811,25 @@ export function TimelineCanvas({
       ? flatTracks[trackIndex]?.track
       : null;
 
+    // Check if click is on a block
+    let clickedBlockId: string | null = null;
+    if (targetTrack) {
+      for (const block of targetTrack.blocks) {
+        const blockLeft = block.startBar * barWidth;
+        const blockRight = blockLeft + block.durationBars * barWidth;
+        if (x >= blockLeft && x <= blockRight) {
+          clickedBlockId = block.id;
+          break;
+        }
+      }
+    }
+
     setContextMenu({
       x: e.clientX,
       y: e.clientY,
       trackId: targetTrack?.id || null,
       bar: Math.max(0, bar),
+      blockId: clickedBlockId,
     });
   }, [barWidth, trackHeight, flatTracks, screenToWorld]);
 
@@ -846,6 +863,68 @@ export function TimelineCanvas({
     }
     closeContextMenu();
   }, [contextMenu, addBlock, addTrack, closeContextMenu]);
+
+  const handleAddChildTrack = useCallback(() => {
+    if (!contextMenu?.trackId) return;
+    const newTrackId = addTrack(contextMenu.trackId);
+    useUIStore.getState().selectTrack(newTrackId);
+    // Expand parent if collapsed
+    if (useUIStore.getState().collapsedTrackIds.has(contextMenu.trackId)) {
+      useUIStore.getState().toggleTrackCollapsed(contextMenu.trackId);
+    }
+    closeContextMenu();
+  }, [contextMenu, addTrack, closeContextMenu]);
+
+  const handleAddChildWithRegion = useCallback(() => {
+    if (!contextMenu?.trackId || !contextMenu.blockId) return;
+    const clickedBlock = tracks[contextMenu.trackId]?.blocks.find(b => b.id === contextMenu.blockId);
+    if (!clickedBlock) return;
+    const patternBars = getPatternBars(clickedBlock, beatsPerBar);
+    const newTrackId = addTrack(contextMenu.trackId);
+    useProjectStore.getState().updateTrack(newTrackId, { typeId: 'add' });
+    addBlock(newTrackId, {
+      startBar: clickedBlock.startBar,
+      durationBars: patternBars,
+      loop: true,
+      streams: [{ events: [] }],
+    });
+    useUIStore.getState().selectTrack(newTrackId);
+    if (useUIStore.getState().collapsedTrackIds.has(contextMenu.trackId)) {
+      useUIStore.getState().toggleTrackCollapsed(contextMenu.trackId);
+    }
+    closeContextMenu();
+  }, [contextMenu, tracks, beatsPerBar, addTrack, addBlock, closeContextMenu]);
+
+  const handleReplaceWithChild = useCallback(() => {
+    if (!contextMenu?.trackId || !contextMenu.blockId) return;
+    const clickedBlock = tracks[contextMenu.trackId]?.blocks.find(b => b.id === contextMenu.blockId);
+    if (!clickedBlock) return;
+    const patternBars = getPatternBars(clickedBlock, beatsPerBar);
+    const newTrackId = addTrack(contextMenu.trackId);
+    useProjectStore.getState().updateTrack(newTrackId, { typeId: 'override' });
+    addBlock(newTrackId, {
+      startBar: clickedBlock.startBar,
+      durationBars: patternBars,
+      loop: true,
+      streams: [{ events: [] }],
+    });
+    useUIStore.getState().selectTrack(newTrackId);
+    if (useUIStore.getState().collapsedTrackIds.has(contextMenu.trackId)) {
+      useUIStore.getState().toggleTrackCollapsed(contextMenu.trackId);
+    }
+    closeContextMenu();
+  }, [contextMenu, tracks, beatsPerBar, addTrack, addBlock, closeContextMenu]);
+
+  const handleAddMuteTrack = useCallback(() => {
+    if (!contextMenu?.trackId) return;
+    const newTrackId = addTrack(contextMenu.trackId);
+    useProjectStore.getState().updateTrack(newTrackId, { typeId: 'mute', name: 'Mute' });
+    useUIStore.getState().selectTrack(newTrackId);
+    if (useUIStore.getState().collapsedTrackIds.has(contextMenu.trackId)) {
+      useUIStore.getState().toggleTrackCollapsed(contextMenu.trackId);
+    }
+    closeContextMenu();
+  }, [contextMenu, addTrack, closeContextMenu]);
 
   // Marquee overlay
   const marqueeStyle = useMemo(() => {
@@ -1334,7 +1413,24 @@ export function TimelineCanvas({
             height: contentHeight,
             backgroundColor: '#ffd93d',
           }} />
-          {/* Playhead hit area */}
+          {/* Playhead hit area - covers head and full line */}
+          <div
+            style={{
+              position: 'absolute',
+              left: -6,
+              top: RULER_HEIGHT,
+              width: 12,
+              height: contentHeight,
+              cursor: 'pointer',
+              pointerEvents: 'auto',
+              zIndex: 16,
+            }}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              handleScrubStart();
+            }}
+          />
+          {/* Playhead head hit area */}
           <div
             style={{
               position: 'absolute',
@@ -1419,6 +1515,43 @@ export function TimelineCanvas({
               <span className="text-xs text-muted-foreground ml-auto">New Track</span>
             )}
           </button>
+          {contextMenu.trackId && (
+            <>
+              <button
+                onClick={handleAddChildTrack}
+                className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
+              >
+                <span className="text-muted-foreground">+</span>
+                <span>Add Child Track</span>
+              </button>
+              <button
+                onClick={handleAddMuteTrack}
+                className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
+              >
+                <span className="text-muted-foreground">M</span>
+                <span>Add Mute Track</span>
+              </button>
+            </>
+          )}
+          {contextMenu.trackId && contextMenu.blockId && (
+            <>
+              <div className="border-t border-border my-1" />
+              <button
+                onClick={handleAddChildWithRegion}
+                className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
+              >
+                <span className="text-muted-foreground">+</span>
+                <span>Add to Region</span>
+              </button>
+              <button
+                onClick={handleReplaceWithChild}
+                className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
+              >
+                <span className="text-muted-foreground">↻</span>
+                <span>Replace Region</span>
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

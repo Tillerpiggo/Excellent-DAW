@@ -12,8 +12,8 @@ import { CATEGORY_COLORS } from '@/utils/colors';
 export function ChordEditorPanel() {
   return (
     <EditorPanel presets={CATEGORY_PRESETS.chords} color={CATEGORY_COLORS.chords}>
-      {({ block, track, beatsPerBar }) => (
-        <ChordEditor block={block} track={track} beatsPerBar={beatsPerBar} />
+      {({ block, track, beatsPerBar, instrumentId }) => (
+        <ChordEditor block={block} track={track} beatsPerBar={beatsPerBar} instrumentId={instrumentId} />
       )}
     </EditorPanel>
   );

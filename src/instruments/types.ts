@@ -43,6 +43,14 @@ export interface Instrument {
   // For releasing held notes (used by instruments that track active notes)
   releaseNote?: (instance: AudioInstance, event: Event, time: number) => void;
 
+  // MIDI note range (clips visible rows in editor)
+  noteRange?: { min: number; max: number };
+  // Named regions within the note range
+  rangeLabels?: { startPitch: number; endPitch: number; label: string }[];
+
+  // Disable bloom post-processing when this instrument is active
+  disableBloom?: boolean;
+
   // Visual rendering (if hasVisual) - React component
   VisualComponent?: React.ComponentType<{ trackId: string }>;
 }

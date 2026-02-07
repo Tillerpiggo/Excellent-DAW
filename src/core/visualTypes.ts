@@ -10,6 +10,7 @@ export interface VisualInstrumentState {
   colorShift: number;
   params: Record<string, unknown>; // Merged: instrument defaults + track overrides
   noteOnCount: number; // Increments for EVERY note-on trigger (never throttled)
+  pitchNoteOnCounts: Map<number, number>; // Per-pitch note-on counts
 }
 
 export interface VisualEvent {

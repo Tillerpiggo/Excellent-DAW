@@ -14,6 +14,12 @@ export const Bass: Instrument = {
   hasAudio: true,
   hasVisual: false,
   editorType: 'chord',
+  noteRange: { min: 24, max: 60 }, // C1–C4
+  rangeLabels: [
+    { startPitch: 24, endPitch: 28, label: 'Sub Bass' },
+    { startPitch: 29, endPitch: 47, label: 'Bass' },
+    { startPitch: 48, endPitch: 60, label: 'Upper' },
+  ],
 
   defaultSettings: {
     attack: 0.01,

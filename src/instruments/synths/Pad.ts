@@ -14,6 +14,12 @@ export const Pad: Instrument = {
   hasAudio: true,
   hasVisual: false,
   editorType: 'chord',
+  noteRange: { min: 36, max: 72 }, // C2–C5
+  rangeLabels: [
+    { startPitch: 36, endPitch: 47, label: 'Low' },
+    { startPitch: 48, endPitch: 59, label: 'Mid' },
+    { startPitch: 60, endPitch: 72, label: 'High' },
+  ],
 
   defaultSettings: {
     attack: 0.3,

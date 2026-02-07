@@ -10,8 +10,8 @@ import { GenericMidiEditor } from './GenericMidiEditor';
 export function GenericMidiEditorPanel() {
   return (
     <EditorPanel>
-      {({ block, track, beatsPerBar }) => (
-        <GenericMidiEditor block={block} track={track} beatsPerBar={beatsPerBar} />
+      {({ block, track, beatsPerBar, instrumentId }) => (
+        <GenericMidiEditor block={block} track={track} beatsPerBar={beatsPerBar} instrumentId={instrumentId} />
       )}
     </EditorPanel>
   );

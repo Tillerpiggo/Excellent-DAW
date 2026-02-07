@@ -9,7 +9,7 @@ import { Preset, Block, Track } from '@/core/types';
 interface EditorPanelProps {
   presets?: Preset[];
   color?: string;
-  children: (props: { block: Block; track: Track; beatsPerBar: number }) => ReactNode;
+  children: (props: { block: Block; track: Track; beatsPerBar: number; instrumentId?: string }) => ReactNode;
 }
 
 /**
@@ -48,7 +48,7 @@ export function EditorPanel({ presets, color, children }: EditorPanelProps) {
 
       {/* Editor content */}
       <div className="flex-1 overflow-hidden">
-        {children({ block: selectedBlock, track: selectedTrack, beatsPerBar: project.beatsPerBar })}
+        {children({ block: selectedBlock, track: selectedTrack, beatsPerBar: project.beatsPerBar, instrumentId: selectedTrack.instrumentId })}
       </div>
     </div>
   );

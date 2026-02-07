@@ -1,5 +1,6 @@
 'use client';
 
+import React, { useState, useCallback, useEffect } from 'react';
 import { TrackNode } from '@/utils/tree';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -62,6 +63,7 @@ export function TrackLabels({ flatTracks }: TrackLabelsProps) {
 function TrackLabelRow({ node, trackHeight }: { node: TrackNode; trackHeight: number }) {
   const { track, depth } = node;
   const updateTrack = useProjectStore((state) => state.updateTrack);
+  const addTrack = useProjectStore((state) => state.addTrack);
   const selectedTrackId = useUIStore((state) => state.selectedTrackId);
   const selectedTrackIds = useUIStore((state) => state.selectedTrackIds);
   const selectTrack = useUIStore((state) => state.selectTrack);
@@ -70,6 +72,43 @@ function TrackLabelRow({ node, trackHeight }: { node: TrackNode; trackHeight: nu
   const dropTargetTrackId = useUIStore((state) => state.dropTargetTrackId);
   const dragState = useUIStore((state) => state.dragState);
   const { handleDragOver, handleDragLeave, handleHierarchyDrop } = useDragDrop();
+
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
+  useEffect(() => {
+    if (contextMenu) {
+      const handleClick = () => closeContextMenu();
+      window.addEventListener('click', handleClick);
+      return () => window.removeEventListener('click', handleClick);
+    }
+  }, [contextMenu, closeContextMenu]);
+
+  const handleAddChildTrack = useCallback(() => {
+    const newTrackId = addTrack(track.id);
+    selectTrack(newTrackId);
+    if (collapsedTrackIds.has(track.id)) {
+      toggleTrackCollapsed(track.id);
+    }
+    closeContextMenu();
+  }, [track.id, addTrack, selectTrack, collapsedTrackIds, toggleTrackCollapsed, closeContextMenu]);
+
+  const handleAddMuteTrack = useCallback(() => {
+    const newTrackId = addTrack(track.id);
+    useProjectStore.getState().updateTrack(newTrackId, { typeId: 'mute', name: 'Mute' });
+    selectTrack(newTrackId);
+    if (collapsedTrackIds.has(track.id)) {
+      toggleTrackCollapsed(track.id);
+    }
+    closeContextMenu();
+  }, [track.id, addTrack, selectTrack, collapsedTrackIds, toggleTrackCollapsed, closeContextMenu]);
 
   const isSelected = selectedTrackIds.has(track.id);
   const isCollapsed = collapsedTrackIds.has(track.id);
@@ -91,6 +130,7 @@ function TrackLabelRow({ node, trackHeight }: { node: TrackNode; trackHeight: nu
           : {}),
       }}
       onClick={(e) => selectTrack(track.id, e.shiftKey)}
+      onContextMenu={handleContextMenu}
       onDragOver={(e) => {
         if (dragState.type === 'preset') {
           handleDragOver(e, track.id);
@@ -155,6 +195,33 @@ function TrackLabelRow({ node, trackHeight }: { node: TrackNode; trackHeight: nu
       >
         M
       </button>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-[100] min-w-[160px] bg-surface border border-border rounded-lg shadow-xl py-1 overflow-hidden"
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={handleAddChildTrack}
+            className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
+          >
+            <span className="text-muted-foreground">+</span>
+            <span>Add Child Track</span>
+          </button>
+          <button
+            onClick={handleAddMuteTrack}
+            className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
+          >
+            <span className="text-muted-foreground">M</span>
+            <span>Add Mute Track</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

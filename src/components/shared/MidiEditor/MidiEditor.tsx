@@ -17,6 +17,12 @@ export interface MidiNote {
   velocity: number;
 }
 
+export interface RangeLabel {
+  startPitch: number;
+  endPitch: number;
+  label: string;
+}
+
 export interface MidiEditorProps {
   rows: MidiRow[];
   notes: MidiNote[];
@@ -26,6 +32,7 @@ export interface MidiEditorProps {
   quantize: number;
   pixelsPerBeat?: number;
   rowHeight?: number;
+  rangeLabels?: RangeLabel[];
 }
 
 interface DragState {
@@ -66,6 +73,7 @@ export function MidiEditor({
   quantize,
   pixelsPerBeat = 40,
   rowHeight = 28,
+  rangeLabels,
 }: MidiEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -116,6 +124,25 @@ export function MidiEditor({
       backgroundSize: sizes.join(', '),
     };
   }, [barWidthPx, beatWidthPx, subdivWidthPx]);
+
+  // Compute range label positions (top/height in pixels) from rangeLabels + rows
+  const rangeLabelPositions = useMemo(() => {
+    if (!rangeLabels || rangeLabels.length === 0) return [];
+
+    // Build a pitch -> rowIndex map
+    const pitchToIdx = new Map<number, number>();
+    rows.forEach((r, i) => pitchToIdx.set(r.pitch, i));
+
+    return rangeLabels.map(rl => {
+      // Rows are sorted high-to-low, so endPitch (higher) has a lower index
+      const topIdx = pitchToIdx.get(rl.endPitch);
+      const bottomIdx = pitchToIdx.get(rl.startPitch);
+      if (topIdx === undefined || bottomIdx === undefined) return null;
+      const top = topIdx * rowHeight;
+      const height = (bottomIdx - topIdx + 1) * rowHeight;
+      return { label: rl.label, top, height };
+    }).filter(Boolean) as { label: string; top: number; height: number }[];
+  }, [rangeLabels, rows, rowHeight]);
 
   // Create pitch-to-row index lookup
   const pitchToRowIndex = useCallback((pitch: number) => {
@@ -478,6 +505,37 @@ export function MidiEditor({
               {row.label}
             </div>
           ))}
+          {/* Range label annotations */}
+          {rangeLabelPositions.map((rl, i) => (
+            <div
+              key={i}
+              style={{
+                position: 'absolute',
+                top: rl.top,
+                left: 0,
+                width: labelWidth,
+                height: rl.height,
+                pointerEvents: 'none',
+                borderTop: '1px solid rgba(255,255,255,0.12)',
+                borderBottom: i === rangeLabelPositions.length - 1 ? '1px solid rgba(255,255,255,0.12)' : undefined,
+              }}
+            >
+              <span
+                style={{
+                  position: 'absolute',
+                  top: 4,
+                  left: 6,
+                  fontSize: 9,
+                  fontWeight: 600,
+                  color: 'rgba(255,255,255,0.3)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                }}
+              >
+                {rl.label}
+              </span>
+            </div>
+          ))}
         </div>
 
         {/* Grid area */}
@@ -495,6 +553,23 @@ export function MidiEditor({
             if (dragStateRef.current.type === 'none') setCursor('crosshair');
           }}
         >
+          {/* Range label background bands */}
+          {rangeLabelPositions.map((rl, i) => (
+            <div
+              key={`range-${i}`}
+              style={{
+                position: 'absolute',
+                top: rl.top,
+                left: 0,
+                right: 0,
+                height: rl.height,
+                backgroundColor: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
+                borderTop: '1px solid rgba(255,255,255,0.08)',
+                pointerEvents: 'none',
+              }}
+            />
+          ))}
+
           {/* Row dividers */}
           {rows.map((_, i) => (
             <div
@@ -511,12 +586,37 @@ export function MidiEditor({
             />
           ))}
 
+          {/* Note shadows - separate layer behind all notes so shadows never overlap notes */}
+          {allNotes.map((note) => {
+            const rowIndex = pitchToRowIndex(note.pitch);
+            if (rowIndex === -1 || selectedNoteIds.has(note.id)) return null;
+            const x = note.time * pixelsPerBeat;
+            const y = rowIndex * rowHeight + 2;
+            const w = Math.max(note.duration * pixelsPerBeat, 8);
+            const h = rowHeight - 4;
+            return (
+              <div
+                key={`s-${note.id}`}
+                style={{
+                  position: 'absolute',
+                  left: x,
+                  top: y,
+                  width: w,
+                  height: h,
+                  borderRadius: 3,
+                  boxShadow: '1px 1px 3px rgba(0,0,0,0.3)',
+                  pointerEvents: 'none',
+                  zIndex: 0,
+                }}
+              />
+            );
+          })}
+
           {/* Notes */}
           {allNotes.map((note) => {
             const rowIndex = pitchToRowIndex(note.pitch);
             if (rowIndex === -1) return null;
             const row = rows[rowIndex];
-
             const x = note.time * pixelsPerBeat;
             const y = rowIndex * rowHeight + 2;
             const w = Math.max(note.duration * pixelsPerBeat, 8);
@@ -535,11 +635,9 @@ export function MidiEditor({
                   height: h,
                   backgroundColor: noteColor,
                   borderRadius: 3,
-                  // Glow effect for selected notes via box-shadow
                   boxShadow: isSelected
                     ? `0 0 14px ${row.color}, 0 0 6px ${row.color}`
-                    : `1px 1px 3px rgba(0,0,0,0.3)`,
-                  // Selection outline
+                    : 'none',
                   outline: isSelected ? '1px solid rgba(255,255,255,0.6)' : 'none',
                   cursor: 'inherit',
                   zIndex: isSelected ? 3 : 1,

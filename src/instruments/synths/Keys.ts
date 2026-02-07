@@ -15,6 +15,12 @@ export const Keys: Instrument = {
   hasAudio: true,
   hasVisual: false,
   editorType: 'chord',
+  noteRange: { min: 36, max: 84 }, // C2–C6
+  rangeLabels: [
+    { startPitch: 36, endPitch: 47, label: 'Low' },
+    { startPitch: 48, endPitch: 71, label: 'Mid' },
+    { startPitch: 72, endPitch: 84, label: 'High' },
+  ],
 
   defaultSettings: {
     attack: 0.001,
