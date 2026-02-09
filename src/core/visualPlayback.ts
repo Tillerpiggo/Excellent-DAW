@@ -5,13 +5,14 @@
 import { Project } from './types';
 import { Event } from './types';
 import { VisualInstrumentState } from './visualTypes';
-import { resolveProject, ResolvedTrack } from './resolution';
+import { resolveProject, ResolvedTrack, BlackoutRegion } from './resolution';
 import { getInstrument } from '@/instruments';
 
 interface PerTrackEvents {
   trackId: string;
   instrumentId: string;
   settings: Record<string, unknown>;
+  blackoutRegions: BlackoutRegion[];
   // Sorted by startTimeInBeats
   events: {
     startTimeInBeats: number;
@@ -37,6 +38,7 @@ function createVisualInstrumentState(
     params: { ...defaultSettings, ...settings },
     noteOnCount: 0,
     pitchNoteOnCounts: new Map(),
+    blackedOut: false,
   };
 }
 
@@ -77,6 +79,7 @@ export class VisualPlaybackEngine {
         trackId: resolved.trackId,
         instrumentId: resolved.instrumentId!,
         settings: resolved.instrumentSettings ?? {},
+        blackoutRegions: resolved.blackoutRegions ?? [],
         events,
       });
     }
@@ -99,6 +102,21 @@ export class VisualPlaybackEngine {
     for (const trackEvents of this.perTrackEvents) {
       const state = this.trackStates.get(trackEvents.trackId);
       if (!state) continue;
+
+      // Check if current beat falls within a blackout region
+      const isBlackedOut = trackEvents.blackoutRegions.some(
+        r => beat >= r.startBeat && beat < r.endBeat
+      );
+      state.blackedOut = isBlackedOut;
+
+      if (isBlackedOut) {
+        state.activeNotes.clear();
+        state.noteOnCount = 0;
+        state.pitchNoteOnCounts.clear();
+        state.bloom = 0;
+        state.colorShift = 0;
+        continue;
+      }
 
       const events = trackEvents.events;
       if (events.length === 0) {

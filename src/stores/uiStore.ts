@@ -57,6 +57,9 @@ interface UIState {
   chordPickerOpen: boolean;
   chordPickerTargetIndex: number | null;
 
+  // Visual fullscreen
+  visualFullscreen: boolean;
+
   // View state
   currentView: 'home' | 'editor';
 
@@ -97,6 +100,9 @@ interface UIState {
   toggleLibrary: () => void;
   openChordPicker: (index: number) => void;
   closeChordPicker: () => void;
+
+  // Visual fullscreen
+  setVisualFullscreen: (v: boolean) => void;
 
   // View actions
   setCurrentView: (view: 'home' | 'editor') => void;
@@ -141,6 +147,9 @@ export const useUIStore = create<UIState>((set) => ({
   // Chord picker state
   chordPickerOpen: false,
   chordPickerTargetIndex: null,
+
+  // Visual fullscreen
+  visualFullscreen: false,
 
   // View state
   currentView: 'home',
@@ -349,6 +358,10 @@ export const useUIStore = create<UIState>((set) => ({
 
   closeChordPicker: () => {
     set({ chordPickerOpen: false, chordPickerTargetIndex: null });
+  },
+
+  setVisualFullscreen: (v) => {
+    set({ visualFullscreen: v });
   },
 
   setCurrentView: (view) => {

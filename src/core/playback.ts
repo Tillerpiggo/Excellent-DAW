@@ -172,9 +172,13 @@ export class PlaybackEngine {
       const audioState = this.trackAudioStates.get(resolved.trackId);
       if (!audioState) continue;
 
-      // Filter events within bounds and convert to Tone.Part format
+      // Filter events within bounds and not within blackout regions
+      const blackoutRegions = resolved.blackoutRegions ?? [];
+      const isBlackedOut = (beatTime: number): boolean =>
+        blackoutRegions.some(r => beatTime >= r.startBeat && beatTime < r.endBeat);
+
       const partEvents = resolved.output.events
-        .filter(event => event.startTimeInBeats < totalBeats)
+        .filter(event => event.startTimeInBeats < totalBeats && !isBlackedOut(event.startTimeInBeats))
         .map(event => ({
           time: `${Math.floor(event.startTimeInBeats / project.beatsPerBar)}:${event.startTimeInBeats % project.beatsPerBar}`,
           event,

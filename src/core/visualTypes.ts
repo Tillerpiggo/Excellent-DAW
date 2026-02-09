@@ -11,6 +11,7 @@ export interface VisualInstrumentState {
   params: Record<string, unknown>; // Merged: instrument defaults + track overrides
   noteOnCount: number; // Increments for EVERY note-on trigger (never throttled)
   pitchNoteOnCounts: Map<number, number>; // Per-pitch note-on counts
+  blackedOut: boolean; // True when instrument is completely disabled by a mute region
 }
 
 export interface VisualEvent {

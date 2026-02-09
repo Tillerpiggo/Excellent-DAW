@@ -7,25 +7,25 @@ import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
 import { QuantizeSelect } from '@/components/shared/QuantizeSelect';
 import { useMidiEditorState } from '@/hooks/useMidiEditorState';
 
-interface MuteEditorProps {
+interface SuppressEditorProps {
   block: Block;
   track: Track;
   beatsPerBar: number;
 }
 
-// Single row for mute blackout (pitch 0 as marker)
-const MUTE_PITCH = 0;
+// Single row for suppress (pitch 0 as marker)
+const SUPPRESS_PITCH = 0;
 const DEFAULT_QUANTIZE = 0.25;
 
-const MUTE_ROWS: MidiRow[] = [
-  { pitch: MUTE_PITCH, label: 'Mute', color: '#991b1b' },
+const SUPPRESS_ROWS: MidiRow[] = [
+  { pitch: SUPPRESS_PITCH, label: 'Suppress', color: '#64748b' },
 ];
 
-function extractMutesFromBlock(block: Block): MidiNote[] {
+function extractSuppressFromBlock(block: Block): MidiNote[] {
   const allEvents = block.streams?.flatMap(s => s.events) || [];
   return allEvents.map((event, index) => ({
-    id: `mute-${event.startTimeInBeats}-${index}`,
-    pitch: MUTE_PITCH,
+    id: `suppress-${event.startTimeInBeats}-${index}`,
+    pitch: SUPPRESS_PITCH,
     time: event.startTimeInBeats,
     duration: event.duration,
     velocity: event.velocity,
@@ -35,13 +35,13 @@ function extractMutesFromBlock(block: Block): MidiNote[] {
 function notesToEvents(notes: MidiNote[]): Event[] {
   return notes.map(n => ({
     startTimeInBeats: n.time,
-    pitch: MUTE_PITCH,
+    pitch: SUPPRESS_PITCH,
     velocity: n.velocity,
     duration: n.duration,
   }));
 }
 
-export function MuteEditor({ block, track, beatsPerBar }: MuteEditorProps) {
+export function SuppressEditor({ block, track, beatsPerBar }: SuppressEditorProps) {
   const { updateBlock } = useProjectStore();
 
   const saveNotes = useCallback((notes: MidiNote[], trackId: string, blockId: string) => {
@@ -52,7 +52,7 @@ export function MuteEditor({ block, track, beatsPerBar }: MuteEditorProps) {
   const { notes, quantize, setQuantize, handleNotesChange, handleClear } = useMidiEditorState({
     block,
     track,
-    extractNotes: extractMutesFromBlock,
+    extractNotes: extractSuppressFromBlock,
     saveNotes,
     defaultQuantize: DEFAULT_QUANTIZE,
   });
@@ -60,7 +60,7 @@ export function MuteEditor({ block, track, beatsPerBar }: MuteEditorProps) {
   const totalBeats = block.durationBars * beatsPerBar;
 
   return (
-    <div className="flex flex-col h-full" data-editor-panel="mute">
+    <div className="flex flex-col h-full" data-editor-panel="suppress">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border">
         <QuantizeSelect value={quantize} onChange={setQuantize} />
@@ -75,13 +75,13 @@ export function MuteEditor({ block, track, beatsPerBar }: MuteEditorProps) {
         <div className="flex-1" />
 
         <span className="text-xs text-muted">
-          {notes.length} mute {notes.length === 1 ? 'region' : 'regions'} | Click + drag to draw
+          {notes.length} suppress {notes.length === 1 ? 'region' : 'regions'} | Click + drag to draw
         </span>
       </div>
 
       {/* Midi editor with single row and larger row height */}
       <MidiEditor
-        rows={MUTE_ROWS}
+        rows={SUPPRESS_ROWS}
         notes={notes}
         onNotesChange={handleNotesChange}
         totalBeats={totalBeats}

@@ -226,6 +226,19 @@ export function TrackInspector({ track }: TrackInspectorProps) {
                     </label>
                   )}
 
+                  {field.type === 'string' && (
+                    <>
+                      <label className="block text-xs text-muted-foreground mb-1">
+                        {field.label}
+                      </label>
+                      <textarea
+                        value={(track.instrumentSettings?.[key] as string) ?? (field.default as string)}
+                        onChange={(e) => handleSettingChange(key, e.target.value)}
+                        rows={3}
+                        className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from resize-y min-h-[4rem]"
+                      />
+                    </>
+                  )}
                   {field.type === 'select' && field.options && (
                     <>
                       <label className="block text-xs text-muted-foreground mb-1">

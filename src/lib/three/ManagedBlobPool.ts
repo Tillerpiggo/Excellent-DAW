@@ -47,12 +47,23 @@ export class ManagedBlobPool {
     opts.parent.add(this.mesh);
   }
 
-  /** Place a blob at position with opacity and optional scale. */
-  setInstance(index: number, x: number, y: number, opacity: number, scale?: number): void {
+  /** Place a blob at position with opacity, optional scale, and optional rotation (radians). */
+  setInstance(index: number, x: number, y: number, opacity: number, scale?: number, rotation?: number): void {
     if (index >= this.opts.maxInstances) return;
     const s = scale ?? 1;
-    _mat4.makeScale(s, s, 1);
-    _mat4.setPosition(x, y, 0);
+    const r = rotation ?? 0;
+    if (r !== 0) {
+      const cos = Math.cos(r) * s;
+      const sin = Math.sin(r) * s;
+      const e = _mat4.elements;
+      e[0] = cos;  e[4] = -sin; e[8]  = 0; e[12] = x;
+      e[1] = sin;  e[5] =  cos; e[9]  = 0; e[13] = y;
+      e[2] = 0;    e[6] =  0;   e[10] = 1; e[14] = 0;
+      e[3] = 0;    e[7] =  0;   e[11] = 0; e[15] = 1;
+    } else {
+      _mat4.makeScale(s, s, 1);
+      _mat4.setPosition(x, y, 0);
+    }
     this.mesh.setMatrixAt(index, _mat4);
     this.mesh.instanceMatrix.needsUpdate = true;
 

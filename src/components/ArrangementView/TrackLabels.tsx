@@ -100,6 +100,16 @@ function TrackLabelRow({ node, trackHeight }: { node: TrackNode; trackHeight: nu
     closeContextMenu();
   }, [track.id, addTrack, selectTrack, collapsedTrackIds, toggleTrackCollapsed, closeContextMenu]);
 
+  const handleAddSuppressTrack = useCallback(() => {
+    const newTrackId = addTrack(track.id);
+    useProjectStore.getState().updateTrack(newTrackId, { typeId: 'suppress', name: 'Suppress' });
+    selectTrack(newTrackId);
+    if (collapsedTrackIds.has(track.id)) {
+      toggleTrackCollapsed(track.id);
+    }
+    closeContextMenu();
+  }, [track.id, addTrack, selectTrack, collapsedTrackIds, toggleTrackCollapsed, closeContextMenu]);
+
   const handleAddMuteTrack = useCallback(() => {
     const newTrackId = addTrack(track.id);
     useProjectStore.getState().updateTrack(newTrackId, { typeId: 'mute', name: 'Mute' });
@@ -212,6 +222,13 @@ function TrackLabelRow({ node, trackHeight }: { node: TrackNode; trackHeight: nu
           >
             <span className="text-muted-foreground">+</span>
             <span>Add Child Track</span>
+          </button>
+          <button
+            onClick={handleAddSuppressTrack}
+            className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
+          >
+            <span className="text-muted-foreground">S</span>
+            <span>Add Suppress Track</span>
           </button>
           <button
             onClick={handleAddMuteTrack}

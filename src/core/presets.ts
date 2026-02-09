@@ -1,6 +1,6 @@
 import { Preset, Event, PatternCategory, DRUM_PITCHES, DrumType } from './types';
 
-// Marker pitch for control/modifier events (swing, gate, mute, scale)
+// Marker pitch for control/modifier events (swing, gate, suppress, mute, scale)
 // These events use pitch 0 as they don't produce audio, they modify behavior
 const CONTROL_PITCH = 0;
 
@@ -12,7 +12,7 @@ const drum = (startTimeInBeats: number, type: DrumType, velocity = 100): Event =
   duration: 0.25,
 });
 
-// Helper to create control/modifier events (swing, gate, mute, scale)
+// Helper to create control/modifier events (swing, gate, suppress, mute, scale)
 const ctrl = (startTimeInBeats: number, velocity = 100, duration = 0.25): Event => ({
   startTimeInBeats,
   pitch: CONTROL_PITCH,
@@ -536,11 +536,128 @@ export const PATTERN_PRESETS: Preset[] = [
       note(0, 48, 4), // 60 - 12 = octave down
     ],
   },
+  // ========== SUPPRESS (event filtering) ==========
+  {
+    id: 'mod-suppress-bar',
+    name: 'Suppress Bar',
+    category: 'suppress',
+    description: 'Filters events for one bar',
+    defaultTrackType: 'suppress',
+    durationBars: 1,
+    presetType: 'loop',
+    events: [
+      ctrl(0, 100, 4),
+    ],
+  },
+  {
+    id: 'mod-suppress-even',
+    name: 'Suppress Even Bars',
+    category: 'suppress',
+    description: 'Filters events in bars 2 and 4 (even bars)',
+    defaultTrackType: 'suppress',
+    durationBars: 4,
+    presetType: 'loop',
+    events: [
+      ctrl(4, 100, 4),   // Bar 2 (beats 4-7)
+      ctrl(12, 100, 4),  // Bar 4 (beats 12-15)
+    ],
+  },
+  {
+    id: 'mod-suppress-odd',
+    name: 'Suppress Odd Bars',
+    category: 'suppress',
+    description: 'Filters events in bars 1 and 3 (odd bars)',
+    defaultTrackType: 'suppress',
+    durationBars: 4,
+    presetType: 'loop',
+    events: [
+      ctrl(0, 100, 4),   // Bar 1 (beats 0-3)
+      ctrl(8, 100, 4),   // Bar 3 (beats 8-11)
+    ],
+  },
+  {
+    id: 'suppress-offbeats',
+    name: 'Off-beats',
+    category: 'suppress',
+    description: 'Suppresses all off-beats',
+    defaultTrackType: 'suppress',
+    durationBars: 1,
+    presetType: 'loop',
+    events: [
+      ctrl(0.5),
+      ctrl(1.5),
+      ctrl(2.5),
+      ctrl(3.5),
+    ],
+  },
+  {
+    id: 'suppress-downbeats',
+    name: 'Downbeats',
+    category: 'suppress',
+    description: 'Suppresses all downbeats',
+    defaultTrackType: 'suppress',
+    durationBars: 1,
+    presetType: 'loop',
+    events: [
+      ctrl(0),
+      ctrl(1),
+      ctrl(2),
+      ctrl(3),
+    ],
+  },
+  {
+    id: 'suppress-sparse',
+    name: 'Sparse',
+    category: 'suppress',
+    description: 'Occasional suppression for variation',
+    defaultTrackType: 'suppress',
+    durationBars: 2,
+    presetType: 'loop',
+    events: [
+      ctrl(1.5),
+      ctrl(5),
+      ctrl(6.5),
+    ],
+  },
+  {
+    id: 'suppress-stutter',
+    name: 'Stutter',
+    category: 'suppress',
+    description: '16th note suppression for stutter effect',
+    defaultTrackType: 'suppress',
+    durationBars: 1,
+    presetType: 'loop',
+    events: [
+      ctrl(2),
+      ctrl(2.25),
+      ctrl(2.75),
+      ctrl(3),
+    ],
+  },
+  {
+    id: 'suppress-buildup',
+    name: 'Buildup',
+    category: 'suppress',
+    description: 'Progressive unsuppression for tension',
+    defaultTrackType: 'suppress',
+    durationBars: 4,
+    presetType: 'loop',
+    events: [
+      ctrl(0),
+      ctrl(1),
+      ctrl(2),
+      ctrl(4),
+      ctrl(5),
+      ctrl(8),
+    ],
+  },
+
+  // ========== MUTE (instrument blackout) ==========
   {
     id: 'mod-mute-bar',
     name: 'Mute Bar',
     category: 'mute',
-    description: 'Silences one bar',
+    description: 'Blacks out instrument for one bar',
     defaultTrackType: 'mute',
     durationBars: 1,
     presetType: 'loop',
@@ -552,102 +669,26 @@ export const PATTERN_PRESETS: Preset[] = [
     id: 'mod-mute-even',
     name: 'Mute Even Bars',
     category: 'mute',
-    description: 'Silences bars 2 and 4 (even bars)',
+    description: 'Blacks out instrument in bars 2 and 4',
     defaultTrackType: 'mute',
     durationBars: 4,
     presetType: 'loop',
     events: [
-      ctrl(4, 100, 4),   // Bar 2 (beats 4-7)
-      ctrl(12, 100, 4),  // Bar 4 (beats 12-15)
+      ctrl(4, 100, 4),
+      ctrl(12, 100, 4),
     ],
   },
   {
     id: 'mod-mute-odd',
     name: 'Mute Odd Bars',
     category: 'mute',
-    description: 'Silences bars 1 and 3 (odd bars)',
+    description: 'Blacks out instrument in bars 1 and 3',
     defaultTrackType: 'mute',
     durationBars: 4,
     presetType: 'loop',
     events: [
-      ctrl(0, 100, 4),   // Bar 1 (beats 0-3)
-      ctrl(8, 100, 4),   // Bar 3 (beats 8-11)
-    ],
-  },
-  {
-    id: 'mute-offbeats',
-    name: 'Off-beats',
-    category: 'mute',
-    description: 'Mutes all off-beats',
-    defaultTrackType: 'mute',
-    durationBars: 1,
-    presetType: 'loop',
-    events: [
-      ctrl(0.5),
-      ctrl(1.5),
-      ctrl(2.5),
-      ctrl(3.5),
-    ],
-  },
-  {
-    id: 'mute-downbeats',
-    name: 'Downbeats',
-    category: 'mute',
-    description: 'Mutes all downbeats',
-    defaultTrackType: 'mute',
-    durationBars: 1,
-    presetType: 'loop',
-    events: [
-      ctrl(0),
-      ctrl(1),
-      ctrl(2),
-      ctrl(3),
-    ],
-  },
-  {
-    id: 'mute-sparse',
-    name: 'Sparse',
-    category: 'mute',
-    description: 'Occasional mutes for variation',
-    defaultTrackType: 'mute',
-    durationBars: 2,
-    presetType: 'loop',
-    events: [
-      ctrl(1.5),
-      ctrl(5),
-      ctrl(6.5),
-    ],
-  },
-  {
-    id: 'mute-stutter',
-    name: 'Stutter',
-    category: 'mute',
-    description: '16th note mutes for stutter effect',
-    defaultTrackType: 'mute',
-    durationBars: 1,
-    presetType: 'loop',
-    events: [
-      ctrl(2),
-      ctrl(2.25),
-      ctrl(2.75),
-      ctrl(3),
-    ],
-  },
-  {
-    id: 'mute-buildup',
-    name: 'Buildup',
-    category: 'mute',
-    description: 'Progressive unmuting for tension',
-    defaultTrackType: 'mute',
-    durationBars: 4,
-    presetType: 'loop',
-    events: [
-      ctrl(0),
-      ctrl(1),
-      ctrl(2),
-      ctrl(4),
-      ctrl(5),
-      ctrl(8),
+      ctrl(0, 100, 4),
+      ctrl(8, 100, 4),
     ],
   },
 
@@ -872,10 +913,22 @@ export const PATTERN_PRESETS: Preset[] = [
     ],
   },
   {
+    id: 'suppress-basic',
+    name: 'Suppress',
+    category: 'suppress',
+    description: 'Filters events from output',
+    defaultTrackType: 'suppress',
+    durationBars: 1,
+    presetType: 'pattern',
+    events: [
+      ctrl(0, 100, 4),
+    ],
+  },
+  {
     id: 'mute-basic',
     name: 'Mute',
     category: 'mute',
-    description: 'Silences output',
+    description: 'Blacks out instrument completely',
     defaultTrackType: 'mute',
     durationBars: 1,
     presetType: 'pattern',
@@ -918,6 +971,7 @@ export const CATEGORY_PRESETS: Record<PatternCategory, Preset[]> = {
   arp: PATTERN_PRESETS.filter(p => p.category === 'arp'),
   modifier: PATTERN_PRESETS.filter(p => p.category === 'modifier'),
   rhythm: PATTERN_PRESETS.filter(p => p.category === 'rhythm'),
+  suppress: PATTERN_PRESETS.filter(p => p.category === 'suppress'),
   mute: PATTERN_PRESETS.filter(p => p.category === 'mute'),
   rest: PATTERN_PRESETS.filter(p => p.category === 'rest'),
   swing: PATTERN_PRESETS.filter(p => p.category === 'swing'),
@@ -931,4 +985,4 @@ export function getLoopsByCategory(category: PatternCategory): Preset[] {
   return PATTERN_PRESETS.filter(p => p.category === category && p.presetType === 'loop');
 }
 
-export const PRESET_CATEGORIES = ['drums', 'chords', 'bass', 'arp', 'modifier', 'rhythm', 'mute', 'rest', 'swing'] as const;
+export const PRESET_CATEGORIES = ['drums', 'chords', 'bass', 'arp', 'modifier', 'rhythm', 'suppress', 'mute', 'rest', 'swing'] as const;

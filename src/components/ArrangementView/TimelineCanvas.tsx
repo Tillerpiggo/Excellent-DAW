@@ -915,6 +915,17 @@ export function TimelineCanvas({
     closeContextMenu();
   }, [contextMenu, tracks, beatsPerBar, addTrack, addBlock, closeContextMenu]);
 
+  const handleAddSuppressTrack = useCallback(() => {
+    if (!contextMenu?.trackId) return;
+    const newTrackId = addTrack(contextMenu.trackId);
+    useProjectStore.getState().updateTrack(newTrackId, { typeId: 'suppress', name: 'Suppress' });
+    useUIStore.getState().selectTrack(newTrackId);
+    if (useUIStore.getState().collapsedTrackIds.has(contextMenu.trackId)) {
+      useUIStore.getState().toggleTrackCollapsed(contextMenu.trackId);
+    }
+    closeContextMenu();
+  }, [contextMenu, addTrack, closeContextMenu]);
+
   const handleAddMuteTrack = useCallback(() => {
     if (!contextMenu?.trackId) return;
     const newTrackId = addTrack(contextMenu.trackId);
@@ -1523,6 +1534,13 @@ export function TimelineCanvas({
               >
                 <span className="text-muted-foreground">+</span>
                 <span>Add Child Track</span>
+              </button>
+              <button
+                onClick={handleAddSuppressTrack}
+                className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
+              >
+                <span className="text-muted-foreground">S</span>
+                <span>Add Suppress Track</span>
               </button>
               <button
                 onClick={handleAddMuteTrack}

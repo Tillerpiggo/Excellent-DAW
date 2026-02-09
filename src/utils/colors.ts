@@ -9,7 +9,8 @@ export const CATEGORY_COLORS: Record<PatternCategory, string> = {
   arp: '#4ECDC4',      // Teal
   modifier: '#95E1D3', // Mint
   rhythm: '#F9A826',   // Orange
-  mute: '#64748b',     // Slate
+  suppress: '#64748b', // Slate
+  mute: '#991b1b',     // Deep red (instrument blackout)
   rest: '#9ca3af',     // Gray
   swing: '#f472b6',    // Pink (groove feel)
 };
@@ -19,7 +20,8 @@ export const TRACK_TYPE_COLORS: Record<TrackTypeId, string> = {
   base: '#6366f1',       // Indigo
   add: '#22c55e',        // Green
   override: '#ef4444',   // Red
-  mute: '#64748b',       // Slate (muted gray)
+  suppress: '#64748b',   // Slate (event filtering)
+  mute: '#991b1b',       // Deep red (instrument blackout)
   gate: '#f59e0b',       // Amber
   shift: '#06b6d4',      // Cyan
   transpose: '#0ea5e9',  // Sky blue

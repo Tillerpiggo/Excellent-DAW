@@ -7,24 +7,25 @@ import { VisualBeatSync } from './VisualBeatSync';
 import { useProjectStore } from '@/stores/projectStore';
 import { useMemo } from 'react';
 import { PluginInstance } from '@/core/types';
-import { useShallow } from 'zustand/react/shallow';
 
 interface VisualSceneProps {
   tracks: VisualTrackInfo[];
 }
 
 export function VisualScene({ tracks }: VisualSceneProps) {
-  // Narrow selector: only extract visualPlugins for tracks we render
   const trackIds = useMemo(() => tracks.map((t) => t.id), [tracks]);
-  const pluginsByTrack = useProjectStore(
-    useShallow((s) => {
-      const result: Record<string, PluginInstance[]> = {};
-      for (const id of trackIds) {
-        result[id] = s.project.tracks[id]?.visualPlugins ?? [];
-      }
-      return result;
-    }),
-  );
+
+  // Read the full tracks record once (stable ref from store)
+  const storeTracks = useProjectStore((s) => s.project.tracks);
+
+  // Derive plugins from the stable store reference
+  const pluginsByTrack = useMemo(() => {
+    const result: Record<string, PluginInstance[]> = {};
+    for (const id of trackIds) {
+      result[id] = storeTracks[id]?.visualPlugins ?? [];
+    }
+    return result;
+  }, [storeTracks, trackIds]);
 
   return (
     <>

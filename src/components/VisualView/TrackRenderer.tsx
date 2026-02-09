@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { useFrame, useThree, createPortal } from '@react-three/fiber';
 import { useFBO } from '@react-three/drei';
 import * as THREE from 'three';
@@ -8,6 +8,7 @@ import { PluginInstance } from '@/core/types';
 import { getInstrument } from '@/instruments';
 import { getPlugin } from '@/plugins';
 import { useProjectStore } from '@/stores/projectStore';
+import { getVisualPlaybackEngine } from '@/core/visualPlayback';
 import { TransformWrapper } from './TransformWrapper';
 import { CloneWrapper } from './CloneWrapper';
 import { ShaderChain } from './ShaderChain';
@@ -31,6 +32,15 @@ export function TrackRenderer({
   const instrument = getInstrument(instrumentId);
   const Component = instrument?.VisualComponent;
   const { gl } = useThree();
+  const rootGroupRef = useRef<THREE.Group>(null);
+
+  // Check blackout state each frame and hide the entire group when blacked out
+  useFrame(() => {
+    if (!rootGroupRef.current) return;
+    const engine = getVisualPlaybackEngine();
+    const state = engine.getTrackState(trackId);
+    rootGroupRef.current.visible = !(state?.blackedOut ?? false);
+  });
 
   // Check if we have shader plugins (need FBO)
   const hasShaderPlugins = plugins.some((instance) => {
@@ -181,7 +191,7 @@ export function TrackRenderer({
   if (!hasAnyPlugins) {
     if (isGroup) {
       return (
-        <group position={[0, 0, 0]}>
+        <group ref={rootGroupRef} position={[0, 0, 0]}>
           {childVisualComponents.map(({ trackId: childTrackId, Component: ChildComponent }) => (
             <ChildComponent key={childTrackId} trackId={childTrackId} />
           ))}
@@ -190,7 +200,7 @@ export function TrackRenderer({
     }
     if (!Component) return null;
     return (
-      <group position={[0, 0, 0]}>
+      <group ref={rootGroupRef} position={[0, 0, 0]}>
         <Component trackId={trackId} />
       </group>
     );
@@ -199,9 +209,8 @@ export function TrackRenderer({
   // Has shader plugins - render to FBO and apply shader chain
   // Skip shaders if clone plugins are present (clones need 3D objects, not flat planes)
   if (hasShaderPlugins && !hasClonePlugins) {
-    // Build the shader-processed result (a textured plane)
-    const shaderResult = (
-      <group>
+    return (
+      <group ref={rootGroupRef}>
         {/* Render base content to offscreen scene (portal) - no clone wrapper here */}
         {createPortal(
           <group position={[0, 0, 0]}>{buildBaseContentElement()}</group>,
@@ -212,10 +221,8 @@ export function TrackRenderer({
         <ShaderChain inputTexture={fbo.texture} plugins={plugins} />
       </group>
     );
-
-    return shaderResult;
   }
 
   // Only transform/clone plugins (no shaders) - no need for FBO
-  return <group position={[0, 0, 0]}>{buildContentElement()}</group>;
+  return <group ref={rootGroupRef} position={[0, 0, 0]}>{buildContentElement()}</group>;
 }

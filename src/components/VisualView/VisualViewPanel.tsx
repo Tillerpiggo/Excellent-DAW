@@ -8,7 +8,8 @@ import { getInstrument } from '@/instruments';
 import { Track } from '@/core/types';
 
 export function VisualViewPanel() {
-  const { project } = useProjectStore();
+  const tracks = useProjectStore((s) => s.project.tracks);
+  const rootTracks = useProjectStore((s) => s.project.rootTracks);
 
   // Sync visual engine with project changes
   useVisualSync();
@@ -27,7 +28,7 @@ export function VisualViewPanel() {
         if (instrument?.hasVisual) return true;
       }
       return track.childIds.some((childId) => {
-        const child = project.tracks[childId];
+        const child = tracks[childId];
         return child && hasVisualDescendant(child);
       });
     };
@@ -35,7 +36,7 @@ export function VisualViewPanel() {
     // Helper to collect visual tracks, respecting group hierarchy
     const collectVisualTracks = (trackIds: string[], parentHasEffects: boolean = false) => {
       for (const trackId of trackIds) {
-        const track = project.tracks[trackId];
+        const track = tracks[trackId];
         if (!track || track.muted || processedIds.has(trackId)) continue;
 
         const hasPlugins = (track.visualPlugins?.length ?? 0) > 0;
@@ -57,7 +58,7 @@ export function VisualViewPanel() {
           const markProcessed = (ids: string[]) => {
             for (const id of ids) {
               processedIds.add(id);
-              const child = project.tracks[id];
+              const child = tracks[id];
               if (child) markProcessed(child.childIds);
             }
           };
@@ -78,9 +79,9 @@ export function VisualViewPanel() {
       }
     };
 
-    collectVisualTracks(project.rootTracks);
+    collectVisualTracks(rootTracks);
     return result;
-  }, [project.tracks, project.rootTracks]);
+  }, [tracks, rootTracks]);
 
   if (visualTracks.length === 0) {
     return (

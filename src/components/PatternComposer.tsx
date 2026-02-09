@@ -7,11 +7,12 @@ import { Library } from './Library/Library';
 import { ArrangementView } from './ArrangementView';
 import { Inspector } from './Inspector/Inspector';
 import { BlockEditor } from './BlockEditor';
+import { VisualFullscreen } from './VisualView';
 import { useUIStore } from '@/stores/uiStore';
 import { useKeyboard } from '@/hooks/useKeyboard';
 
 export function DAWView() {
-  const { showLibrary, showInspector } = useUIStore();
+  const { showLibrary, showInspector, visualFullscreen } = useUIStore();
 
   // Panel refs for imperative collapse/expand control
   const libraryPanelRef = usePanelRef();
@@ -101,6 +102,8 @@ export function DAWView() {
           </aside>
         </Panel>
       </Group>
+
+      {visualFullscreen && <VisualFullscreen />}
     </div>
   );
 }

@@ -1,22 +1,21 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { ChordEditorPanel } from '../ChordEditor';
 import { DrumEditorPanel } from '../DrumEditor';
 import { ArpEditorPanel } from '../ArpEditor';
+import { SuppressEditorPanel } from '../SuppressEditor';
 import { MuteEditorPanel } from '../MuteEditor';
 import { TransposeEditorPanel } from '../TransposeEditor';
 import { RhythmEditorPanel } from '../RhythmEditor';
 import { SwingEditorPanel } from '../SwingEditor';
 import { GenericMidiEditorPanel } from '../GenericMidiEditor';
-import { VisualViewPanel } from '../VisualView';
 import { PatternCategory } from '@/core/types';
 import { getInstrument, getInheritedMidiInstrumentId } from '@/instruments';
 
-export type EditorType = 'chord' | 'drum' | 'arp' | 'mute' | 'transpose' | 'rhythm' | 'swing' | 'generic' | null;
-type ViewMode = 'editor' | 'visual';
+export type EditorType = 'chord' | 'drum' | 'arp' | 'suppress' | 'mute' | 'transpose' | 'rhythm' | 'swing' | 'generic' | null;
 
 /**
  * Maps pattern category to the appropriate editor type.
@@ -32,6 +31,8 @@ function getEditorForCategory(category: PatternCategory): EditorType {
       return 'arp';
     case 'rhythm':
       return 'rhythm';
+    case 'suppress':
+      return 'suppress';
     case 'mute':
       return 'mute';
     case 'swing':
@@ -44,14 +45,9 @@ function getEditorForCategory(category: PatternCategory): EditorType {
   }
 }
 
-/**
- * BlockEditor is the container for MIDI editors and visual view.
- * Always renders with a header containing a segmented control to switch views.
- */
 export function BlockEditor() {
   const { selectedBlockIds, selectedTrackId } = useUIStore();
   const { project } = useProjectStore();
-  const [viewMode, setViewMode] = useState<ViewMode>('editor');
 
   const selectedBlockId = selectedBlockIds.size === 1 ? Array.from(selectedBlockIds)[0] : null;
   const selectedTrack = selectedTrackId ? project.tracks[selectedTrackId] ?? null : null;
@@ -66,6 +62,8 @@ export function BlockEditor() {
     if (typeId === 'rhythm') return 'rhythm';
     if (typeId === 'transpose') return 'transpose';
     if (typeId === 'swing') return 'swing';
+    if (typeId === 'suppress') return 'suppress';
+    if (typeId === 'mute') return 'mute';
 
     if (patternCategory) {
       const categoryEditor = getEditorForCategory(patternCategory);
@@ -92,6 +90,8 @@ export function BlockEditor() {
         return <DrumEditorPanel />;
       case 'arp':
         return <ArpEditorPanel />;
+      case 'suppress':
+        return <SuppressEditorPanel />;
       case 'mute':
         return <MuteEditorPanel />;
       case 'transpose':
@@ -117,35 +117,8 @@ export function BlockEditor() {
 
   return (
     <div className="h-full flex flex-col bg-surface border-t border-border">
-      {/* Header with centered segmented control */}
-      <div className="flex items-center justify-center px-4 py-2 border-b border-border bg-surface">
-        <div className="flex rounded-lg bg-background p-0.5 border border-border">
-          <button
-            onClick={() => setViewMode('editor')}
-            className={`px-6 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              viewMode === 'editor'
-                ? 'bg-surface text-foreground shadow-sm'
-                : 'text-muted hover:text-foreground'
-            }`}
-          >
-            Editor
-          </button>
-          <button
-            onClick={() => setViewMode('visual')}
-            className={`px-6 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              viewMode === 'visual'
-                ? 'bg-surface text-foreground shadow-sm'
-                : 'text-muted hover:text-foreground'
-            }`}
-          >
-            Visual
-          </button>
-        </div>
-      </div>
-
-      {/* Content */}
       <div className="flex-1 overflow-hidden">
-        {viewMode === 'visual' ? <VisualViewPanel /> : renderEditor()}
+        {renderEditor()}
       </div>
     </div>
   );

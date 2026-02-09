@@ -64,6 +64,8 @@ const CRAZY_INK_POSITIONS = 256;
 const CRAZY_INK_DOTS_PER_TRIGGER = 12;
 const CRAZY_INK_ORBIT_FRAC = 0.30;
 const CRAZY_INK_BLOB_MULT = 0.8;
+const CRAZY_INK_BLOB_VERTS = 8;
+const CRAZY_INK_BLOB_NOISE = 0.25;
 const CRAZY_INK_FADE_PER_STEP = 0.15;
 
 // Scale pop & line weight
@@ -122,17 +124,73 @@ const MAX_INK_BLOBS = 256;
 const MAX_CRAZY_INK_BLOBS = 256;
 const MAX_SPIRAL_DOTS = 256;
 
+// Foreground fade constants
+const FG_FADE_PER_TICK = 0.07;  // subtle opacity loss per tick
+const FG_FADE_TICKS_PER_BAR = 2; // fade twice per measure
+const FG_FADE_MIN = 0.15;        // never fully invisible
+
 // Ink dot constants
 const INK_POSITIONS = 128;
 const INK_DOTS = 4;
 const INK_ORBIT_FRAC = 0.35;
 const INK_BLOB_MULT = 2.0;
+const INK_BLOB_VERTS = 10;
+const INK_BLOB_NOISE = 0.35;
 const INK_FADE_PER_STEP = 0.2;
 
 const BG_ROTATION_STEP = (Math.PI * 2) / 24;
 
+// Bird constants
+const BIRD_COUNT = 5;
+const BIRD_SCALE_BASE = 6;
+const BIRD_WING_FREQ = 2.5; // flaps per second
+
+// Wire line constants (for bird weaving depth effect)
+const WIRE_LINES_TOP = 3;
+const WIRE_LINES_BOTTOM = 3;
+const WIRE_TOTAL = WIRE_LINES_TOP + WIRE_LINES_BOTTOM;
+const WIRE_Y_FRAC = 0.35;       // fraction of vh/2 from center for wire group
+const WIRE_SPACING_FRAC = 0.04; // fraction of vh between wires
+const WIRE_SUBS = 40;           // subdivisions per wire for catenary sag
+const WIRE_SAG_FRAC = 0.003;    // fraction of vw for sag depth
+const WIRE_OPACITY = 0.18;
+
+// Deterministic bird placement configs: { yFrac (of vh/2), direction, speed multiplier, size multiplier }
+const BIRD_CONFIGS = [
+  { yFrac:  0.36, dir:  1, speedMult: 1.0,  scaleMult: 1.0,  phaseSeed: 0.0 },
+  { yFrac:  0.38, dir: -1, speedMult: 0.7,  scaleMult: 0.85, phaseSeed: 1.3 },
+  { yFrac:  0.33, dir:  1, speedMult: 1.3,  scaleMult: 0.7,  phaseSeed: 2.7 },
+  { yFrac: -0.35, dir:  1, speedMult: 0.9,  scaleMult: 0.95, phaseSeed: 4.1 },
+  { yFrac: -0.38, dir: -1, speedMult: 0.8,  scaleMult: 0.8,  phaseSeed: 5.5 },
+];
+
 function deg2rad(d: number): number {
   return (d * Math.PI) / 180;
+}
+
+/** Deterministic hash for ink blob vertex noise */
+function inkHash(a: number, b: number, c: number, d: number): number {
+  let h = (a * 73856093) ^ (b * 19349663) ^ (c * 83492791) ^ (d * 41729501);
+  h = ((h >> 16) ^ h) * 0x45d9f3b;
+  h = ((h >> 16) ^ h) * 0x45d9f3b;
+  h = (h >> 16) ^ h;
+  return (h & 0xffff) / 0xffff;
+}
+
+/** Create a noisy circle ShapeGeometry for organic ink-blob look */
+function createNoisyBlobGeometry(verts: number, noise: number, seed: number): THREE.ShapeGeometry {
+  const shape = new THREE.Shape();
+  for (let v = 0; v < verts; v++) {
+    const n = inkHash(seed, v, 0, 0) * 2 - 1;
+    const r = 1 + n * noise;
+    const angle = (v / verts) * Math.PI * 2;
+    const px = Math.cos(angle) * r;
+    const py = Math.sin(angle) * r;
+    if (v === 0) shape.moveTo(px, py);
+    else shape.lineTo(px, py);
+  }
+  shape.closePath();
+  return new THREE.ShapeGeometry(shape);
 }
 
 // --- Polar path functions (unchanged) ---
@@ -161,6 +219,26 @@ function crazyPolarPath(slot: number, baseR: number): [number, number] {
     + 0.04 * Math.cos(29 * t)
   );
   return [Math.cos(t) * r, Math.sin(t) * r];
+}
+
+// --- Bird shape geometry ---
+function createBirdGeometry(): THREE.ShapeGeometry {
+  const s = new THREE.Shape();
+  // Left wingtip
+  s.moveTo(-1.0, 0);
+  // Left wing curves up
+  s.quadraticCurveTo(-0.65, 0.52, -0.15, 0.12);
+  // Body dip at center
+  s.quadraticCurveTo(0, -0.02, 0.15, 0.12);
+  // Right wing curves up to tip
+  s.quadraticCurveTo(0.65, 0.52, 1.0, 0);
+  // Right trailing edge back
+  s.quadraticCurveTo(0.55, 0.08, 0.12, -0.06);
+  // Body bottom
+  s.lineTo(-0.12, -0.06);
+  // Left trailing edge back to start
+  s.quadraticCurveTo(-0.55, 0.08, -1.0, 0);
+  return new THREE.ShapeGeometry(s);
 }
 
 // --- Data types ---
@@ -309,9 +387,9 @@ interface SceneRefs {
   inkPool: ManagedBlobPool;
   crazyInkPool: ManagedBlobPool;
   spiralPool: ManagedBlobPool;
-  inkBlobGeom: THREE.CircleGeometry;
-  crazyInkBlobGeom: THREE.CircleGeometry;
-  spiralBlobGeom: THREE.CircleGeometry;
+  inkBlobGeom: THREE.BufferGeometry;
+  crazyInkBlobGeom: THREE.BufferGeometry;
+  spiralBlobGeom: THREE.BufferGeometry;
   // Snare patterns (3 panels)
   snareGroups: THREE.Group[];
   snareLineSets: ManagedLineSet[];
@@ -329,6 +407,7 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
   const rootRef = useRef<THREE.Group>(null);
   const engineRef = useRef(getVisualPlaybackEngine());
   const bpm = useProjectStore((s) => s.project.bpm);
+  const beatsPerBar = useProjectStore((s) => s.project.beatsPerBar);
   const initRef = useRef(false);
   const sceneRef = useRef<SceneRefs | null>(null);
 
@@ -365,6 +444,10 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
 
   // Continuous ink fade timer
   const lastInkFadeTime = useRef(0);
+
+  // Foreground fade state
+  const fgFadeOpacity = useRef(1.0);
+  const lastFgFadeTick = useRef(0);
 
   // Snare bounce pattern state
   const snareActive = useRef([false, false, false]);
@@ -482,9 +565,9 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
     }
 
     // === 4. Blob pools (shared across all 3 panels — positions include panel offset) ===
-    const inkBlobGeom = new THREE.CircleGeometry(1, 10);
-    const crazyInkBlobGeom = new THREE.CircleGeometry(1, 8);
-    const spiralBlobGeom = new THREE.CircleGeometry(1, 8);
+    const inkBlobGeom = createNoisyBlobGeometry(INK_BLOB_VERTS, INK_BLOB_NOISE, 42);
+    const crazyInkBlobGeom = createNoisyBlobGeometry(CRAZY_INK_BLOB_VERTS, CRAZY_INK_BLOB_NOISE, 137);
+    const spiralBlobGeom = createNoisyBlobGeometry(8, 0.2, 271);
 
     // Ink blobs rendered in a group at renderOrder 2 (on top of fg)
     const inkPoolGroup = new THREE.Group();
@@ -725,7 +808,8 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
       for (const blob of blobs) {
         if (idx >= MAX_INK_BLOBS) break;
         const [x, y] = inkPolarPath(blob.slot, orbitR);
-        refs.inkPool.setInstance(idx, panelX + x, y, blob.opacity, blobR);
+        const rot = blob.seed * 2.399;
+        refs.inkPool.setInstance(idx, panelX + x, y, blob.opacity, blobR, rot);
         idx++;
       }
     }
@@ -743,7 +827,8 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
       for (const blob of blobs) {
         if (idx >= MAX_CRAZY_INK_BLOBS) break;
         const [x, y] = crazyPolarPath(blob.slot, orbitR);
-        refs.crazyInkPool.setInstance(idx, panelX + x, y, blob.opacity, blobR);
+        const rot = blob.seed * 2.399;
+        refs.crazyInkPool.setInstance(idx, panelX + x, y, blob.opacity, blobR, rot);
         idx++;
       }
     }
@@ -762,7 +847,8 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
       const r = SPIRAL_GROWTH * fgScale * dot.step;
       const x = panelX + Math.cos(theta) * r;
       const y = Math.sin(theta) * r;
-      refs.spiralPool.setInstance(idx, x, y, dot.opacity, blobR);
+      const rot = dot.seed * 2.399;
+      refs.spiralPool.setInstance(idx, x, y, dot.opacity, blobR, rot);
       idx++;
     }
     refs.spiralPool.setCount(idx);
@@ -927,6 +1013,7 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
           fgSnareAngle.current += deg2rad(snareStep) * fgMultiplier;
           spiralBaseAngle.current += SPIRAL_ROTATION_PER_KICK;
         }
+        fgFadeOpacity.current = 1.0;
         fgDirty = true;
       } else if (pitch === PITCH_BG) {
         for (let i = 0; i < delta; i++) {
@@ -1078,6 +1165,19 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
       }
     }
 
+    // === Foreground fade tick (twice per measure) ===
+    {
+      const now = performance.now();
+      const halfBarMs = (60000 / bpm) * (beatsPerBar / FG_FADE_TICKS_PER_BAR);
+      if (lastFgFadeTick.current === 0) lastFgFadeTick.current = now;
+      const elapsed = now - lastFgFadeTick.current;
+      const ticks = Math.floor(elapsed / halfBarMs);
+      if (ticks > 0) {
+        lastFgFadeTick.current += ticks * halfBarMs;
+        fgFadeOpacity.current = Math.max(FG_FADE_MIN, fgFadeOpacity.current - FG_FADE_PER_TICK * ticks);
+      }
+    }
+
     // === Scale pop & line weight tick ===
     {
       const now = performance.now();
@@ -1133,6 +1233,19 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
     if (snareDirty) {
       for (let pi = 0; pi < 3; pi++) {
         updateSnareLines(refs, pi, panelWidth, dotSize);
+      }
+    }
+
+    // === Every frame: apply foreground fade opacity ===
+    {
+      const fade = fgFadeOpacity.current;
+      const lwActive = lineWeightTicks.current > 0;
+      const baseFgOpacity = lwActive ? lineOpacity * LINE_WEIGHT_OPACITY_MULT : lineOpacity;
+      for (let pi = 0; pi < 3; pi++) {
+        refs.fgLineMats[pi].uniforms.uOpacity.value = baseFgOpacity * fade;
+        refs.fgDotMats[pi].uniforms.uOpacity.value = 1.0 * fade;
+        refs.snareLineMats[pi].uniforms.uOpacity.value = SNARE_LINE_OPACITY * fade;
+        refs.snareDotMats[pi].uniforms.uOpacity.value = 1.0 * fade;
       }
     }
 

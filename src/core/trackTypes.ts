@@ -84,35 +84,43 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
     },
   },
 
-  mute: {
-    id: 'mute',
-    name: 'Mute',
-    description: 'Silences parent events whose start time falls within mute regions',
+  suppress: {
+    id: 'suppress',
+    name: 'Suppress',
+    description: 'Filters parent events whose start time falls within suppress regions',
     category: 'modifier',
     combine: (parent, self) => {
       if (self.events.length === 0) return parent;
       if (parent.events.length === 0) return parent;
 
-      // Check if a time falls within any mute region
-      const isMuted = (time: number): boolean => {
-        for (const muteEvent of self.events) {
-          const muteStart = muteEvent.startTimeInBeats;
-          const muteEnd = muteStart + (muteEvent.duration ?? 0.25);
-          if (time >= muteStart && time < muteEnd) {
+      // Check if a time falls within any suppress region
+      const isSuppressed = (time: number): boolean => {
+        for (const suppressEvent of self.events) {
+          const suppressStart = suppressEvent.startTimeInBeats;
+          const suppressEnd = suppressStart + (suppressEvent.duration ?? 0.25);
+          if (time >= suppressStart && time < suppressEnd) {
             return true;
           }
         }
         return false;
       };
 
-      // Keep only parent events whose start time is not within a mute region
-      const keptEvents = parent.events.filter(e => !isMuted(e.startTimeInBeats));
+      // Keep only parent events whose start time is not within a suppress region
+      const keptEvents = parent.events.filter(e => !isSuppressed(e.startTimeInBeats));
 
       return {
         events: keptEvents,
         harmony: parent.harmony,
       };
     },
+  },
+
+  mute: {
+    id: 'mute',
+    name: 'Mute',
+    description: 'Completely disables the instrument during marked regions',
+    category: 'modifier',
+    combine: (parent, _self) => parent, // Pass-through — doesn't filter events
   },
 
   // Modifiers - transform parent output
@@ -495,3 +503,8 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
 export function getTrackType(id: string): TrackTypeDefinition {
   return TRACK_TYPES[id] || TRACK_TYPES.base;
 }
+
+// Migration alias: old saved projects may have typeId 'mute' meaning the old suppress behavior.
+// The new 'mute' in TRACK_TYPES is the blackout concept. Old mute projects that relied on
+// event-filtering are handled via the 'suppress' type. If migration is needed for legacy
+// projects, remap typeId 'mute' → 'suppress' during project load.

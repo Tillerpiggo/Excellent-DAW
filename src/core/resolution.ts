@@ -3,11 +3,17 @@ import { getTrackType } from './trackTypes';
 import { findHarmonyInOutput, deriveScaleFromHarmony } from './harmony';
 import { getInstrument } from '@/instruments';
 
+export interface BlackoutRegion {
+  startBeat: number;
+  endBeat: number;
+}
+
 export interface ResolvedTrack {
   trackId: string;
   instrumentId?: string; // Unified instrument ID
   instrumentSettings?: Record<string, unknown>; // Track-level settings
   output: Output;
+  blackoutRegions?: BlackoutRegion[];
 }
 
 interface ModifierResolution {
@@ -48,6 +54,7 @@ interface ApplyModifiersResult {
   output: Output;
   results: ResolvedTrack[];
   context: ProcessContext;
+  blackoutRegions: BlackoutRegion[];
 }
 
 /**
@@ -63,6 +70,7 @@ function applyModifiers(
   parentOutput: Output | undefined
 ): ApplyModifiersResult {
   const results: ResolvedTrack[] = [];
+  const blackoutRegions: BlackoutRegion[] = [];
   let output = selfOutput;
   let modifierContext = buildContext(context, parentOutput, output);
 
@@ -70,12 +78,22 @@ function applyModifiers(
     const modifierResolution = resolveModifierOutput(modifierTrack, project, modifierContext, output);
     const modifierType = getTrackType(modifierTrack.typeId);
 
+    // Collect blackout regions from mute-type modifiers
+    if (modifierTrack.typeId === 'mute') {
+      for (const event of modifierResolution.pattern.events) {
+        blackoutRegions.push({
+          startBeat: event.startTimeInBeats,
+          endBeat: event.startTimeInBeats + (event.duration ?? 0.25),
+        });
+      }
+    }
+
     output = modifierType.combine(output, modifierResolution.pattern, modifierContext);
     results.push(...modifierResolution.instrumentedResults);
     modifierContext = buildContext(context, parentOutput, output);
   }
 
-  return { output, results, context: modifierContext };
+  return { output, results, context: modifierContext, blackoutRegions };
 }
 
 /**
@@ -86,7 +104,8 @@ function buildTrackOutputs(
   track: Track,
   selfOutput: Output,
   combinedOutput: Output,
-  inheritedInstrumentId: string | undefined
+  inheritedInstrumentId: string | undefined,
+  blackoutRegions?: BlackoutRegion[]
 ): ResolvedTrack[] {
   const results: ResolvedTrack[] = [];
 
@@ -113,6 +132,7 @@ function buildTrackOutputs(
       instrumentId: track.instrumentId,
       instrumentSettings: track.instrumentSettings,
       output: combinedOutput,
+      blackoutRegions: blackoutRegions?.length ? blackoutRegions : undefined,
     });
   }
 
@@ -123,6 +143,7 @@ function buildTrackOutputs(
       instrumentId: inheritedInstrumentId,
       instrumentSettings: track.instrumentSettings,
       output: selfOutput,
+      blackoutRegions: blackoutRegions?.length ? blackoutRegions : undefined,
     });
   }
 
@@ -233,7 +254,7 @@ export function resolveTrack(
   );
 
   // Step 5: Build this track's resolved outputs
-  const trackOutputs = buildTrackOutputs(track, selfOutput, combinedOutput, inheritedInstrumentId);
+  const trackOutputs = buildTrackOutputs(track, selfOutput, combinedOutput, inheritedInstrumentId, modifierResult.blackoutRegions);
   results.push(...trackOutputs);
 
   // Step 6: Process regular children recursively

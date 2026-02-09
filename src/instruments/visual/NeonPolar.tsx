@@ -9,134 +9,170 @@ import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { getVisualPlaybackEngine } from '@/core/visualPlayback';
 import { Instrument } from '../types';
 
-// Extend r3f to recognize Line2
 extend({ Line2, LineMaterial, LineGeometry });
 
-interface NeonPolarProps {
-  trackId: string;
+// --- Configuration ---
+const POINT_COUNT = 2048;
+const DEFAULT_CYCLES = 8;
+const DEFAULT_MIN_RADIUS = 0;
+const DEFAULT_MAX_RADIUS = 5;
+const LINE_WIDTH = 1.5;
+
+// --- Color palettes (DotField HSL scheme) ---
+// Each palette defines hue (0-360), saturation (0-100), lightness (0-100)
+interface PolarPalette {
+  hue: number;
+  saturation: number;
+  lightness: number;
 }
 
-interface PolarCurve {
-  id: number;
-  birthTime: number;
-  phaseOffset: number;
-  radiusOffset: number;
-  opacity: number;
-  hue: number;
+const PALETTES: Record<string, PolarPalette> = {
+  gold:    { hue: 45,  saturation: 80, lightness: 55 },
+  azure:   { hue: 200, saturation: 70, lightness: 50 },
+  rose:    { hue: 340, saturation: 75, lightness: 55 },
+  emerald: { hue: 150, saturation: 65, lightness: 45 },
+  violet:  { hue: 270, saturation: 70, lightness: 55 },
+};
+
+// --- MIDI pitch mappings ---
+// Jitter + freq shift: 48-59 (12 notes)
+const PITCH_JITTER_MIN = 48;
+const PITCH_JITTER_MAX = 59;
+// Palette toggles: 60-63
+const PITCH_PAL_AZURE = 60;
+const PITCH_PAL_ROSE = 61;
+const PITCH_PAL_EMERALD = 62;
+const PITCH_PAL_VIOLET = 63;
+
+// --- Oscillator layer definitions ---
+
+interface OscillatorDef {
+  freqBase: number;
+  freqDrift: number;
+  freqRate: number;
+  ampBase: number;
+  ampDrift: number;
+  ampRate: number;
+  phaseRate: number;
+  phaseModDepth: number;
+  phaseModRate: number;
+  lightnessOffset: number; // added to palette lightness for per-layer depth
+}
+
+const OSCILLATORS: OscillatorDef[] = [
+  {
+    freqBase: 3.0, freqDrift: 0.6, freqRate: 0.09,
+    ampBase: 0.55, ampDrift: 0.15, ampRate: 0.13,
+    phaseRate: 0.05, phaseModDepth: 0.4, phaseModRate: 0.07,
+    lightnessOffset: 0.02,
+  },
+  {
+    freqBase: 5.0, freqDrift: 0.9, freqRate: 0.07,
+    ampBase: 0.42, ampDrift: 0.12, ampRate: 0.19,
+    phaseRate: -0.08, phaseModDepth: 0.5, phaseModRate: 0.11,
+    lightnessOffset: 0.05,
+  },
+  {
+    freqBase: 8.0, freqDrift: 1.4, freqRate: 0.11,
+    ampBase: 0.32, ampDrift: 0.10, ampRate: 0.23,
+    phaseRate: 0.12, phaseModDepth: 0.6, phaseModRate: 0.09,
+    lightnessOffset: 0.08,
+  },
+  {
+    freqBase: 13.0, freqDrift: 1.8, freqRate: 0.05,
+    ampBase: 0.22, ampDrift: 0.08, ampRate: 0.31,
+    phaseRate: -0.15, phaseModDepth: 0.8, phaseModRate: 0.13,
+    lightnessOffset: 0.10,
+  },
+  {
+    freqBase: 6.5, freqDrift: 2.2, freqRate: 0.06,
+    ampBase: 0.35, ampDrift: 0.10, ampRate: 0.17,
+    phaseRate: 0.03, phaseModDepth: 0.5, phaseModRate: 0.08,
+    lightnessOffset: 0.04,
+  },
+  {
+    freqBase: 2.0, freqDrift: 0.4, freqRate: 0.13,
+    ampBase: 0.30, ampDrift: 0.10, ampRate: 0.11,
+    phaseRate: 0.04, phaseModDepth: 0.3, phaseModRate: 0.05,
+    lightnessOffset: -0.02,
+  },
+];
+
+const LAYER_COUNT = OSCILLATORS.length;
+
+// Frequency multiplier per jitter note (0-11)
+const FREQ_MULTIPLIERS = [
+  0.60, 0.70, 0.80, 0.90, 1.00, 1.10,
+  1.25, 1.40, 1.60, 1.80, 2.00, 2.30,
+];
+
+// --- Types ---
+
+interface CurveObjects {
   line: Line2;
   geometry: LineGeometry;
   material: LineMaterial;
 }
 
-// Configuration
-const CONFIG = {
-  pointCount: 512, // More points for smoother curves
-  initialRadius: 0.6,
-  expansionSpeed: 0.5,
-  maxRadiusOffset: 5,
-  fadeStartOffset: 2,
-  zWobbleAmplitude: 0.12,
-  zWobbleFrequency: 6,
-  lineWidth: 4, // Thick lines!
-  // Oscillation parameters for symmetric rose curve
-  oscSpeed: 0.25,
-  // Symmetric rose: r = 1 + amp * cos(petals * θ)
-  petalsBase: 6, // Base number of petals (6-fold symmetry)
-  petalsRange: 2, // Oscillates between 4-8 petals
-  ampBase: 0.5,
-  ampRange: 0.15,
-  // Secondary modulation for more complex shapes
-  secondaryPetals: 3,
-  secondaryAmpBase: 0.2,
-  secondaryAmpRange: 0.1,
-};
-
-let curveIdCounter = 0;
-
-interface OscParams {
-  oscSpeed: number;
-  zWobble: number;
-  lineWidth: number;
+interface JitterNote {
+  pitchIdx: number;
+  velScale: number;
 }
 
-// Oscillation for number of petals (stays integer-ish for cleaner symmetry)
-function oscillatePetals(time: number, phaseOffset: number, oscSpeed: number): number {
-  const t = time * oscSpeed + phaseOffset;
-  const raw = CONFIG.petalsBase + Math.sin(t * 0.4) * CONFIG.petalsRange;
-  return Math.round(raw); // Keep it integer for clean symmetry
+// ---------------------------------------------------------------------------
+// Radius computation
+// ---------------------------------------------------------------------------
+
+function layerRadius(
+  theta: number,
+  t: number,
+  phi: number,
+  osc: OscillatorDef,
+  speed: number,
+  freqMult: number,
+  minR: number,
+  maxR: number,
+): number {
+  const st = t * speed;
+
+  const baseR =
+    1.0 +
+    0.12 * Math.sin(st * 0.19 + phi) +
+    0.08 * Math.sin(st * 0.31 + phi * 0.5);
+
+  const freq =
+    (osc.freqBase * freqMult) +
+    osc.freqDrift * Math.sin(st * osc.freqRate + phi * 0.3);
+
+  const amp = osc.ampBase + osc.ampDrift * Math.sin(st * osc.ampRate + phi * 1.3);
+
+  const phase =
+    st * osc.phaseRate +
+    osc.phaseModDepth * Math.sin(st * osc.phaseModRate + phi * 0.7);
+
+  const raw = baseR + minR + amp * Math.cos(freq * theta + phase);
+
+  return Math.min(maxR, raw);
 }
 
-// Oscillation for amplitude
-function oscillateAmp(time: number, phaseOffset: number, oscSpeed: number): number {
-  const t = time * oscSpeed + phaseOffset;
-  return CONFIG.ampBase + Math.sin(t * 0.7 + 0.3) * CONFIG.ampRange;
-}
+// ---------------------------------------------------------------------------
+// Line helpers
+// ---------------------------------------------------------------------------
 
-// Secondary amplitude oscillation
-function oscillateSecondaryAmp(time: number, phaseOffset: number, oscSpeed: number): number {
-  const t = time * oscSpeed + phaseOffset;
-  return CONFIG.secondaryAmpBase + Math.sin(t * 0.5 + 1.1) * CONFIG.secondaryAmpRange;
-}
-
-// Generate points for symmetric polar rose curve
-// r = 1 + amp1 * cos(n1 * θ) + amp2 * cos(n2 * θ)
-function generateCurvePoints(
-  time: number,
-  phaseOffset: number,
-  radiusOffset: number,
-  params: OscParams
-): number[] {
-  const positions: number[] = [];
-
-  const petals = oscillatePetals(time, phaseOffset, params.oscSpeed);
-  const amp = oscillateAmp(time, phaseOffset, params.oscSpeed);
-  const secondaryAmp = oscillateSecondaryAmp(time, phaseOffset, params.oscSpeed);
-
-  for (let i = 0; i <= CONFIG.pointCount; i++) {
-    const theta = (i / CONFIG.pointCount) * Math.PI * 2;
-
-    // Symmetric rose curve: r = 1 + amp * cos(petals * θ) + secondaryAmp * cos(secondaryPetals * θ)
-    // This is inherently symmetric with n-fold rotational symmetry
-    const baseR = 1 + amp * Math.cos(petals * theta) + secondaryAmp * Math.cos(CONFIG.secondaryPetals * theta);
-
-    // Add to radius for outward expansion
-    const r = (baseR * CONFIG.initialRadius) + radiusOffset;
-
-    // Convert to cartesian
-    const x = r * Math.cos(theta);
-    const y = r * Math.sin(theta);
-
-    // Z wobble - symmetric pattern
-    const zWobblePhase = theta * CONFIG.zWobbleFrequency + time * 0.4 + phaseOffset * 0.2;
-    const z = Math.sin(zWobblePhase) * params.zWobble * (1 + radiusOffset * 0.08);
-
-    positions.push(x, y, z);
-  }
-
-  return positions;
-}
-
-// Bright, glowy color for bloom
-function getColorForDistance(baseHue: number, radiusOffset: number): THREE.Color {
-  const hueShift = radiusOffset * 0.04;
-  const hue = (baseHue + hueShift) % 1;
-  // High saturation and lightness for maximum glow
-  const saturation = 1.0;
-  const lightness = 0.65 + radiusOffset * 0.03;
-
-  const color = new THREE.Color();
-  color.setHSL(hue, saturation, Math.min(lightness, 0.75));
-  return color;
-}
-
-function createCurveLine(
-  scene: THREE.Group,
+function makeLine(
+  group: THREE.Group,
   resolution: THREE.Vector2,
   lineWidth: number,
-  initialPositions: number[]
-): { line: Line2; geometry: LineGeometry; material: LineMaterial } {
+): CurveObjects {
+  const positions = new Array((POINT_COUNT + 1) * 3).fill(0);
+  for (let i = 0; i <= POINT_COUNT; i++) {
+    const a = (i / POINT_COUNT) * Math.PI * 2;
+    positions[i * 3] = Math.cos(a);
+    positions[i * 3 + 1] = Math.sin(a);
+  }
+
   const geometry = new LineGeometry();
-  geometry.setPositions(initialPositions);
+  geometry.setPositions(positions);
 
   const material = new LineMaterial({
     color: 0xffffff,
@@ -144,150 +180,239 @@ function createCurveLine(
     transparent: true,
     opacity: 1,
     depthWrite: false,
-    // Required for LineMaterial
     resolution,
-    worldUnits: false, // Use screen-space width
+    worldUnits: false,
   });
 
   const line = new Line2(geometry, material);
   line.computeLineDistances();
-  scene.add(line);
+  group.add(line);
 
   return { line, geometry, material };
 }
 
-function NeonPolarVisual({ trackId }: NeonPolarProps) {
+function updateLayerCurve(
+  geometry: LineGeometry,
+  line: Line2,
+  t: number,
+  phi: number,
+  osc: OscillatorDef,
+  speed: number,
+  cycles: number,
+  freqMult: number,
+  jitterNotes: JitterNote[],
+  minR: number,
+  maxR: number,
+): void {
+  const positions: number[] = [];
+  const totalAngle = cycles * Math.PI * 2;
+
+  for (let i = 0; i <= POINT_COUNT; i++) {
+    const theta = (i / POINT_COUNT) * totalAngle;
+    let r = layerRadius(theta, t, phi, osc, speed, freqMult, minR, maxR);
+
+    // Jitter from held MIDI notes
+    for (let j = 0; j < jitterNotes.length; j++) {
+      const { pitchIdx, velScale } = jitterNotes[j];
+      const normPitch = pitchIdx / 11;
+      const amp = 0.02 + normPitch * 0.06;
+      const freq = 30 + pitchIdx * 7;
+      const pPhase = theta * (1 + pitchIdx * 0.5);
+      const sharpness = 0.2 + normPitch * 0.6;
+      const raw = Math.sin(t * freq + pPhase);
+      const shaped = Math.sign(raw) * Math.pow(Math.abs(raw), 1 - sharpness);
+      r += shaped * amp * velScale;
+    }
+
+    positions.push(r * Math.cos(theta), r * Math.sin(theta), 0);
+  }
+
+  geometry.setPositions(positions);
+  line.computeLineDistances();
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+function NeonPolarVisual({ trackId }: { trackId: string }) {
   const groupRef = useRef<THREE.Group>(null);
   const engineRef = useRef(getVisualPlaybackEngine());
-  const curvesRef = useRef<PolarCurve[]>([]);
-  const lastNoteOnCountRef = useRef(0);
+  const layerLinesRef = useRef<CurveObjects[]>([]);
   const timeRef = useRef(0);
-  const hueCounterRef = useRef(0);
+  const paletteKey = useRef('gold');
+  const prevCounts = useRef(new Map<number, number>());
   const { size } = useThree();
   const resolutionRef = useRef(new THREE.Vector2(size.width, size.height));
+  const scratchColor = useRef(new THREE.Color());
 
-  // Update resolution when size changes
   useEffect(() => {
     resolutionRef.current.set(size.width, size.height);
-    // Update all existing materials
-    for (const curve of curvesRef.current) {
-      curve.material.resolution.set(size.width, size.height);
-    }
+    for (const c of layerLinesRef.current)
+      c.material.resolution.set(size.width, size.height);
   }, [size.width, size.height]);
+
+  useEffect(() => {
+    const group = groupRef.current;
+    if (!group) return;
+
+    const lines: CurveObjects[] = [];
+    for (let i = 0; i < LAYER_COUNT; i++) {
+      lines.push(makeLine(group, resolutionRef.current, LINE_WIDTH));
+    }
+    layerLinesRef.current = lines;
+
+    return () => {
+      for (const c of layerLinesRef.current) {
+        group.remove(c.line);
+        c.geometry.dispose();
+        c.material.dispose();
+      }
+      layerLinesRef.current = [];
+    };
+  }, []);
 
   useFrame((_, delta) => {
     const group = groupRef.current;
     if (!group) return;
-
     const state = engineRef.current.getTrackState(trackId);
     if (!state) return;
 
-    // Get params from state
-    const expansionSpeed = (state.params.expansionSpeed as number) ?? CONFIG.expansionSpeed;
-    const zWobble = (state.params.zWobble as number) ?? CONFIG.zWobbleAmplitude;
-    const oscSpeed = (state.params.oscSpeed as number) ?? CONFIG.oscSpeed;
-    const lineWidth = (state.params.lineWidth as number) ?? CONFIG.lineWidth;
-    const oscParams: OscParams = { oscSpeed, zWobble, lineWidth };
+    const speed = (state.params.speed as number) ?? 1;
+    const complexity = (state.params.complexity as number) ?? 1;
+    const lineWidth = (state.params.lineWidth as number) ?? LINE_WIDTH;
+    const cycles = (state.params.cycles as number) ?? DEFAULT_CYCLES;
+    const minRadius = (state.params.minRadius as number) ?? DEFAULT_MIN_RADIUS;
+    const maxRadius = (state.params.maxRadius as number) ?? DEFAULT_MAX_RADIUS;
 
     timeRef.current += delta;
-    const time = timeRef.current;
+    const t = timeRef.current;
 
-    // Spawn new curve on MIDI event (clamp to max 3 per frame for scrub safety)
-    const rawDelta = state.noteOnCount - lastNoteOnCountRef.current;
-    lastNoteOnCountRef.current = state.noteOnCount;
+    const prev = prevCounts.current;
 
-    if (rawDelta > 0) {
-      const newCount = Math.min(rawDelta, 3);
+    // --- MIDI: jitter notes + freq shift + palette toggles ---
+    const jitterNotes: JitterNote[] = [];
+    let freqMult = 1.0;
+    let heldCount = 0;
+    let multAccum = 0;
 
-      for (let i = 0; i < newCount; i++) {
-        const phaseOffset = (hueCounterRef.current * 0.7) + Math.random() * 0.3;
-        const baseHue = (hueCounterRef.current * 0.12) % 1;
-        hueCounterRef.current++;
+    for (const [pitch, event] of state.activeNotes) {
+      if (pitch >= PITCH_JITTER_MIN && pitch <= PITCH_JITTER_MAX) {
+        const pitchIdx = pitch - PITCH_JITTER_MIN;
+        jitterNotes.push({ pitchIdx, velScale: event.velocity / 127 });
+        multAccum += FREQ_MULTIPLIERS[pitchIdx];
+        heldCount++;
+      }
+    }
+    if (heldCount > 0) {
+      freqMult = multAccum / heldCount;
+    }
 
-        // Generate initial positions before creating the line
-        const initialPositions = generateCurvePoints(time, phaseOffset, 0, oscParams);
-        const { line, geometry, material } = createCurveLine(group, resolutionRef.current, lineWidth, initialPositions);
+    // Palette toggles (MetronomeBalls paradigm: odd note-on count toggles)
+    const palPitches: [number, string][] = [
+      [PITCH_PAL_AZURE, 'azure'],
+      [PITCH_PAL_ROSE, 'rose'],
+      [PITCH_PAL_EMERALD, 'emerald'],
+      [PITCH_PAL_VIOLET, 'violet'],
+    ];
 
-        const curve: PolarCurve = {
-          id: curveIdCounter++,
-          birthTime: time,
-          phaseOffset,
-          radiusOffset: 0,
-          opacity: 1,
-          hue: baseHue,
-          line,
-          geometry,
-          material,
-        };
-
-        curvesRef.current.push(curve);
+    for (const [pp, key] of palPitches) {
+      const cnt = state.pitchNoteOnCounts.get(pp) ?? 0;
+      const prevVal = prev.get(pp) ?? 0;
+      const d = cnt - prevVal;
+      if (d > 0 && d % 2 === 1) {
+        paletteKey.current = paletteKey.current === key ? 'gold' : key;
       }
     }
 
-    // Update all curves
-    const deadCurves: PolarCurve[] = [];
+    prevCounts.current = new Map(state.pitchNoteOnCounts);
 
-    for (const curve of curvesRef.current) {
-      curve.radiusOffset += expansionSpeed * delta;
+    // --- Resolve current palette ---
+    const pal = PALETTES[paletteKey.current] ?? PALETTES.gold;
+    const baseH = pal.hue / 360;
+    const baseS = pal.saturation / 100;
+    const baseL = pal.lightness / 100;
 
-      // Fade based on distance
-      if (curve.radiusOffset > CONFIG.fadeStartOffset) {
-        const fadeProg = (curve.radiusOffset - CONFIG.fadeStartOffset) /
-                         (CONFIG.maxRadiusOffset - CONFIG.fadeStartOffset);
-        curve.opacity = Math.max(0, 1 - fadeProg);
-      }
+    const sc = scratchColor.current;
 
-      if (curve.radiusOffset > CONFIG.maxRadiusOffset || curve.opacity <= 0) {
-        deadCurves.push(curve);
-        continue;
-      }
+    // --- Update each oscillator layer ---
+    for (let i = 0; i < layerLinesRef.current.length; i++) {
+      const curve = layerLinesRef.current[i];
+      const osc = OSCILLATORS[i];
 
-      // Update geometry
-      const positions = generateCurvePoints(time, curve.phaseOffset, curve.radiusOffset, oscParams);
-      curve.geometry.setPositions(positions);
-      curve.line.computeLineDistances();
+      const effectiveOsc =
+        i >= 2
+          ? { ...osc, ampBase: osc.ampBase * complexity, ampDrift: osc.ampDrift * complexity }
+          : osc;
 
-      // Update color and opacity
-      const color = getColorForDistance(curve.hue, curve.radiusOffset);
-      curve.material.color.copy(color);
-      curve.material.opacity = curve.opacity;
+      updateLayerCurve(
+        curve.geometry, curve.line, t, 0, effectiveOsc, speed, cycles,
+        freqMult, jitterNotes, minRadius, maxRadius,
+      );
+
+      // Color from palette + per-layer lightness offset
+      const layerL = Math.max(0.1, Math.min(0.9, baseL + osc.lightnessOffset));
+      sc.setHSL(baseH, baseS, layerL);
+      curve.material.color.copy(sc);
+      curve.material.opacity = 0.75;
       curve.material.linewidth = lineWidth;
     }
-
-    // Remove dead curves
-    for (const curve of deadCurves) {
-      group.remove(curve.line);
-      curve.geometry.dispose();
-      curve.material.dispose();
-    }
-    curvesRef.current = curvesRef.current.filter(c => !deadCurves.includes(c));
   });
 
   return <group ref={groupRef} />;
 }
 
+// ---------------------------------------------------------------------------
+// Instrument export
+// ---------------------------------------------------------------------------
+
 export const NeonPolar: Instrument = {
   id: 'neonPolar',
   name: 'Neon Polar',
-  description: 'Symmetric neon rose curves spawn on MIDI events and expand outward',
+  description:
+    'Polar harmonograph — 6 oscillator layers with drifting frequencies, MIDI jitter, frequency shifting, and palette control',
   icon: '💫',
-  color: '#ff6b9d',
+  color: '#d4a843',
   hasAudio: false,
   hasVisual: true,
   editorType: 'generic',
+  noteRange: { min: PITCH_JITTER_MIN, max: PITCH_PAL_VIOLET },
+  rangeLabels: [
+    { startPitch: PITCH_JITTER_MIN, endPitch: PITCH_JITTER_MAX, label: 'Jitter + Freq Shift' },
+    { startPitch: PITCH_PAL_AZURE, endPitch: PITCH_PAL_AZURE, label: 'Azure' },
+    { startPitch: PITCH_PAL_ROSE, endPitch: PITCH_PAL_ROSE, label: 'Rose' },
+    { startPitch: PITCH_PAL_EMERALD, endPitch: PITCH_PAL_EMERALD, label: 'Emerald' },
+    { startPitch: PITCH_PAL_VIOLET, endPitch: PITCH_PAL_VIOLET, label: 'Violet' },
+  ],
 
   defaultSettings: {
-    expansionSpeed: 0.5,
-    zWobble: 0.12,
-    oscSpeed: 0.25,
-    lineWidth: 4,
+    speed: 1,
+    complexity: 1,
+    lineWidth: LINE_WIDTH,
+    cycles: DEFAULT_CYCLES,
+    minRadius: DEFAULT_MIN_RADIUS,
+    maxRadius: DEFAULT_MAX_RADIUS,
   },
 
   settingsSchema: {
-    expansionSpeed: { type: 'number', label: 'Expansion Speed', min: 0.1, max: 2, step: 0.1, default: 0.5 },
-    zWobble: { type: 'number', label: 'Z Wobble', min: 0, max: 0.4, step: 0.02, default: 0.12 },
-    oscSpeed: { type: 'number', label: 'Oscillation Speed', min: 0.1, max: 1, step: 0.05, default: 0.25 },
-    lineWidth: { type: 'number', label: 'Line Width', min: 1, max: 10, step: 0.5, default: 4 },
+    speed: {
+      type: 'number', label: 'Speed', min: 0.1, max: 3, step: 0.1, default: 1,
+    },
+    complexity: {
+      type: 'number', label: 'Complexity', min: 0.2, max: 2, step: 0.1, default: 1,
+    },
+    lineWidth: {
+      type: 'number', label: 'Line Width', min: 0.5, max: 5, step: 0.5, default: LINE_WIDTH,
+    },
+    cycles: {
+      type: 'number', label: 'Cycles', min: 1, max: 20, step: 1, default: DEFAULT_CYCLES,
+    },
+    minRadius: {
+      type: 'number', label: 'Min Radius', min: -3, max: 3, step: 0.1, default: DEFAULT_MIN_RADIUS,
+    },
+    maxRadius: {
+      type: 'number', label: 'Max Radius', min: 1, max: 10, step: 0.1, default: DEFAULT_MAX_RADIUS,
+    },
   },
 
   VisualComponent: NeonPolarVisual,

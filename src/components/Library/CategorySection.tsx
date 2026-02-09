@@ -18,6 +18,7 @@ const CATEGORY_LABELS: Record<PatternCategory, string> = {
   arp: 'Arps',
   modifier: 'Modifiers',
   rhythm: 'Rhythms',
+  suppress: 'Suppress',
   mute: 'Mutes',
   rest: 'Rests',
   swing: 'Swing',

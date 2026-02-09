@@ -70,6 +70,7 @@ export type TrackTypeId =
   | 'base'
   | 'add'
   | 'override'
+  | 'suppress'
   | 'mute'
   | 'gate'
   | 'shift'
@@ -138,7 +139,7 @@ export interface Project {
   tracks: Record<string, Track>;
 }
 
-export type PatternCategory = 'drums' | 'chords' | 'bass' | 'arp' | 'modifier' | 'rhythm' | 'mute' | 'rest' | 'swing';
+export type PatternCategory = 'drums' | 'chords' | 'bass' | 'arp' | 'modifier' | 'rhythm' | 'suppress' | 'mute' | 'rest' | 'swing';
 
 export type PresetType = 'loop' | 'pattern';
 
