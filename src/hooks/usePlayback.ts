@@ -49,7 +49,16 @@ export function usePlayback() {
 
   const play = useCallback(async () => {
     const engine = engineRef.current;
-    const startBeat = useUIStore.getState().currentBeat;
+    let startBeat = useUIStore.getState().currentBeat;
+
+    // Logic Pro behavior: if loop is enabled and playhead is outside the loop region,
+    // start playback from loop start
+    if (loopEnabled && loopStart !== null && loopEnd !== null && loopStart !== loopEnd) {
+      if (startBeat < loopStart || startBeat >= loopEnd) {
+        startBeat = loopStart;
+        setCurrentBeat(loopStart);
+      }
+    }
 
     // Play from current playhead position
     await engine.playFrom(project, startBeat);
@@ -58,7 +67,7 @@ export function usePlayback() {
     if (loopEnabled && loopStart !== null && loopEnd !== null && loopStart !== loopEnd) {
       engine.setLoopRegion(loopStart, loopEnd, project.beatsPerBar);
     }
-  }, [project, loopEnabled, loopStart, loopEnd]);
+  }, [project, loopEnabled, loopStart, loopEnd, setCurrentBeat]);
 
   const stop = useCallback(() => {
     const engine = engineRef.current;

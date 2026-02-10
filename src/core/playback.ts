@@ -37,6 +37,8 @@ export class PlaybackEngine {
   private parts: Tone.Part[] = [];
   private project: Project | null = null;
   private isInitialized = false;
+  private loopStartBeat: number | null = null;
+  private loopEndBeat: number | null = null;
 
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
@@ -139,6 +141,10 @@ export class PlaybackEngine {
       part.dispose();
     }
     this.parts = [];
+
+    // Reset loop tracking
+    this.loopStartBeat = null;
+    this.loopEndBeat = null;
 
     // Stop beat tracking
     if (this.animationFrame !== null) {
@@ -365,8 +371,6 @@ export class PlaybackEngine {
   }
 
   private startBeatTracking(project: Project): void {
-    const totalBeats = project.totalBars * project.beatsPerBar;
-
     const update = () => {
       if (this.state !== 'playing') return;
 
@@ -375,8 +379,8 @@ export class PlaybackEngine {
       // Include sixteenths for smooth sub-beat movement
       const currentBeat = (bars || 0) * project.beatsPerBar + (beats || 0) + (sixteenths || 0) / 4;
 
-      // Update every frame for smooth playhead movement
-      this.callbacks.onBeatChange?.(currentBeat % totalBeats);
+      // Transport handles loop wrapping natively, so just report the position directly
+      this.callbacks.onBeatChange?.(currentBeat);
 
       this.animationFrame = requestAnimationFrame(update);
     };
@@ -520,12 +524,17 @@ export class PlaybackEngine {
 
     if (startBeat === null || endBeat === null) {
       // Clear loop region - restore full project loop
+      this.loopStartBeat = null;
+      this.loopEndBeat = null;
       if (this.project) {
         transport.loopStart = 0;
         transport.loopEnd = `${this.project.totalBars}:0`;
       }
       return;
     }
+
+    this.loopStartBeat = startBeat;
+    this.loopEndBeat = endBeat;
 
     // Set custom loop region
     const startBars = Math.floor(startBeat / beatsPerBar);
@@ -535,6 +544,61 @@ export class PlaybackEngine {
 
     transport.loopStart = `${startBars}:${startBeats}:0`;
     transport.loopEnd = `${endBars}:${endBeats}:0`;
+
+    // Schedule audio re-triggering at loop start point so audio blocks
+    // that start before the loop region still play when the loop wraps
+    this.scheduleLoopAudioRetrigger(startBeat, beatsPerBar);
+  }
+
+  private scheduleLoopAudioRetrigger(loopStartBeat: number, beatsPerBar: number): void {
+    if (!this.project) return;
+
+    const loopStartBars = Math.floor(loopStartBeat / beatsPerBar);
+    const loopStartBeats = loopStartBeat % beatsPerBar;
+    const loopStartTime = `${loopStartBars}:${loopStartBeats}:0`;
+
+    for (const trackId of Object.keys(this.project.tracks)) {
+      const track = this.project.tracks[trackId];
+      if (!track || track.instrumentId !== 'audioPlayer' || this.isAudioTrackSkipped(track, this.project)) continue;
+
+      for (const block of track.blocks) {
+        if (!block.audioData) continue;
+
+        const blockStartBeat = block.startBar * beatsPerBar;
+        const blockEndBeat = (block.startBar + block.durationBars) * beatsPerBar;
+
+        // If block spans the loop start point (starts before loop start, ends after it),
+        // schedule a re-trigger at loop start
+        if (blockStartBeat < loopStartBeat && blockEndBeat > loopStartBeat) {
+          const playerState = this.audioPlayers.get(block.id);
+          if (!playerState) continue;
+
+          const blockAudioOffset = block.audioOffset ?? 0;
+          const beatsIntoBlock = loopStartBeat - blockStartBeat;
+          const secondsPerBeat = 60 / this.project.bpm;
+          const secondsIntoBlock = beatsIntoBlock * secondsPerBeat;
+
+          let seekOffset = blockAudioOffset + secondsIntoBlock;
+          if (block.loop && block.audioData.duration > 0) {
+            const loopLength = block.audioData.duration - blockAudioOffset;
+            if (loopLength > 0) {
+              seekOffset = blockAudioOffset + (secondsIntoBlock % loopLength);
+            }
+          }
+
+          // Schedule audio restart at loop start
+          const retriggerPart = new Tone.Part((time) => {
+            playerState.player.stop(time);
+            playerState.player.start(time, seekOffset);
+          }, [{ time: loopStartTime }]);
+
+          retriggerPart.start(0);
+          retriggerPart.loop = true;
+          retriggerPart.loopEnd = `${this.project.totalBars}:0`;
+          this.parts.push(retriggerPart);
+        }
+      }
+    }
   }
 
   dispose(): void {

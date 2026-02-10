@@ -3,6 +3,7 @@ import { VisualPlugin, PluginCategory } from './types';
 // Import plugin definitions directly (no side effects)
 import { RotatePlugin } from './transforms/rotate';
 import { ScalePlugin } from './transforms/scale';
+import { OffsetPlugin } from './transforms/offset';
 import { KaleidoscopePlugin } from './shaders/kaleidoscope';
 import { PixelatePlugin } from './shaders/pixelate';
 import { ChromaticAberrationPlugin } from './shaders/chromaticAberration';
@@ -17,6 +18,7 @@ export const VISUAL_PLUGINS: Record<string, VisualPlugin> = {
   // Transforms
   [RotatePlugin.id]: RotatePlugin,
   [ScalePlugin.id]: ScalePlugin,
+  [OffsetPlugin.id]: OffsetPlugin,
   // Shaders
   [KaleidoscopePlugin.id]: KaleidoscopePlugin,
   [PixelatePlugin.id]: PixelatePlugin,

@@ -35,6 +35,10 @@ const DEFAULTS = {
   delayTime: 0.3,
   delayScaleFalloff: 0.15,
   delayOpacityFalloff: 0.25,
+  pingPongEnabled: false,
+  pingPongWidth: 0.3,
+  heightLegato: false,
+  heightLegatoSpeed: 4,
   heightAmount: 0.35,
   opacity: 1,
   color: '#ffffff',
@@ -122,6 +126,8 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
   const lastColorRef = useRef('');
   const noteOnTimeRef = useRef(-1); // clock time when current note started
   const currentYOffsetRef = useRef(0); // current height offset (-1 to 1)
+  const targetYOffsetRef = useRef(0); // legato target
+  const lastFrameTimeRef = useRef(0);
   const { viewport } = useThree();
   const [ready, setReady] = useState(false);
 
@@ -242,6 +248,10 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
     const delayTime = (state.params.delayTime as number) ?? DEFAULTS.delayTime;
     const delayScaleFalloff = (state.params.delayScaleFalloff as number) ?? DEFAULTS.delayScaleFalloff;
     const delayOpacityFalloff = (state.params.delayOpacityFalloff as number) ?? DEFAULTS.delayOpacityFalloff;
+    const pingPongEnabled = (state.params.pingPongEnabled as boolean) ?? DEFAULTS.pingPongEnabled;
+    const pingPongWidth = (state.params.pingPongWidth as number) ?? DEFAULTS.pingPongWidth;
+    const heightLegato = (state.params.heightLegato as boolean) ?? DEFAULTS.heightLegato;
+    const heightLegatoSpeed = (state.params.heightLegatoSpeed as number) ?? DEFAULTS.heightLegatoSpeed;
     const heightAmount = (state.params.heightAmount as number) ?? DEFAULTS.heightAmount;
     const textOpacity = (state.params.opacity as number) ?? DEFAULTS.opacity;
     const color = (state.params.color as string) ?? DEFAULTS.color;
@@ -263,6 +273,9 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
     const isNoteHeld = state.activeNotes.has(PITCH_NEXT_WORD);
 
     // Compute current height offset from latest held height pitch
+    const dt = now - lastFrameTimeRef.current;
+    lastFrameTimeRef.current = now;
+
     let latestHeightPitch = -1;
     for (const pitch of state.activeNotes.keys()) {
       if (pitch >= PITCH_HEIGHT_MIN && pitch <= PITCH_HEIGHT_MAX) {
@@ -270,8 +283,16 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
       }
     }
     if (latestHeightPitch >= 0) {
-      // Map pitch to -1..1, with PITCH_HEIGHT_CENTER = 0
-      currentYOffsetRef.current = (latestHeightPitch - PITCH_HEIGHT_CENTER) / (PITCH_HEIGHT_MAX - PITCH_HEIGHT_CENTER);
+      const target = (latestHeightPitch - PITCH_HEIGHT_CENTER) / (PITCH_HEIGHT_MAX - PITCH_HEIGHT_CENTER);
+      targetYOffsetRef.current = target;
+
+      if (heightLegato && dt > 0 && dt < 0.5) {
+        // Exponential lerp toward target
+        const t = 1 - Math.exp(-heightLegatoSpeed * dt);
+        currentYOffsetRef.current += (target - currentYOffsetRef.current) * t;
+      } else {
+        currentYOffsetRef.current = target;
+      }
     }
 
     if (currentCount !== prevCountRef.current && currentCount > 0) {
@@ -368,6 +389,10 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
 
       const tapScale = baseScale * Math.max(0.1, 1 - delayScaleFalloff * tapNum);
       mesh.scale.set(tapScale, tapScale, 1);
+      // Ping-pong: odd taps go left, even taps go right
+      mesh.position.x = pingPongEnabled
+        ? (tapNum % 2 === 1 ? -1 : 1) * pingPongWidth * viewport.width * 0.5
+        : 0;
       mesh.position.y = bestEntry.yOffset * viewport.height * heightAmount;
       mesh.position.z = -0.01 * tapNum;
 
@@ -514,6 +539,13 @@ export const TextDisplay: Instrument = {
       type: 'number', label: 'Delay Opacity Falloff', min: 0, max: 0.5, step: 0.02,
       default: DEFAULTS.delayOpacityFalloff,
     },
+    pingPongEnabled: {
+      type: 'boolean', label: 'Ping Pong Delay', default: DEFAULTS.pingPongEnabled,
+    },
+    pingPongWidth: {
+      type: 'number', label: 'Ping Pong Width', min: 0.05, max: 1, step: 0.05,
+      default: DEFAULTS.pingPongWidth,
+    },
     opacity: {
       type: 'number', label: 'Opacity', min: 0, max: 1, step: 0.05,
       default: DEFAULTS.opacity,
@@ -525,6 +557,13 @@ export const TextDisplay: Instrument = {
     heightAmount: {
       type: 'number', label: 'Height Amount', min: 0, max: 1, step: 0.05,
       default: DEFAULTS.heightAmount,
+    },
+    heightLegato: {
+      type: 'boolean', label: 'Height Legato', default: DEFAULTS.heightLegato,
+    },
+    heightLegatoSpeed: {
+      type: 'number', label: 'Legato Speed', min: 0.5, max: 20, step: 0.5,
+      default: DEFAULTS.heightLegatoSpeed,
     },
     reverbEnabled: {
       type: 'boolean', label: 'Reverb', default: DEFAULTS.reverbEnabled,
