@@ -434,6 +434,7 @@ export function TimelineCanvas({
   const updateBlock = useProjectStore((state) => state.updateBlock);
   const addBlock = useProjectStore((state) => state.addBlock);
   const addTrack = useProjectStore((state) => state.addTrack);
+  const moveBlock = useProjectStore((state) => state.moveBlock);
   const tracks = useProjectStore((state) => state.project.tracks);
   const { isPlaying, seekTo, setLoopRegion } = usePlayback();
 
@@ -459,7 +460,7 @@ export function TimelineCanvas({
     block?: Block;
     track?: Track;
     trackIndex?: number;
-    originalPositions?: Map<string, { startBar: number; durationBars: number; trackId: string; audioOffset?: number; audioData?: import('@/core/types').AudioData }>;
+    originalPositions?: Map<string, { startBar: number; durationBars: number; trackId: string; trackIndex: number; audioOffset?: number; audioData?: import('@/core/types').AudioData }>;
     isCopying?: boolean;
   }>({
     type: 'none',
@@ -556,7 +557,7 @@ export function TimelineCanvas({
     const blocksToProcess = selectedBlockIds.has(block.id) ? selectedBlockIds : new Set([block.id]);
     const shouldCopy = isAltHeld && dragType === 'drag';
 
-    const originalPositions = new Map<string, { startBar: number; durationBars: number; trackId: string; audioOffset?: number; audioData?: import('@/core/types').AudioData }>();
+    const originalPositions = new Map<string, { startBar: number; durationBars: number; trackId: string; trackIndex: number; audioOffset?: number; audioData?: import('@/core/types').AudioData }>();
     const newBlockIds: string[] = [];
 
     for (const blockId of blocksToProcess) {
@@ -574,19 +575,23 @@ export function TimelineCanvas({
               })),
               audioData: foundBlock.audioData ? { ...foundBlock.audioData } : undefined,
             });
+            const ti = flatTracks.findIndex(n => n.track.id === trackId);
             originalPositions.set(newBlockId, {
               startBar: foundBlock.startBar,
               durationBars: foundBlock.durationBars,
               trackId,
+              trackIndex: ti >= 0 ? ti : 0,
               audioOffset: foundBlock.audioOffset,
               audioData: foundBlock.audioData,
             });
             newBlockIds.push(newBlockId);
           } else {
+            const ti2 = flatTracks.findIndex(n => n.track.id === trackId);
             originalPositions.set(blockId, {
               startBar: foundBlock.startBar,
               durationBars: foundBlock.durationBars,
               trackId,
+              trackIndex: ti2 >= 0 ? ti2 : 0,
               audioOffset: foundBlock.audioOffset,
               audioData: foundBlock.audioData,
             });
@@ -677,9 +682,22 @@ export function TimelineCanvas({
         const deltaQuantizeUnits = Math.round(deltaX / quantizePixels);
         const deltaBars = (deltaQuantizeUnits * snapSize) / beatsPerBar;
 
+        const deltaY = y - dragState.startY;
+        const deltaTrackIndex = Math.round(deltaY / trackHeight);
+
         for (const [blockId, original] of dragState.originalPositions) {
           const newStartBar = Math.max(0, original.startBar + deltaBars);
-          updateBlock(original.trackId, blockId, { startBar: newStartBar });
+
+          // Vertical: move to new track if needed
+          const newTrackIndex = Math.min(flatTracks.length - 1, Math.max(0, original.trackIndex + deltaTrackIndex));
+          const targetTrackId = flatTracks[newTrackIndex].track.id;
+          const currentTrackId = findTrackForBlock(tracks, blockId);
+          if (currentTrackId && currentTrackId !== targetTrackId) {
+            moveBlock(currentTrackId, blockId, targetTrackId);
+          }
+
+          // Horizontal: use targetTrackId since block may have just moved
+          updateBlock(targetTrackId, blockId, { startBar: newStartBar });
         }
       } else if (dragState.type === 'resize-left' && dragState.originalPositions) {
         const deltaX = x - dragState.startX;
@@ -788,7 +806,7 @@ export function TimelineCanvas({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [dragState, barWidth, trackHeight, flatTracks, updateBlock, selectBlocks, tracks, beatsPerBar, screenToWorld, pixelsPerBeat, timelineQuantize, timelineSnapEnabled]);
+  }, [dragState, barWidth, trackHeight, flatTracks, updateBlock, moveBlock, selectBlocks, tracks, beatsPerBar, screenToWorld, pixelsPerBeat, timelineQuantize, timelineSnapEnabled]);
 
   // Loop drag move/up
   useEffect(() => {
