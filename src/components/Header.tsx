@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { usePlayback } from '@/hooks/usePlayback';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -8,7 +8,6 @@ import { UndoRedoButtons } from './UndoRedoButtons';
 
 export function Header() {
   const { isPlaying, play, pause, seekTo, setBpm } = usePlayback();
-  const currentBeat = useUIStore((state) => state.currentBeat);
   // Granular selectors - only re-render when specific values change
   const projectId = useProjectStore((state) => state.project.id);
   const projectName = useProjectStore((state) => state.project.name);
@@ -17,6 +16,24 @@ export function Header() {
   const beatsPerBar = useProjectStore((state) => state.project.beatsPerBar);
   const { setTotalBars, renameProject } = useProjectStore();
   const { toggleLibrary, toggleInspector, showLibrary, showInspector, setCurrentView } = useUIStore();
+
+  // Imperative beat display refs (avoids 60fps re-renders)
+  const barDisplayRef = useRef<HTMLSpanElement>(null);
+  const beatDisplayRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    let rafId: number;
+    const update = () => {
+      const currentBeat = useUIStore.getState().currentBeat;
+      const currentBar = Math.floor(currentBeat / beatsPerBar) + 1;
+      const beatInBar = Math.floor(currentBeat % beatsPerBar) + 1;
+      if (barDisplayRef.current) barDisplayRef.current.textContent = String(currentBar);
+      if (beatDisplayRef.current) beatDisplayRef.current.textContent = String(beatInBar);
+      rafId = requestAnimationFrame(update);
+    };
+    rafId = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(rafId);
+  }, [beatsPerBar]);
 
   // Local state for inputs to allow free typing without immediate clamping
   const [bpmInput, setBpmInput] = useState(String(bpm));
@@ -36,9 +53,6 @@ export function Header() {
   useEffect(() => {
     setEditName(projectName);
   }, [projectName]);
-
-  const currentBar = Math.floor(currentBeat / beatsPerBar) + 1;
-  const beatInBar = Math.floor(currentBeat % beatsPerBar) + 1;
 
   const handleSaveName = () => {
     const trimmed = editName.trim();
@@ -120,27 +134,21 @@ export function Header() {
             onClick={() => {
               if (isPlaying) {
                 pause();
-              } else if (currentBeat > 0) {
+              } else if (useUIStore.getState().currentBeat > 0) {
                 seekTo(0);
               }
             }}
-            className={`w-12 h-12 rounded-l-md flex items-center justify-center text-lg transition-all active:bg-muted/80 active:scale-95 ${
-              isPlaying
-                ? 'bg-surface hover:bg-muted text-foreground'
-                : currentBeat > 0
-                  ? 'bg-surface hover:bg-muted text-foreground'
-                  : 'bg-surface hover:bg-muted text-muted-foreground/50'
-            }`}
-            aria-label={isPlaying ? 'Pause' : currentBeat > 0 ? 'Rewind' : 'Stop'}
+            className="w-12 h-12 rounded-l-md flex items-center justify-center text-lg transition-all active:bg-muted/80 active:scale-95 bg-surface hover:bg-muted text-foreground"
+            aria-label={isPlaying ? 'Pause' : 'Stop'}
           >
-            {!isPlaying && currentBeat > 0 ? (
+            {isPlaying ? (
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="4" y="4" width="16" height="16" rx="2" />
+              </svg>
+            ) : (
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                 <rect x="4" y="5" width="4" height="14" />
                 <polygon points="20,5 20,19 9,12" />
-              </svg>
-            ) : (
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                <rect x="4" y="4" width="16" height="16" rx="2" />
               </svg>
             )}
           </button>
@@ -166,9 +174,9 @@ export function Header() {
 
         {/* Position Display */}
         <div className="bg-background rounded-lg px-4 py-2 font-mono text-lg w-20 text-center">
-          <span className="text-foreground">{currentBar}</span>
+          <span ref={barDisplayRef} className="text-foreground">1</span>
           <span className="text-muted-foreground">.</span>
-          <span className="text-muted-foreground">{beatInBar}</span>
+          <span ref={beatDisplayRef} className="text-muted-foreground">1</span>
         </div>
 
         {/* BPM Control */}

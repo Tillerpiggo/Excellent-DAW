@@ -85,4 +85,16 @@ export const Keys: Instrument = {
     const velocity = event.velocity / 127;
     inst.synth.triggerAttackRelease(note, event.duration, time, velocity);
   },
+
+  updateParam: (instance: AudioInstance, key: string, value: number) => {
+    const inst = instance as KeysInstance;
+    switch (key) {
+      case 'reverbWet':
+        inst.reverb.wet.value = value;
+        break;
+      case 'volume':
+        inst.synth.volume.value = value;
+        break;
+    }
+  },
 };

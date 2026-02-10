@@ -198,6 +198,49 @@ export class PlaybackEngine {
       this.parts.push(part);
     }
 
+    // Schedule automation lanes
+    for (const resolved of resolvedTracks) {
+      if (!resolved.automationLanes?.length || !resolved.instrumentId) continue;
+
+      const instrument = getInstrument(resolved.instrumentId);
+      if (!instrument?.updateParam) continue;
+
+      const audioState = this.trackAudioStates.get(resolved.trackId);
+      if (!audioState) continue;
+
+      for (const lane of resolved.automationLanes) {
+        if (lane.keyframes.length === 0) continue;
+
+        const partEvents = lane.keyframes.map((kf, i) => ({
+          time: `${Math.floor(kf.beatTime / project.beatsPerBar)}:${kf.beatTime % project.beatsPerBar}`,
+          value: kf.value,
+          // For interpolation: include next keyframe info
+          nextValue: lane.interpolate && i < lane.keyframes.length - 1 ? lane.keyframes[i + 1].value : undefined,
+          nextTime: lane.interpolate && i < lane.keyframes.length - 1 ? lane.keyframes[i + 1].beatTime : undefined,
+          currentTime: kf.beatTime,
+        }));
+
+        const part = new Tone.Part((time, data) => {
+          if (lane.interpolate && data.nextValue !== undefined && data.nextTime !== undefined) {
+            // Schedule instant set + ramp to next value
+            instrument.updateParam!(audioState.instance, lane.paramKey, data.value);
+            const durationBeats = data.nextTime - data.currentTime;
+            const durationSeconds = (durationBeats / project.bpm) * 60;
+            // Use setTimeout to approximate ramp (Tone.js rampTo on raw values)
+            // For more precision, instruments can implement rampTo internally
+            // For now, set the value at each keyframe
+          } else {
+            instrument.updateParam!(audioState.instance, lane.paramKey, data.value);
+          }
+        }, partEvents);
+
+        part.start(0);
+        part.loop = true;
+        part.loopEnd = `${project.totalBars}:0`;
+        this.parts.push(part);
+      }
+    }
+
     // Configure transport loop
     Tone.getTransport().loop = true;
     Tone.getTransport().loopEnd = `${project.totalBars}:0`;

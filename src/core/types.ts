@@ -114,6 +114,11 @@ export interface PluginInstance {
   settings: Record<string, unknown>;
 }
 
+export interface AutomationConfig {
+  targetParam: string;          // key into parent instrument's settingsSchema
+  interpolate: boolean;         // false = instantaneous (step), true = linear interp
+}
+
 export interface Track {
   id: string;
   name: string;
@@ -121,6 +126,7 @@ export interface Track {
   instrumentId?: string; // Unified instrument ID (e.g., "leadSynth", "fractalTunnel")
   instrumentSettings?: Record<string, unknown>; // Track-level settings for the instrument
   visualPlugins?: PluginInstance[]; // Visual effects plugin chain
+  automationConfig?: AutomationConfig; // present = this is an automation track
   muted: boolean;
   collapsed: boolean;
   blocks: Block[];

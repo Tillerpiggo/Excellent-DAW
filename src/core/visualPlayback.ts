@@ -5,7 +5,7 @@
 import { Project } from './types';
 import { Event } from './types';
 import { VisualInstrumentState } from './visualTypes';
-import { resolveProject, ResolvedTrack, BlackoutRegion } from './resolution';
+import { resolveProject, ResolvedTrack, BlackoutRegion, AutomationLane } from './resolution';
 import { getInstrument } from '@/instruments';
 
 interface PerTrackEvents {
@@ -13,6 +13,7 @@ interface PerTrackEvents {
   instrumentId: string;
   settings: Record<string, unknown>;
   blackoutRegions: BlackoutRegion[];
+  automationLanes: AutomationLane[];
   // Sorted by startTimeInBeats
   events: {
     startTimeInBeats: number;
@@ -46,6 +47,8 @@ export class VisualPlaybackEngine {
   private trackStates: Map<string, VisualInstrumentState> = new Map();
   private perTrackEvents: PerTrackEvents[] = [];
   private lastComputedBeat: number = -1;
+  // Per-track last noteOnCount index for incremental pitchNoteOnCounts
+  private lastLoPerTrack: Map<string, number> = new Map();
 
   /**
    * Resolve project events and build per-track sorted event lists.
@@ -75,16 +78,24 @@ export class VisualPlaybackEngine {
         }))
         .sort((a, b) => a.startTimeInBeats - b.startTimeInBeats);
 
+      // Sort blackout regions by startBeat for binary search
+      const blackoutRegions = (resolved.blackoutRegions ?? [])
+        .slice()
+        .sort((a, b) => a.startBeat - b.startBeat);
+
       this.perTrackEvents.push({
         trackId: resolved.trackId,
         instrumentId: resolved.instrumentId!,
         settings: resolved.instrumentSettings ?? {},
-        blackoutRegions: resolved.blackoutRegions ?? [],
+        blackoutRegions,
+        automationLanes: resolved.automationLanes ?? [],
         events,
       });
     }
 
     this.trackStates = newStates;
+    // Reset incremental tracking
+    this.lastLoPerTrack.clear();
     // Force recompute on next call
     this.lastComputedBeat = -1;
   }
@@ -103,16 +114,29 @@ export class VisualPlaybackEngine {
       const state = this.trackStates.get(trackEvents.trackId);
       if (!state) continue;
 
-      // Check if current beat falls within a blackout region
-      const isBlackedOut = trackEvents.blackoutRegions.some(
-        r => beat >= r.startBeat && beat < r.endBeat
-      );
+      // Check if current beat falls within a blackout region (binary search)
+      const regions = trackEvents.blackoutRegions;
+      let isBlackedOut = false;
+      if (regions.length > 0) {
+        // Binary search: find last region with startBeat <= beat
+        let rLo = 0, rHi = regions.length;
+        while (rLo < rHi) {
+          const mid = (rLo + rHi) >>> 1;
+          if (regions[mid].startBeat <= beat) rLo = mid + 1;
+          else rHi = mid;
+        }
+        if (rLo > 0) {
+          const r = regions[rLo - 1];
+          isBlackedOut = beat >= r.startBeat && beat < r.endBeat;
+        }
+      }
       state.blackedOut = isBlackedOut;
 
       if (isBlackedOut) {
         state.activeNotes.clear();
         state.noteOnCount = 0;
         state.pitchNoteOnCounts.clear();
+        this.lastLoPerTrack.set(trackEvents.trackId, 0);
         state.bloom = 0;
         state.colorShift = 0;
         continue;
@@ -128,7 +152,6 @@ export class VisualPlaybackEngine {
       }
 
       // Binary search: count events with startTimeInBeats <= beat
-      // This gives us the deterministic noteOnCount at this beat
       let lo = 0;
       let hi = events.length;
       while (lo < hi) {
@@ -141,12 +164,23 @@ export class VisualPlaybackEngine {
       }
       state.noteOnCount = lo;
 
-      // Compute per-pitch note-on counts (how many events of each pitch have started)
-      state.pitchNoteOnCounts.clear();
-      for (let i = 0; i < lo; i++) {
-        const p = events[i].pitch;
-        state.pitchNoteOnCounts.set(p, (state.pitchNoteOnCounts.get(p) ?? 0) + 1);
+      // Incremental pitchNoteOnCounts: only process new events since last frame
+      const prevLo = this.lastLoPerTrack.get(trackEvents.trackId) ?? 0;
+      if (lo >= prevLo && prevLo > 0) {
+        // Forward playback: only count newly crossed events
+        for (let i = prevLo; i < lo; i++) {
+          const p = events[i].pitch;
+          state.pitchNoteOnCounts.set(p, (state.pitchNoteOnCounts.get(p) ?? 0) + 1);
+        }
+      } else {
+        // Seek/rewind/first frame: full recount
+        state.pitchNoteOnCounts.clear();
+        for (let i = 0; i < lo; i++) {
+          const p = events[i].pitch;
+          state.pitchNoteOnCounts.set(p, (state.pitchNoteOnCounts.get(p) ?? 0) + 1);
+        }
       }
+      this.lastLoPerTrack.set(trackEvents.trackId, lo);
 
       // Find active notes: notes that started <= beat and haven't ended yet
       state.activeNotes.clear();
@@ -181,6 +215,33 @@ export class VisualPlaybackEngine {
       if (lo > 0) {
         const mostRecent = events[lo - 1];
         state.colorShift = (mostRecent.pitch % 12) / 12;
+      }
+
+      // Apply automation lanes to params
+      for (const lane of trackEvents.automationLanes) {
+        const kf = lane.keyframes;
+        if (kf.length === 0) continue;
+
+        // Binary search: find last keyframe with beatTime <= beat
+        let aLo = 0, aHi = kf.length;
+        while (aLo < aHi) {
+          const mid = (aLo + aHi) >>> 1;
+          if (kf[mid].beatTime <= beat) aLo = mid + 1;
+          else aHi = mid;
+        }
+
+        if (aLo === 0) continue; // no keyframe before current beat
+
+        if (!lane.interpolate || aLo >= kf.length) {
+          // Step mode or past last keyframe: use most recent value
+          state.params[lane.paramKey] = kf[aLo - 1].value;
+        } else {
+          // Linear interpolation between kf[aLo-1] and kf[aLo]
+          const prev = kf[aLo - 1];
+          const next = kf[aLo];
+          const t = (beat - prev.beatTime) / (next.beatTime - prev.beatTime);
+          state.params[lane.paramKey] = prev.value + t * (next.value - prev.value);
+        }
       }
     }
   }

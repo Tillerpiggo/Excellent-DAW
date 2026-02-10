@@ -42,6 +42,8 @@ export interface Instrument {
   scheduleNote?: (instance: AudioInstance, event: Event, time: number) => void;
   // For releasing held notes (used by instruments that track active notes)
   releaseNote?: (instance: AudioInstance, event: Event, time: number) => void;
+  // For automation: update a parameter on a live audio instance
+  updateParam?: (instance: AudioInstance, key: string, value: number) => void;
 
   // MIDI note range (clips visible rows in editor)
   noteRange?: { min: number; max: number };

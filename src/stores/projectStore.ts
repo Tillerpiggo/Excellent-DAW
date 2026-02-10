@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Project, Track, Block, ProjectMetadata, Event, PluginInstance } from '@/core/types';
+import { Project, Track, Block, ProjectMetadata, Event, PluginInstance, AutomationConfig } from '@/core/types';
 import { generateId } from '@/utils/id';
 import { PATTERN_PRESETS } from '@/core/presets';
 import * as storage from '@/services/storage';
@@ -12,6 +12,7 @@ interface ProjectState {
 
   // Track operations
   addTrack: (parentId?: string, preset?: typeof PATTERN_PRESETS[0]) => string;
+  addAutomationTrack: (parentTrackId: string, paramKey: string) => string;
   addAudioTrack: (name: string) => string;
   updateTrack: (trackId: string, updates: Partial<Track>) => void;
   deleteTrack: (trackId: string) => void;
@@ -145,6 +146,38 @@ export const useProjectStore = create<ProjectState>()(
 
         state.project.tracks[trackId] = track;
         state.project.rootTracks.push(trackId);
+      });
+
+      return trackId;
+    },
+
+    addAutomationTrack: (parentTrackId: string, paramKey: string) => {
+      const { getInstrument } = require('@/instruments');
+      const trackId = generateId();
+
+      set((state) => {
+        const parent = state.project.tracks[parentTrackId];
+        if (!parent) return;
+
+        const instrument = parent.instrumentId ? getInstrument(parent.instrumentId) : undefined;
+        const schema = instrument?.settingsSchema;
+        const field = schema?.[paramKey];
+        const label = field?.label ?? paramKey;
+
+        const track: Track = {
+          id: trackId,
+          name: label,
+          typeId: 'base',
+          automationConfig: { targetParam: paramKey, interpolate: false },
+          muted: false,
+          collapsed: false,
+          blocks: [],
+          childIds: [],
+          parentId: parentTrackId,
+        };
+
+        state.project.tracks[trackId] = track;
+        parent.childIds.push(trackId);
       });
 
       return trackId;

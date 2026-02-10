@@ -23,7 +23,6 @@ export function ArrangementView() {
     trackHeightScale,
     scrollLeft,
     scrollTop,
-    currentBeat,
     setScrollLeft,
     setScrollTop,
     setPixelsPerBeat,
@@ -92,8 +91,9 @@ export function ArrangementView() {
           const hDelta = -e.deltaX * 0.02;
           const newPixelsPerBeat = Math.max(2, Math.min(100, pixelsPerBeat + hDelta));
 
-          const playheadX = currentBeat * pixelsPerBeat;
-          const newPlayheadX = currentBeat * newPixelsPerBeat;
+          const beat = useUIStore.getState().currentBeat;
+          const playheadX = beat * pixelsPerBeat;
+          const newPlayheadX = beat * newPixelsPerBeat;
           const playheadViewportOffset = playheadX - scrollLeft;
           const newScrollLeft = newPlayheadX - playheadViewportOffset;
 
@@ -111,7 +111,7 @@ export function ArrangementView() {
 
     container.addEventListener('wheel', handleWheel, { passive: false });
     return () => container.removeEventListener('wheel', handleWheel);
-  }, [pixelsPerBeat, trackHeightScale, scrollLeft, currentBeat, setPixelsPerBeat, setTrackHeightScale, setScrollLeft]);
+  }, [pixelsPerBeat, trackHeightScale, scrollLeft, setPixelsPerBeat, setTrackHeightScale, setScrollLeft]);
 
   return (
     <div className="h-full flex flex-col">

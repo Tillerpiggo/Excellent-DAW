@@ -350,7 +350,6 @@ export function TimelineCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
   const trackHeightScale = useUIStore((state) => state.trackHeightScale);
-  const currentBeat = useUIStore((state) => state.currentBeat);
   const { handleAudioFileDrop, isProcessingAudio } = useDragDrop();
 
   const [isDraggingAudioFile, setIsDraggingAudioFile] = useState(false);
@@ -1390,7 +1389,7 @@ export function TimelineCanvas({
             height: contentHeight + RULER_HEIGHT,
             zIndex: 15,
             pointerEvents: 'none',
-            transform: `translateX(${currentBeat * pixelsPerBeat}px)`,
+            transform: `translateX(0px)`,
           }}
         >
           {/* Playhead stem (top of ruler to triangle) */}

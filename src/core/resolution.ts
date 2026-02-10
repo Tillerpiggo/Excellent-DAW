@@ -8,12 +8,24 @@ export interface BlackoutRegion {
   endBeat: number;
 }
 
+export interface AutomationKeyframe {
+  beatTime: number;
+  value: number;  // already mapped from pitch to param value
+}
+
+export interface AutomationLane {
+  paramKey: string;
+  interpolate: boolean;
+  keyframes: AutomationKeyframe[];  // sorted by beatTime
+}
+
 export interface ResolvedTrack {
   trackId: string;
   instrumentId?: string; // Unified instrument ID
   instrumentSettings?: Record<string, unknown>; // Track-level settings
   output: Output;
   blackoutRegions?: BlackoutRegion[];
+  automationLanes?: AutomationLane[];
 }
 
 interface ModifierResolution {
@@ -24,6 +36,7 @@ interface ModifierResolution {
 interface CategorizedChildren {
   modifiers: Track[];
   regular: Track[];
+  automation: Track[];
 }
 
 /**
@@ -34,20 +47,25 @@ interface CategorizedChildren {
 function categorizeChildren(track: Track, project: Project): CategorizedChildren {
   const modifiers: Track[] = [];
   const regular: Track[] = [];
+  const automation: Track[] = [];
 
   for (const childId of track.childIds) {
     const childTrack = project.tracks[childId];
     if (!childTrack || childTrack.muted) continue;
 
-    const childType = getTrackType(childTrack.typeId);
-    if (childType.category === 'modifier' && !childTrack.instrumentId) {
-      modifiers.push(childTrack);
+    if (childTrack.automationConfig) {
+      automation.push(childTrack);
     } else {
-      regular.push(childTrack);
+      const childType = getTrackType(childTrack.typeId);
+      if (childType.category === 'modifier' && !childTrack.instrumentId) {
+        modifiers.push(childTrack);
+      } else {
+        regular.push(childTrack);
+      }
     }
   }
 
-  return { modifiers, regular };
+  return { modifiers, regular, automation };
 }
 
 interface ApplyModifiersResult {
@@ -203,6 +221,60 @@ function resolveModifierOutput(
   return { pattern: modifierPattern, instrumentedResults };
 }
 
+/**
+ * Builds automation lanes from automation child tracks.
+ * Each automation child's events are converted: pitch → param value using parent's settingsSchema.
+ */
+function buildAutomationLanes(
+  automationChildren: Track[],
+  parentTrack: Track,
+  project: Project,
+  context: ProcessContext
+): AutomationLane[] {
+  const parentInstrument = parentTrack.instrumentId ? getInstrument(parentTrack.instrumentId) : undefined;
+  const schema = parentInstrument?.settingsSchema;
+  if (!schema) return [];
+
+  const lanes: AutomationLane[] = [];
+
+  for (const autoTrack of automationChildren) {
+    const config = autoTrack.automationConfig!;
+    const field = schema[config.targetParam];
+    if (!field || field.type !== 'number') continue;
+
+    const paramMin = field.min ?? 0;
+    const paramMax = field.max ?? 1;
+
+    // Use parent instrument's noteRange or default 36-96
+    const noteRange = parentInstrument?.noteRange ?? { min: 36, max: 96 };
+    const pitchMin = noteRange.min;
+    const pitchMax = noteRange.max;
+    const pitchSpan = pitchMax - pitchMin;
+
+    // Resolve this automation track's events
+    const output = resolveBlocks(autoTrack.blocks, project, context);
+
+    const keyframes: AutomationKeyframe[] = output.events.map(e => {
+      const t = Math.max(0, Math.min(1, (e.pitch - pitchMin) / pitchSpan));
+      return {
+        beatTime: e.startTimeInBeats,
+        value: paramMin + t * (paramMax - paramMin),
+      };
+    });
+
+    // Sort by beat time
+    keyframes.sort((a, b) => a.beatTime - b.beatTime);
+
+    lanes.push({
+      paramKey: config.targetParam,
+      interpolate: config.interpolate,
+      keyframes,
+    });
+  }
+
+  return lanes;
+}
+
 export function resolveProject(project: Project): ResolvedTrack[] {
   const results: ResolvedTrack[] = [];
   const baseContext: ProcessContext = {
@@ -236,8 +308,8 @@ export function resolveTrack(
   // Step 1: Resolve this track's blocks
   let selfOutput = resolveBlocks(track.blocks, project, context);
 
-  // Step 2: Separate children into modifiers and regular tracks
-  const { modifiers, regular } = categorizeChildren(track, project);
+  // Step 2: Separate children into modifiers, regular, and automation tracks
+  const { modifiers, regular, automation } = categorizeChildren(track, project);
 
   // Step 3: Apply modifier children to selfOutput
   const modifierResult = applyModifiers(selfOutput, modifiers, project, context, parentOutput);
@@ -253,11 +325,22 @@ export function resolveTrack(
     enrichedContext
   );
 
-  // Step 5: Build this track's resolved outputs
+  // Step 5: Build automation lanes from automation children
+  const automationLanes = automation.length > 0
+    ? buildAutomationLanes(automation, track, project, enrichedContext)
+    : undefined;
+
+  // Step 6: Build this track's resolved outputs
   const trackOutputs = buildTrackOutputs(track, selfOutput, combinedOutput, inheritedInstrumentId, modifierResult.blackoutRegions);
+  // Attach automation lanes to track outputs
+  if (automationLanes && automationLanes.length > 0) {
+    for (const output of trackOutputs) {
+      output.automationLanes = automationLanes;
+    }
+  }
   results.push(...trackOutputs);
 
-  // Step 6: Process regular children recursively
+  // Step 7: Process regular children recursively
   // Inherit instrument if it has visual capabilities (for visual inheritance)
   const instrument = track.instrumentId ? getInstrument(track.instrumentId) : undefined;
   const instrumentToInherit = instrument?.hasVisual ? track.instrumentId : inheritedInstrumentId;

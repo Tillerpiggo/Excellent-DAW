@@ -11,7 +11,6 @@ const CONTROLS_HIDE_DELAY = 2500;
 
 export function VisualFullscreen() {
   const setVisualFullscreen = useUIStore((s) => s.setVisualFullscreen);
-  const currentBeat = useUIStore((s) => s.currentBeat);
   const isPlaying = useUIStore((s) => s.isPlaying);
   const totalBars = useProjectStore((s) => s.project.totalBars);
   const beatsPerBar = useProjectStore((s) => s.project.beatsPerBar);
@@ -21,11 +20,30 @@ export function VisualFullscreen() {
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrubBarRef = useRef<HTMLDivElement>(null);
   const isDraggingScrub = useRef(false);
+  const progressBarRef = useRef<HTMLDivElement>(null);
+  const beatTextRef = useRef<HTMLSpanElement>(null);
 
   const totalBeats = totalBars * beatsPerBar;
-  const progress = totalBeats > 0 ? currentBeat / totalBeats : 0;
-  const currentBar = Math.floor(currentBeat / beatsPerBar) + 1;
-  const beatInBar = Math.floor(currentBeat % beatsPerBar) + 1;
+
+  // Imperative progress/beat display update (avoids 60fps re-renders)
+  useEffect(() => {
+    let rafId: number;
+    const update = () => {
+      const currentBeat = useUIStore.getState().currentBeat;
+      const progress = totalBeats > 0 ? currentBeat / totalBeats : 0;
+      if (progressBarRef.current) {
+        progressBarRef.current.style.width = `${progress * 100}%`;
+      }
+      if (beatTextRef.current) {
+        const bar = Math.floor(currentBeat / beatsPerBar) + 1;
+        const beat = Math.floor(currentBeat % beatsPerBar) + 1;
+        beatTextRef.current.textContent = `${bar}.${beat}`;
+      }
+      rafId = requestAnimationFrame(update);
+    };
+    rafId = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(rafId);
+  }, [totalBeats, beatsPerBar]);
 
   const resetHideTimeout = useCallback(() => {
     if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
@@ -132,8 +150,9 @@ export function VisualFullscreen() {
             onMouseDown={handleScrubMouseDown}
           >
             <div
+              ref={progressBarRef}
               className="h-full bg-white/80 rounded-full relative"
-              style={{ width: `${progress * 100}%` }}
+              style={{ width: '0%' }}
             >
               <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
@@ -156,8 +175,8 @@ export function VisualFullscreen() {
               )}
             </button>
 
-            <span className="text-white/80 text-sm font-mono tabular-nums">
-              {currentBar}.{beatInBar}
+            <span ref={beatTextRef} className="text-white/80 text-sm font-mono tabular-nums">
+              1.1
             </span>
           </div>
         </div>

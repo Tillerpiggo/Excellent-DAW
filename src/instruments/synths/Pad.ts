@@ -63,4 +63,9 @@ export const Pad: Instrument = {
     const velocity = event.velocity / 127;
     inst.synth.triggerAttackRelease(note, event.duration, time, velocity);
   },
+
+  updateParam: (instance: AudioInstance, key: string, value: number) => {
+    const inst = instance as PadInstance;
+    if (key === 'volume') inst.synth.volume.value = value;
+  },
 };

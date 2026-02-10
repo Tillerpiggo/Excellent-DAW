@@ -74,4 +74,16 @@ export const Bass: Instrument = {
     const velocity = event.velocity / 127;
     inst.synth.triggerAttackRelease(note, event.duration, time, velocity);
   },
+
+  updateParam: (instance: AudioInstance, key: string, value: number) => {
+    const inst = instance as BassInstance;
+    switch (key) {
+      case 'filterBaseFrequency':
+        inst.synth.filterEnvelope.baseFrequency = value;
+        break;
+      case 'volume':
+        inst.synth.volume.value = value;
+        break;
+    }
+  },
 };

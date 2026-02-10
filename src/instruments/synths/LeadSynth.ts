@@ -74,4 +74,16 @@ export const LeadSynth: Instrument = {
     const velocity = event.velocity / 127;
     inst.synth.triggerAttackRelease(note, event.duration, time, velocity);
   },
+
+  updateParam: (instance: AudioInstance, key: string, value: number) => {
+    const inst = instance as LeadSynthInstance;
+    switch (key) {
+      case 'filterFrequency':
+        inst.filter.frequency.value = value;
+        break;
+      case 'volume':
+        inst.synth.volume.value = value;
+        break;
+    }
+  },
 };
