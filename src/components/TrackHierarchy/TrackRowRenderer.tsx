@@ -118,7 +118,7 @@ export function TrackRowRenderer({ item, context, children, depth }: TrackRowRen
         />
 
         {/* Track Name */}
-        <span className={`flex-1 text-base truncate ${track.muted ? 'text-muted-foreground line-through' : ''}`}>
+        <span className={`flex-1 text-base truncate ${track.muted ? 'text-muted-foreground' : ''}`}>
           {track.name}
         </span>
 
@@ -148,6 +148,21 @@ export function TrackRowRenderer({ item, context, children, depth }: TrackRowRen
           type="button"
         >
           M
+        </button>
+
+        {/* Solo Button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            updateTrack(track.id, { solo: !track.solo });
+          }}
+          className={`w-6 h-6 rounded text-xs flex items-center justify-center transition-colors ${
+            track.solo ? 'bg-yellow-500/20 text-yellow-400' : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+          }`}
+          title={track.solo ? 'Unsolo' : 'Solo'}
+          type="button"
+        >
+          S
         </button>
       </div>
 

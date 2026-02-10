@@ -17,7 +17,7 @@ export function useKeyboard() {
   const setPixelsPerBeat = useUIStore((s) => s.setPixelsPerBeat);
   const pixelsPerBeat = useUIStore((s) => s.pixelsPerBeat);
 
-  const { deleteTrack, deleteBlock, splitBlockAtPosition, groupTracks } = useProjectStore();
+  const { deleteTrack, deleteBlock, splitBlockAtPosition, groupTracks, joinBlocks } = useProjectStore();
   const project = useProjectStore((state) => state.project);
 
   const handleKeyDown = useCallback(
@@ -90,6 +90,15 @@ export function useKeyboard() {
             const track = project.tracks[selectedTrackId];
             if (track) {
               useProjectStore.getState().updateTrack(selectedTrackId, { muted: !track.muted });
+            }
+          }
+          break;
+
+        case 'KeyS':
+          if (selectedTrackId && !e.metaKey && !e.ctrlKey) {
+            const track = project.tracks[selectedTrackId];
+            if (track) {
+              useProjectStore.getState().updateTrack(selectedTrackId, { solo: !track.solo });
             }
           }
           break;
@@ -181,6 +190,47 @@ export function useKeyboard() {
           }
           break;
 
+        case 'KeyJ':
+          // Cmd/Ctrl + J: Join selected blocks
+          if (e.metaKey || e.ctrlKey) {
+            e.preventDefault();
+            if (selectedBlockIds.size >= 2) {
+              const tracks = Object.values(project.tracks);
+              const beatsPerBar = project.beatsPerBar;
+
+              // Find which track contains the selected blocks — all must be on same track
+              let targetTrackId: string | null = null;
+              const foundBlockIds: string[] = [];
+
+              for (const track of tracks) {
+                const matching = track.blocks.filter(b => selectedBlockIds.has(b.id));
+                if (matching.length > 0) {
+                  if (targetTrackId && targetTrackId !== track.id) {
+                    // Blocks on multiple tracks — can't join
+                    targetTrackId = null;
+                    break;
+                  }
+                  targetTrackId = track.id;
+                  foundBlockIds.push(...matching.map(b => b.id));
+
+                  // Reject if any are looped
+                  if (matching.some(b => b.loop)) {
+                    targetTrackId = null;
+                    break;
+                  }
+                }
+              }
+
+              if (targetTrackId && foundBlockIds.length >= 2) {
+                const newId = joinBlocks(targetTrackId, foundBlockIds, beatsPerBar);
+                if (newId) {
+                  useUIStore.getState().selectBlock(newId, targetTrackId);
+                }
+              }
+            }
+          }
+          break;
+
         case 'KeyG':
           // Cmd/Ctrl + Shift + G: Group selected tracks
           if ((e.metaKey || e.ctrlKey) && e.shiftKey) {
@@ -208,6 +258,7 @@ export function useKeyboard() {
       deleteTrack,
       deleteBlock,
       splitBlockAtPosition,
+      joinBlocks,
       groupTracks,
       selectTrack,
       clearBlockSelection,

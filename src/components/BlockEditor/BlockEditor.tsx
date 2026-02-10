@@ -58,6 +58,9 @@ export function BlockEditor() {
   const editorType = useMemo((): EditorType => {
     if (!selectedBlock || !selectedTrack) return null;
 
+    // Automation tracks always use generic MIDI editor (with value rows)
+    if (selectedTrack.automationConfig) return 'generic';
+
     const { patternCategory, typeId } = selectedTrack;
 
     if (typeId === 'rhythm') return 'rhythm';

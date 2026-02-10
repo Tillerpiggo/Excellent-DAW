@@ -7,38 +7,60 @@ import { getVisualPlaybackEngine } from '@/core/visualPlayback';
 import { Instrument } from '../types';
 
 const PITCH_NEXT_WORD = 48;
+const PITCH_HEIGHT_MIN = 60;  // C4
+const PITCH_HEIGHT_MAX = 72;  // C5
+const PITCH_HEIGHT_CENTER = 66; // F#4 = no offset
 const MAX_DELAY_TAPS = 8;
 
 const DEFAULTS = {
   text: 'Hello World',
   fontSize: 1,
+  fontFamily: 'Impact',
   strokeWidth: 0.05,
   delayTaps: 3,
   delayTime: 0.3,
   delayScaleFalloff: 0.15,
   delayOpacityFalloff: 0.25,
+  heightAmount: 0.35,
+  opacity: 1,
+  color: '#ffffff',
 };
 
 interface WordHistoryEntry {
   word: string;
   triggerTime: number;
   duration: number; // seconds the note was held
+  yOffset: number;  // normalized Y offset at trigger time (-1 to 1)
 }
 
 function createTextCanvas(
   word: string,
   canvasSize: number,
   strokeWidth: number,
+  fontFamily: string = DEFAULTS.fontFamily,
+  color: string = DEFAULTS.color,
 ): HTMLCanvasElement {
+  const dpr = window.devicePixelRatio || 1;
   const canvas = document.createElement('canvas');
-  canvas.width = canvasSize;
-  canvas.height = canvasSize;
+  canvas.width = canvasSize * dpr;
+  canvas.height = canvasSize * dpr;
   const ctx = canvas.getContext('2d')!;
 
-  ctx.clearRect(0, 0, canvasSize, canvasSize);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.scale(dpr, dpr);
 
-  const fontSize = canvasSize * 0.35;
-  ctx.font = `900 ${fontSize}px "Impact", "Arial Black", sans-serif`;
+  let fontSize = canvasSize * 0.35;
+  const fontStr = (size: number) => `900 ${size}px "${fontFamily}", "Arial Black", sans-serif`;
+  ctx.font = fontStr(fontSize);
+
+  // Shrink font if text is wider than canvas (with padding for stroke)
+  const maxWidth = canvasSize * 0.9;
+  const measured = ctx.measureText(word);
+  if (measured.width > maxWidth) {
+    fontSize *= maxWidth / measured.width;
+    ctx.font = fontStr(fontSize);
+  }
+
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
@@ -46,10 +68,12 @@ function createTextCanvas(
   ctx.lineWidth = sw;
   ctx.strokeStyle = 'black';
   ctx.lineJoin = 'round';
-  ctx.strokeText(word, canvasSize / 2, canvasSize / 2);
+  const cx = canvasSize / 2;
+  const cy = canvasSize / 2;
+  ctx.strokeText(word, cx, cy);
 
-  ctx.fillStyle = 'white';
-  ctx.fillText(word, canvasSize / 2, canvasSize / 2);
+  ctx.fillStyle = color;
+  ctx.fillText(word, cx, cy);
 
   return canvas;
 }
@@ -61,7 +85,10 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
   const textureRef = useRef<THREE.CanvasTexture | null>(null);
   const lastWordRef = useRef('');
   const lastStrokeRef = useRef(-1);
+  const lastFontRef = useRef('');
+  const lastColorRef = useRef('');
   const noteOnTimeRef = useRef(-1); // clock time when current note started
+  const currentYOffsetRef = useRef(0); // current height offset (-1 to 1)
   const { viewport } = useThree();
   const [ready, setReady] = useState(false);
 
@@ -135,11 +162,15 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
 
     const text = (state.params.text as string) ?? DEFAULTS.text;
     const fontSize = (state.params.fontSize as number) ?? DEFAULTS.fontSize;
+    const fontFamily = (state.params.fontFamily as string) ?? DEFAULTS.fontFamily;
     const strokeWidth = (state.params.strokeWidth as number) ?? DEFAULTS.strokeWidth;
     const delayTaps = (state.params.delayTaps as number) ?? DEFAULTS.delayTaps;
     const delayTime = (state.params.delayTime as number) ?? DEFAULTS.delayTime;
     const delayScaleFalloff = (state.params.delayScaleFalloff as number) ?? DEFAULTS.delayScaleFalloff;
     const delayOpacityFalloff = (state.params.delayOpacityFalloff as number) ?? DEFAULTS.delayOpacityFalloff;
+    const heightAmount = (state.params.heightAmount as number) ?? DEFAULTS.heightAmount;
+    const textOpacity = (state.params.opacity as number) ?? DEFAULTS.opacity;
+    const color = (state.params.color as string) ?? DEFAULTS.color;
 
     const words = text.split(/\s+/).filter(Boolean);
     if (words.length === 0) return;
@@ -153,8 +184,20 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
 
     const isNoteHeld = state.activeNotes.has(PITCH_NEXT_WORD);
 
+    // Compute current height offset from latest held height pitch
+    let latestHeightPitch = -1;
+    for (const pitch of state.activeNotes.keys()) {
+      if (pitch >= PITCH_HEIGHT_MIN && pitch <= PITCH_HEIGHT_MAX) {
+        latestHeightPitch = Math.max(latestHeightPitch, pitch);
+      }
+    }
+    if (latestHeightPitch >= 0) {
+      // Map pitch to -1..1, with PITCH_HEIGHT_CENTER = 0
+      currentYOffsetRef.current = (latestHeightPitch - PITCH_HEIGHT_CENTER) / (PITCH_HEIGHT_MAX - PITCH_HEIGHT_CENTER);
+    }
+
     if (currentCount !== prevCountRef.current && currentCount > 0) {
-      wordHistoryRef.current.push({ word: currentWord, triggerTime: now, duration: 0 });
+      wordHistoryRef.current.push({ word: currentWord, triggerTime: now, duration: 0, yOffset: currentYOffsetRef.current });
       noteOnTimeRef.current = now;
       prevCountRef.current = currentCount;
     }
@@ -178,19 +221,23 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
     );
 
     // Update main mesh texture
-    if (currentWord !== lastWordRef.current || strokeWidth !== lastStrokeRef.current) {
-      const canvas = createTextCanvas(currentWord, 512, strokeWidth);
+    if (currentWord !== lastWordRef.current || strokeWidth !== lastStrokeRef.current || fontFamily !== lastFontRef.current || color !== lastColorRef.current) {
+      const canvas = createTextCanvas(currentWord, 512, strokeWidth, fontFamily, color);
       textureRef.current.image = canvas;
       textureRef.current.needsUpdate = true;
       lastWordRef.current = currentWord;
       lastStrokeRef.current = strokeWidth;
+      lastFontRef.current = fontFamily;
+      lastColorRef.current = color;
     }
 
-    // Main mesh visibility — only while note is held
+    // Main mesh visibility and opacity — only while note is held
     meshRef.current.visible = isNoteHeld;
+    (meshRef.current.material as THREE.MeshBasicMaterial).opacity = textOpacity;
 
     const baseScale = Math.min(viewport.width, viewport.height) * 0.6 * fontSize;
     meshRef.current.scale.set(baseScale, baseScale, 1);
+    meshRef.current.position.y = currentYOffsetRef.current * viewport.height * heightAmount;
 
     for (let tap = 0; tap < MAX_DELAY_TAPS; tap++) {
       const mesh = echoMeshesRef.current[tap];
@@ -229,12 +276,12 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
       }
 
       const tapOpacity = Math.max(0.01, 1 - delayOpacityFalloff * tapNum);
-      const opacity = tapOpacity;
+      const opacity = tapOpacity * textOpacity;
 
       // Update texture if word changed for this slot
       const tex = echoTexturesRef.current[tap];
       if (bestEntry.word !== echoLastWordsRef.current[tap]) {
-        const canvas = createTextCanvas(bestEntry.word, 512, strokeWidth);
+        const canvas = createTextCanvas(bestEntry.word, 512, strokeWidth, fontFamily, color);
         tex.image = canvas;
         tex.needsUpdate = true;
         echoLastWordsRef.current[tap] = bestEntry.word;
@@ -242,6 +289,7 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
 
       const tapScale = baseScale * Math.max(0.1, 1 - delayScaleFalloff * tapNum);
       mesh.scale.set(tapScale, tapScale, 1);
+      mesh.position.y = bestEntry.yOffset * viewport.height * heightAmount;
       mesh.position.z = -0.01 * tapNum;
 
       const mat = mesh.material as THREE.MeshBasicMaterial;
@@ -275,9 +323,10 @@ export const TextDisplay: Instrument = {
   hasAudio: false,
   hasVisual: true,
   editorType: 'generic',
-  noteRange: { min: 48, max: 48 },
+  noteRange: { min: 48, max: 72 },
   rangeLabels: [
     { startPitch: 48, endPitch: 48, label: 'Next Word' },
+    { startPitch: 60, endPitch: 72, label: 'Height Offset' },
   ],
 
   defaultSettings: { ...DEFAULTS },
@@ -289,6 +338,20 @@ export const TextDisplay: Instrument = {
     fontSize: {
       type: 'number', label: 'Font Size', min: 0.1, max: 5, step: 0.1,
       default: DEFAULTS.fontSize,
+    },
+    fontFamily: {
+      type: 'select', label: 'Font Family',
+      default: DEFAULTS.fontFamily,
+      options: [
+        { value: 'Impact', label: 'Impact' },
+        { value: 'Arial Black', label: 'Arial Black' },
+        { value: 'Georgia', label: 'Georgia' },
+        { value: 'Courier New', label: 'Courier New' },
+        { value: 'Times New Roman', label: 'Times New Roman' },
+        { value: 'Verdana', label: 'Verdana' },
+        { value: 'Comic Sans MS', label: 'Comic Sans MS' },
+        { value: 'Trebuchet MS', label: 'Trebuchet MS' },
+      ],
     },
     strokeWidth: {
       type: 'number', label: 'Stroke Width', min: 0, max: 0.2, step: 0.01,
@@ -309,6 +372,18 @@ export const TextDisplay: Instrument = {
     delayOpacityFalloff: {
       type: 'number', label: 'Delay Opacity Falloff', min: 0, max: 0.5, step: 0.02,
       default: DEFAULTS.delayOpacityFalloff,
+    },
+    opacity: {
+      type: 'number', label: 'Opacity', min: 0, max: 1, step: 0.05,
+      default: DEFAULTS.opacity,
+    },
+    color: {
+      type: 'color', label: 'Color',
+      default: DEFAULTS.color,
+    },
+    heightAmount: {
+      type: 'number', label: 'Height Amount', min: 0, max: 1, step: 0.05,
+      default: DEFAULTS.heightAmount,
     },
   },
 

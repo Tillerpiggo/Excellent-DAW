@@ -3,7 +3,7 @@ import { Event } from '@/core/types';
 // Settings schema for auto-generating Inspector UI
 export interface SettingsSchema {
   [key: string]: {
-    type: 'number' | 'boolean' | 'select' | 'string';
+    type: 'number' | 'boolean' | 'select' | 'string' | 'color';
     label: string;
     min?: number;
     max?: number;

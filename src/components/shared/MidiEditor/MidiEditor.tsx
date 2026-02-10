@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useUIStore } from '@/stores/uiStore';
 import { generateId } from '@/utils/id';
 
 export interface MidiRow {
@@ -30,6 +31,7 @@ export interface MidiEditorProps {
   totalBeats: number;
   beatsPerBar: number;
   quantize: number;
+  snapEnabled?: boolean;
   pixelsPerBeat?: number;
   rowHeight?: number;
   rangeLabels?: RangeLabel[];
@@ -71,6 +73,7 @@ export function MidiEditor({
   totalBeats,
   beatsPerBar,
   quantize,
+  snapEnabled = true,
   pixelsPerBeat = 40,
   rowHeight = 28,
   rangeLabels,
@@ -88,6 +91,37 @@ export function MidiEditor({
   const setCursor = useCallback((cursor: string) => {
     if (containerRef.current) containerRef.current.style.cursor = cursor;
   }, []);
+
+  // Alt+scroll zoom (horizontal = pixelsPerBeat, vertical = rowScale)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (!e.altKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (Math.abs(e.deltaX) > 2) {
+        const delta = -e.deltaX * 0.5;
+        const current = useUIStore.getState().midiPixelsPerBeat;
+        useUIStore.getState().setMidiPixelsPerBeat(current + delta);
+      }
+
+      if (Math.abs(e.deltaY) > 2) {
+        const delta = -e.deltaY * 0.005;
+        const current = useUIStore.getState().midiRowScale;
+        useUIStore.getState().setMidiRowScale(current + delta);
+      }
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
+  }, []);
+
+  // Snap resolution: use quantize grid when enabled, fine resolution when off
+  const snapSize = snapEnabled ? quantize : 1 / 128;
+  const snapValue = useCallback((v: number) => Math.round(v / snapSize) * snapSize, [snapSize]);
 
   // Canvas dimensions
   const labelWidth = 64;
@@ -260,14 +294,14 @@ export function MidiEditor({
       if (rowIndex >= 0 && rowIndex < rows.length) {
         const pitch = rows[rowIndex].pitch;
         const rawTime = gridX / pixelsPerBeat;
-        const time = Math.round(rawTime / quantize) * quantize;
+        const time = snapValue(rawTime);
 
         if (time >= 0 && time < totalBeats) {
           const newNote: MidiNote = {
             id: generateId(),
             pitch,
             time,
-            duration: quantize,
+            duration: snapEnabled ? quantize : 0.25,
             velocity: 100,
           };
 
@@ -302,7 +336,7 @@ export function MidiEditor({
       currentY: gridY,
     });
     setCursor('crosshair');
-  }, [labelWidth, rowHeight, rows, pixelsPerBeat, quantize, totalBeats, setCursor]);
+  }, [labelWidth, rowHeight, rows, pixelsPerBeat, snapValue, snapEnabled, snapSize, totalBeats, setCursor]);
 
   // Get notes within marquee bounds
   const getNotesInMarquee = useCallback((x1: number, y1: number, x2: number, y2: number): string[] => {
@@ -338,8 +372,9 @@ export function MidiEditor({
       if (dragState.type === 'drawing' && drawingNote) {
         const deltaX = e.clientX - dragState.startX;
         const deltaDuration = deltaX / pixelsPerBeat;
-        let newDuration = Math.round((quantize + deltaDuration) / quantize) * quantize;
-        newDuration = Math.max(quantize, Math.min(totalBeats - drawingNote.time, newDuration));
+        const baseDuration = snapEnabled ? quantize : 0.25;
+        let newDuration = snapValue(baseDuration + deltaDuration);
+        newDuration = Math.max(snapSize, Math.min(totalBeats - drawingNote.time, newDuration));
 
         if (newDuration !== drawingNote.duration) {
           setDrawingNote(prev => prev ? { ...prev, duration: newDuration } : null);
@@ -347,7 +382,7 @@ export function MidiEditor({
       } else if (dragState.type === 'moving' && dragState.originalTimes && dragState.originalPitches) {
         const deltaX = e.clientX - dragState.startX;
         const deltaBeats = deltaX / pixelsPerBeat;
-        const snappedDelta = Math.round(deltaBeats / quantize) * quantize;
+        const snappedDelta = snapValue(deltaBeats);
 
         const deltaY = e.clientY - dragState.startY;
         const rowDelta = Math.round(deltaY / rowHeight);
@@ -367,12 +402,12 @@ export function MidiEditor({
       } else if (dragState.type === 'resizing' && dragState.originalDurations) {
         const deltaX = e.clientX - dragState.startX;
         const deltaBeats = deltaX / pixelsPerBeat;
-        const snappedDelta = Math.round(deltaBeats / quantize) * quantize;
+        const snappedDelta = snapValue(deltaBeats);
 
         onNotesChange(notes.map(n => {
           const originalDuration = dragState.originalDurations!.get(n.id);
           if (originalDuration !== undefined) {
-            const newDuration = Math.max(quantize, originalDuration + snappedDelta);
+            const newDuration = Math.max(snapSize, originalDuration + snappedDelta);
             return { ...n, duration: newDuration };
           }
           return n;
@@ -407,7 +442,7 @@ export function MidiEditor({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [dragState, drawingNote, pixelsPerBeat, quantize, totalBeats, rowHeight, rows, notes, onNotesChange, getNotesInMarquee, setCursor]);
+  }, [dragState, drawingNote, pixelsPerBeat, snapValue, snapSize, snapEnabled, totalBeats, rowHeight, rows, notes, onNotesChange, getNotesInMarquee, setCursor]);
 
   // Keyboard handler
   useEffect(() => {

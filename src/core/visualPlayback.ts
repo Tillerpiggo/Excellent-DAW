@@ -37,6 +37,7 @@ function createVisualInstrumentState(
     bloom: 0,
     colorShift: 0,
     params: { ...defaultSettings, ...settings },
+    pluginParamOverrides: new Map(),
     noteOnCount: 0,
     pitchNoteOnCounts: new Map(),
     blackedOut: false,
@@ -63,9 +64,11 @@ export class VisualPlaybackEngine {
 
     for (const resolved of resolvedTracks) {
       const instrument = resolved.instrumentId ? getInstrument(resolved.instrumentId) : undefined;
-      if (!instrument?.hasVisual) continue;
+      const hasVisual = instrument?.hasVisual;
+      const hasAutomationOnly = !hasVisual && resolved.automationLanes && resolved.automationLanes.length > 0;
+      if (!hasVisual && !hasAutomationOnly) continue;
 
-      const state = createVisualInstrumentState(resolved.instrumentId!, resolved.instrumentSettings);
+      const state = createVisualInstrumentState(resolved.instrumentId ?? '', resolved.instrumentSettings);
       newStates.set(resolved.trackId, state);
 
       // Build sorted event list for this track
@@ -131,6 +134,45 @@ export class VisualPlaybackEngine {
         }
       }
       state.blackedOut = isBlackedOut;
+
+      // Apply automation lanes to params (runs even during blackout/empty events)
+      state.pluginParamOverrides.clear();
+      for (const lane of trackEvents.automationLanes) {
+        const kf = lane.keyframes;
+        if (kf.length === 0) continue;
+
+        // Binary search: find last keyframe with beatTime <= beat
+        let aLo = 0, aHi = kf.length;
+        while (aLo < aHi) {
+          const mid = (aLo + aHi) >>> 1;
+          if (kf[mid].beatTime <= beat) aLo = mid + 1;
+          else aHi = mid;
+        }
+
+        if (aLo === 0) continue; // no keyframe before current beat
+
+        let value: number;
+        if (!lane.interpolate || aLo >= kf.length) {
+          value = kf[aLo - 1].value;
+        } else {
+          const prev = kf[aLo - 1];
+          const next = kf[aLo];
+          const t = (beat - prev.beatTime) / (next.beatTime - prev.beatTime);
+          value = prev.value + t * (next.value - prev.value);
+        }
+
+        if (lane.pluginInstanceId) {
+          // Write to plugin param overrides
+          let overrides = state.pluginParamOverrides.get(lane.pluginInstanceId);
+          if (!overrides) {
+            overrides = {};
+            state.pluginParamOverrides.set(lane.pluginInstanceId, overrides);
+          }
+          overrides[lane.paramKey] = value;
+        } else {
+          state.params[lane.paramKey] = value;
+        }
+      }
 
       if (isBlackedOut) {
         state.activeNotes.clear();
@@ -216,33 +258,6 @@ export class VisualPlaybackEngine {
         const mostRecent = events[lo - 1];
         state.colorShift = (mostRecent.pitch % 12) / 12;
       }
-
-      // Apply automation lanes to params
-      for (const lane of trackEvents.automationLanes) {
-        const kf = lane.keyframes;
-        if (kf.length === 0) continue;
-
-        // Binary search: find last keyframe with beatTime <= beat
-        let aLo = 0, aHi = kf.length;
-        while (aLo < aHi) {
-          const mid = (aLo + aHi) >>> 1;
-          if (kf[mid].beatTime <= beat) aLo = mid + 1;
-          else aHi = mid;
-        }
-
-        if (aLo === 0) continue; // no keyframe before current beat
-
-        if (!lane.interpolate || aLo >= kf.length) {
-          // Step mode or past last keyframe: use most recent value
-          state.params[lane.paramKey] = kf[aLo - 1].value;
-        } else {
-          // Linear interpolation between kf[aLo-1] and kf[aLo]
-          const prev = kf[aLo - 1];
-          const next = kf[aLo];
-          const t = (beat - prev.beatTime) / (next.beatTime - prev.beatTime);
-          state.params[lane.paramKey] = prev.value + t * (next.value - prev.value);
-        }
-      }
     }
   }
 
@@ -260,6 +275,23 @@ export class VisualPlaybackEngine {
   getAllStates(): Map<string, VisualInstrumentState> {
     return this.trackStates;
   }
+}
+
+/**
+ * Returns plugin settings with automation overrides merged in.
+ * Call this per-frame in plugin wrappers to get live automated values.
+ */
+export function getPluginSettingsWithOverrides(
+  trackId: string,
+  pluginInstanceId: string,
+  baseSettings: Record<string, unknown>
+): Record<string, unknown> {
+  const engine = getVisualPlaybackEngine();
+  const state = engine.getTrackState(trackId);
+  if (!state) return baseSettings;
+  const overrides = state.pluginParamOverrides.get(pluginInstanceId);
+  if (!overrides) return baseSettings;
+  return { ...baseSettings, ...overrides };
 }
 
 // Singleton instance

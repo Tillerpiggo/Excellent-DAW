@@ -8,6 +8,7 @@ import { TRACK_TYPES } from '@/core/trackTypes';
 import { INSTRUMENTS, getInstrument, getInstrumentOptions } from '@/instruments';
 import { PluginInspector } from './PluginInspector';
 import { SettingsSchema } from '@/instruments/types';
+import { getPlugin } from '@/plugins';
 
 type InspectorTab = 'settings' | 'effects';
 
@@ -164,33 +165,35 @@ export function TrackInspector({ track }: TrackInspectorProps) {
             <p className="text-xs text-muted-foreground mt-1">{trackType?.description}</p>
           </div>
 
-          {/* Unified Instrument */}
-          <div>
-            <label className="block text-xs text-muted-foreground mb-1">Instrument</label>
-            <select
-              value={track.instrumentId || ''}
-              onChange={(e) => handleInstrumentChange(e.target.value || undefined)}
-              className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
-            >
-              <option value="">None (modifier only)</option>
-              {INSTRUMENT_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            {instrument && (
-              <p className="text-xs text-muted-foreground mt-1">
-                {instrument.description}
-                {instrument.hasAudio && instrument.hasVisual && ' (Audio + Visual)'}
-                {instrument.hasAudio && !instrument.hasVisual && ' (Audio)'}
-                {!instrument.hasAudio && instrument.hasVisual && ' (Visual)'}
-              </p>
-            )}
-          </div>
+          {/* Unified Instrument (hidden for automation tracks) */}
+          {!track.automationConfig && (
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Instrument</label>
+              <select
+                value={track.instrumentId || ''}
+                onChange={(e) => handleInstrumentChange(e.target.value || undefined)}
+                className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
+              >
+                <option value="">None (modifier only)</option>
+                {INSTRUMENT_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              {instrument && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {instrument.description}
+                  {instrument.hasAudio && instrument.hasVisual && ' (Audio + Visual)'}
+                  {instrument.hasAudio && !instrument.hasVisual && ' (Audio)'}
+                  {!instrument.hasAudio && instrument.hasVisual && ' (Visual)'}
+                </p>
+              )}
+            </div>
+          )}
 
-          {/* Instrument Settings - Dynamic based on settingsSchema */}
-          {effectiveInstrument?.settingsSchema && (
+          {/* Instrument Settings - Dynamic based on settingsSchema (hidden for automation tracks) */}
+          {!track.automationConfig && effectiveInstrument?.settingsSchema && (
             <div className="space-y-3 pl-3 border-l-2 border-accent-from/30">
               <label className="block text-xs text-muted-foreground">
                 Settings{isInherited && ' (inherited instrument)'}
@@ -258,6 +261,34 @@ export function TrackInspector({ track }: TrackInspectorProps) {
                       </select>
                     </>
                   )}
+
+                  {field.type === 'color' && (
+                    <>
+                      <label className="block text-xs text-muted-foreground mb-1">
+                        {field.label}
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={(track.instrumentSettings?.[key] as string) ?? (field.default as string)}
+                          onChange={(e) => handleSettingChange(key, e.target.value)}
+                          className="w-10 h-10 rounded-lg border border-border cursor-pointer bg-transparent p-0.5"
+                        />
+                        <input
+                          type="text"
+                          value={(track.instrumentSettings?.[key] as string) ?? (field.default as string)}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (/^#[0-9a-fA-F]{0,6}$/.test(v.slice(1)) && v.startsWith('#')) {
+                              handleSettingChange(key, v);
+                            }
+                          }}
+                          maxLength={7}
+                          className="flex-1 px-3 py-2 rounded-lg bg-background border border-border text-foreground font-mono text-sm focus:outline-none focus:ring-2 focus:ring-accent-from"
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               ))}
             </div>
@@ -265,40 +296,101 @@ export function TrackInspector({ track }: TrackInspectorProps) {
 
           {/* Automation Track Config */}
           {track.automationConfig && (() => {
-            // Find parent instrument's settingsSchema for the target picker
             const parentTrack = track.parentId ? tracks[track.parentId] : undefined;
             const parentInstrument = parentTrack?.instrumentId ? getInstrument(parentTrack.instrumentId) : undefined;
-            const schema = parentInstrument?.settingsSchema as SettingsSchema | undefined;
-            const numericParams = schema
-              ? Object.entries(schema).filter(([, field]) => field.type === 'number')
+            const instrumentSchema = parentInstrument?.settingsSchema as SettingsSchema | undefined;
+            const instrumentParams = instrumentSchema
+              ? Object.entries(instrumentSchema).filter(([, field]) => field.type === 'number')
               : [];
+
+            // Gather plugin params from parent's visualPlugins
+            const pluginParams: { instanceId: string; pluginName: string; key: string; label: string }[] = [];
+            for (const pi of parentTrack?.visualPlugins ?? []) {
+              const plugin = getPlugin(pi.pluginId);
+              // Always add "Enabled" as a virtual param
+              pluginParams.push({ instanceId: pi.id, pluginName: plugin?.name ?? pi.pluginId, key: 'enabled', label: 'Enabled' });
+              if (!plugin?.settingsSchema) continue;
+              for (const [key, field] of Object.entries(plugin.settingsSchema)) {
+                if (field.type === 'number') {
+                  pluginParams.push({ instanceId: pi.id, pluginName: plugin.name, key, label: field.label });
+                }
+              }
+            }
+
+            // Encode selection as "paramKey" for instrument or "plugin:instanceId:paramKey" for plugins
+            const currentValue = track.automationConfig!.pluginInstanceId
+              ? `plugin:${track.automationConfig!.pluginInstanceId}:${track.automationConfig!.targetParam}`
+              : track.automationConfig!.targetParam;
+
+            const handleTargetChange = (encoded: string) => {
+              if (encoded.startsWith('plugin:')) {
+                const parts = encoded.split(':');
+                const instanceId = parts[1];
+                const paramKey = parts.slice(2).join(':');
+                const pi = parentTrack?.visualPlugins?.find(p => p.id === instanceId);
+                const plugin = pi ? getPlugin(pi.pluginId) : undefined;
+                const label = paramKey === 'enabled' ? 'Enabled' : (plugin?.settingsSchema?.[paramKey]?.label ?? paramKey);
+                updateTrack(track.id, {
+                  name: `${plugin?.name ?? 'Effect'}: ${label}`,
+                  automationConfig: {
+                    ...track.automationConfig!,
+                    targetParam: paramKey,
+                    pluginInstanceId: instanceId,
+                  },
+                });
+              } else {
+                const label = (instrumentSchema?.[encoded]?.label ?? encoded) || 'Automation';
+                updateTrack(track.id, {
+                  name: label,
+                  automationConfig: {
+                    ...track.automationConfig!,
+                    targetParam: encoded,
+                    pluginInstanceId: undefined,
+                  },
+                });
+              }
+            };
 
             return (
               <div className="space-y-3 pl-3 border-l-2 border-accent-from/30">
                 <label className="block text-xs text-muted-foreground">Automation</label>
 
-                {/* Target parameter picker */}
+                {/* Hierarchical target parameter picker */}
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">Target Parameter</label>
                   <select
-                    value={track.automationConfig!.targetParam}
-                    onChange={(e) =>
-                      updateTrack(track.id, {
-                        name: (schema?.[e.target.value]?.label ?? e.target.value) || 'Automation',
-                        automationConfig: {
-                          ...track.automationConfig!,
-                          targetParam: e.target.value,
-                        },
-                      })
-                    }
+                    value={currentValue}
+                    onChange={(e) => handleTargetChange(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
                   >
-                    {!track.automationConfig!.targetParam && (
+                    {!currentValue && (
                       <option value="">Select parameter...</option>
                     )}
-                    {numericParams.map(([key, field]) => (
-                      <option key={key} value={key}>{field.label}</option>
-                    ))}
+                    {instrumentParams.length > 0 && (
+                      <optgroup label={parentInstrument?.name ?? 'Instrument'}>
+                        {instrumentParams.map(([key, field]) => (
+                          <option key={key} value={key}>{field.label}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {/* Group plugin params by plugin instance */}
+                    {(() => {
+                      const grouped = new Map<string, typeof pluginParams>();
+                      for (const pp of pluginParams) {
+                        const key = pp.instanceId;
+                        if (!grouped.has(key)) grouped.set(key, []);
+                        grouped.get(key)!.push(pp);
+                      }
+                      return Array.from(grouped.entries()).map(([instanceId, params]) => (
+                        <optgroup key={instanceId} label={params[0].pluginName}>
+                          {params.map(pp => (
+                            <option key={`${instanceId}:${pp.key}`} value={`plugin:${instanceId}:${pp.key}`}>
+                              {pp.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ));
+                    })()}
                   </select>
                 </div>
 

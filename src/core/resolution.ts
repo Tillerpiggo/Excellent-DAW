@@ -2,6 +2,17 @@ import { Project, Track, Block, Event, Output, ProcessContext, HarmonyInfo } fro
 import { getTrackType } from './trackTypes';
 import { findHarmonyInOutput, deriveScaleFromHarmony } from './harmony';
 import { getInstrument } from '@/instruments';
+import { getPlugin } from '@/plugins';
+
+/**
+ * Check if a track should be skipped given solo state among its siblings.
+ * If any sibling is solo'd, non-solo'd tracks are skipped. Muted tracks always skip.
+ */
+function isTrackSkipped(track: Track, anySiblingsSoloed: boolean): boolean {
+  if (track.muted) return true;
+  if (anySiblingsSoloed && !track.solo) return true;
+  return false;
+}
 
 export interface BlackoutRegion {
   startBeat: number;
@@ -15,6 +26,7 @@ export interface AutomationKeyframe {
 
 export interface AutomationLane {
   paramKey: string;
+  pluginInstanceId?: string;  // if set, targets a plugin's param
   interpolate: boolean;
   keyframes: AutomationKeyframe[];  // sorted by beatTime
 }
@@ -49,9 +61,13 @@ function categorizeChildren(track: Track, project: Project): CategorizedChildren
   const regular: Track[] = [];
   const automation: Track[] = [];
 
-  for (const childId of track.childIds) {
-    const childTrack = project.tracks[childId];
-    if (!childTrack || childTrack.muted) continue;
+  const children = track.childIds
+    .map(id => project.tracks[id])
+    .filter((t): t is Track => !!t);
+  const anyChildSoloed = children.some(t => t.solo);
+
+  for (const childTrack of children) {
+    if (isTrackSkipped(childTrack, anyChildSoloed)) continue;
 
     if (childTrack.automationConfig) {
       automation.push(childTrack);
@@ -165,6 +181,17 @@ function buildTrackOutputs(
     });
   }
 
+  // Groups with visual plugins but no instrument still need a resolved entry
+  // so automation lanes can be attached and evaluated
+  if (results.length === 0 && track.visualPlugins && track.visualPlugins.length > 0) {
+    results.push({
+      trackId: track.id,
+      instrumentId: undefined,
+      instrumentSettings: undefined,
+      output: combinedOutput,
+    });
+  }
+
   return results;
 }
 
@@ -183,9 +210,13 @@ function resolveModifierOutput(
   const nestedModifiers: Track[] = [];
   const nestedRegular: Track[] = [];
 
-  for (const childId of modifierTrack.childIds) {
-    const childTrack = project.tracks[childId];
-    if (!childTrack || childTrack.muted) continue;
+  const modChildren = modifierTrack.childIds
+    .map(id => project.tracks[id])
+    .filter((t): t is Track => !!t);
+  const anyModChildSoloed = modChildren.some(t => t.solo);
+
+  for (const childTrack of modChildren) {
+    if (isTrackSkipped(childTrack, anyModChildSoloed)) continue;
 
     const childType = getTrackType(childTrack.typeId);
     if (childType.category === 'modifier' && !childTrack.instrumentId) {
@@ -232,21 +263,41 @@ function buildAutomationLanes(
   context: ProcessContext
 ): AutomationLane[] {
   const parentInstrument = parentTrack.instrumentId ? getInstrument(parentTrack.instrumentId) : undefined;
-  const schema = parentInstrument?.settingsSchema;
-  if (!schema) return [];
-
   const lanes: AutomationLane[] = [];
 
   for (const autoTrack of automationChildren) {
     const config = autoTrack.automationConfig!;
-    const field = schema[config.targetParam];
-    if (!field || field.type !== 'number') continue;
+    if (!config.targetParam) continue;
 
-    const paramMin = field.min ?? 0;
-    const paramMax = field.max ?? 1;
+    // Determine which schema to use: plugin or instrument
+    let schema: Record<string, { type: string; min?: number; max?: number; step?: number; label: string; default: unknown }> | undefined;
+    if (config.pluginInstanceId) {
+      // Find the plugin instance on the parent track
+      const pluginInstance = parentTrack.visualPlugins?.find(p => p.id === config.pluginInstanceId);
+      if (!pluginInstance) continue;
+      const plugin = getPlugin(pluginInstance.pluginId);
+      schema = plugin?.settingsSchema;
+    } else {
+      schema = parentInstrument?.settingsSchema;
+    }
+    // "enabled" is a virtual param (on/off toggle), not in settingsSchema
+    let paramMin: number;
+    let paramMax: number;
+    if (config.targetParam === 'enabled') {
+      paramMin = 0;
+      paramMax = 1;
+    } else {
+      if (!schema) continue;
+      const field = schema[config.targetParam];
+      if (!field || field.type !== 'number') continue;
+      paramMin = field.min ?? 0;
+      paramMax = field.max ?? 1;
+    }
 
-    // Use parent instrument's noteRange or default 36-96
-    const noteRange = parentInstrument?.noteRange ?? { min: 36, max: 96 };
+    // "enabled" uses a simple 0-1 pitch range; others use instrument noteRange
+    const noteRange = config.targetParam === 'enabled'
+      ? { min: 0, max: 1 }
+      : (parentInstrument?.noteRange ?? { min: 36, max: 96 });
     const pitchMin = noteRange.min;
     const pitchMax = noteRange.max;
     const pitchSpan = pitchMax - pitchMin;
@@ -267,6 +318,7 @@ function buildAutomationLanes(
 
     lanes.push({
       paramKey: config.targetParam,
+      pluginInstanceId: config.pluginInstanceId,
       interpolate: config.interpolate,
       keyframes,
     });
@@ -284,10 +336,14 @@ export function resolveProject(project: Project): ResolvedTrack[] {
     currentBar: 0,
   };
 
-  // Process root tracks
-  for (const rootId of project.rootTracks) {
-    const track = project.tracks[rootId];
-    if (!track || track.muted) continue;
+  // Process root tracks (respect solo)
+  const rootTracks = project.rootTracks
+    .map(id => project.tracks[id])
+    .filter((t): t is Track => !!t);
+  const anyRootSoloed = rootTracks.some(t => t.solo);
+
+  for (const track of rootTracks) {
+    if (isTrackSkipped(track, anyRootSoloed)) continue;
 
     const resolved = resolveTrack(track, project, baseContext);
     results.push(...resolved);

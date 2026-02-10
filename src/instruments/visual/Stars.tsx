@@ -192,10 +192,10 @@ function StarsVisual({ trackId }: { trackId: string }) {
     const dt = Math.min(delta, 0.05); // Cap delta to avoid huge jumps
 
     // Read settings
-    const starCount = Math.min(
+    const starCount = Math.round(Math.min(
       MAX_STARS,
       (tState.params.starCount as number) ?? DEFAULTS.starCount,
-    );
+    ));
     const dotSize = (tState.params.dotSize as number) ?? DEFAULTS.dotSize;
     const speed = (tState.params.speed as number) ?? DEFAULTS.speed;
     const spread = (tState.params.spread as number) ?? DEFAULTS.spread;
@@ -494,11 +494,11 @@ export const Stars: Instrument = {
       default: DEFAULTS.starCount,
     },
     dotSize: {
-      type: 'number', label: 'Dot Size', min: 0.5, max: 6, step: 0.5,
+      type: 'number', label: 'Dot Size', min: 0, max: 6, step: 0.5,
       default: DEFAULTS.dotSize,
     },
     speed: {
-      type: 'number', label: 'Speed', min: 0.1, max: 5, step: 0.1,
+      type: 'number', label: 'Speed', min: 0, max: 20, step: 0.1,
       default: DEFAULTS.speed,
     },
     spread: {

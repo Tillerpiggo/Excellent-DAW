@@ -35,9 +35,13 @@ export function VisualViewPanel() {
 
     // Helper to collect visual tracks, respecting group hierarchy
     const collectVisualTracks = (trackIds: string[], parentHasEffects: boolean = false) => {
+      const siblings = trackIds.map(id => tracks[id]).filter(Boolean);
+      const anySoloed = siblings.some(t => t.solo);
+
       for (const trackId of trackIds) {
         const track = tracks[trackId];
         if (!track || track.muted || processedIds.has(trackId)) continue;
+        if (anySoloed && !track.solo) continue;
 
         const hasPlugins = (track.visualPlugins?.length ?? 0) > 0;
         const isGroup = track.childIds.length > 0;

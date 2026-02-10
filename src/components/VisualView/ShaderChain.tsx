@@ -6,8 +6,10 @@ import { useFBO } from '@react-three/drei';
 import * as THREE from 'three';
 import { PluginInstance } from '@/core/types';
 import { getPlugin } from '@/plugins';
+import { getPluginSettingsWithOverrides } from '@/core/visualPlayback';
 
 interface ShaderChainProps {
+  trackId: string;
   inputTexture: THREE.Texture;
   plugins: PluginInstance[];
   size?: number;
@@ -37,15 +39,14 @@ interface ShaderPassData {
   instance: PluginInstance;
 }
 
-export function ShaderChain({ inputTexture, plugins, size = 1024 }: ShaderChainProps) {
+export function ShaderChain({ trackId, inputTexture, plugins, size = 1024 }: ShaderChainProps) {
   const { gl } = useThree();
   const meshRef = useRef<THREE.Mesh>(null);
   const sceneRef = useRef(new THREE.Scene());
   const cameraRef = useRef(new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1));
 
-  // Filter to only enabled shader plugins
+  // Get all shader plugins (enabled check is per-frame via automation)
   const shaderPlugins = plugins.filter((instance) => {
-    if (!instance.enabled) return false;
     const plugin = getPlugin(instance.pluginId);
     return plugin?.category === 'shader' && plugin.fragmentShader;
   });
@@ -144,10 +145,20 @@ export function ShaderChain({ inputTexture, plugins, size = 1024 }: ShaderChainP
     const time = state.clock.elapsedTime;
     const quadMesh = quadMeshRef.current;
 
-    // Update time uniform for all passes
+    // Update time uniform and automation overrides for all passes
     passes.forEach((pass) => {
       if (pass.material.uniforms.time) {
         pass.material.uniforms.time.value = time;
+      }
+      // Apply automation overrides to shader uniforms
+      const plugin = getPlugin(pass.instance.pluginId);
+      if (plugin?.settingsSchema) {
+        const settings = getPluginSettingsWithOverrides(trackId, pass.instance.id, pass.instance.settings);
+        for (const key of Object.keys(plugin.settingsSchema)) {
+          if (pass.material.uniforms[key]) {
+            pass.material.uniforms[key].value = settings[key] ?? plugin.defaultSettings[key];
+          }
+        }
       }
     });
 
@@ -161,6 +172,11 @@ export function ShaderChain({ inputTexture, plugins, size = 1024 }: ShaderChainP
     let currentTexture: THREE.Texture = inputTexture;
 
     passes.forEach((pass) => {
+      // Check enabled: automation override takes priority, else use store value
+      const passSettings = getPluginSettingsWithOverrides(trackId, pass.instance.id, pass.instance.settings);
+      const isEnabled = passSettings.enabled !== undefined ? (passSettings.enabled as number) >= 0.5 : pass.instance.enabled;
+      if (!isEnabled) return;
+
       // Set input texture
       pass.material.uniforms.tDiffuse.value = currentTexture;
 

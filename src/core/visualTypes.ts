@@ -9,6 +9,7 @@ export interface VisualInstrumentState {
   bloom: number;
   colorShift: number;
   params: Record<string, unknown>; // Merged: instrument defaults + track overrides
+  pluginParamOverrides: Map<string, Record<string, unknown>>; // pluginInstanceId → { paramKey → value }
   noteOnCount: number; // Increments for EVERY note-on trigger (never throttled)
   pitchNoteOnCounts: Map<number, number>; // Per-pitch note-on counts
   blackedOut: boolean; // True when instrument is completely disabled by a mute region

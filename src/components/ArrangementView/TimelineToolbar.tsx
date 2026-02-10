@@ -48,12 +48,24 @@ export function TimelineToolbar() {
   const setTrackHeightScale = useUIStore((state) => state.setTrackHeightScale);
   const timelineQuantize = useUIStore((state) => state.timelineQuantize);
   const setTimelineQuantize = useUIStore((state) => state.setTimelineQuantize);
+  const timelineSnapEnabled = useUIStore((state) => state.timelineSnapEnabled);
+  const setTimelineSnapEnabled = useUIStore((state) => state.setTimelineSnapEnabled);
 
   return (
     <div className="flex items-center gap-4 px-3 py-1.5 bg-surface border-b border-border">
       {/* Snap/Quantize */}
       <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground">Snap:</span>
+        <button
+          onClick={() => setTimelineSnapEnabled(!timelineSnapEnabled)}
+          className={`px-2 py-0.5 border rounded text-xs font-medium transition-colors ${
+            timelineSnapEnabled
+              ? 'bg-accent-from/20 border-accent-from text-accent-from'
+              : 'bg-background border-border text-muted-foreground hover:border-muted-foreground'
+          }`}
+          title={timelineSnapEnabled ? 'Snap to grid (on)' : 'Snap to grid (off)'}
+        >
+          Snap
+        </button>
         <select
           value={timelineQuantize}
           onChange={(e) => setTimelineQuantize(Number(e.target.value))}

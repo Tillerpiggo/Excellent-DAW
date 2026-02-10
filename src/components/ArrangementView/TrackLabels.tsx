@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { TrackNode } from '@/utils/tree';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useDragDrop } from '@/hooks/useDragDrop';
 import { TRACK_TYPE_COLORS, INSTRUMENT_COLORS, withAlpha } from '@/utils/colors';
 import { getInstrument } from '@/instruments';
+import { getPlugin } from '@/plugins';
 
 interface TrackLabelsProps {
   flatTracks: TrackNode[];
@@ -17,9 +18,33 @@ export function TrackLabels({ flatTracks }: TrackLabelsProps) {
   const dragState = useUIStore((state) => state.dragState);
   const trackHeightScale = useUIStore((state) => state.trackHeightScale);
   const { handleDragOver, handleDragLeave, handleHierarchyDrop } = useDragDrop();
+  const updateTrack = useProjectStore((state) => state.updateTrack);
 
   const trackHeight = Math.round(64 * trackHeightScale);
   const hasTracks = flatTracks.length > 0;
+
+  // Drag-over mute/solo state (Logic-style: mousedown on M/S, drag over others)
+  const muteSoloDragRef = useRef<{ type: 'mute' | 'solo'; value: boolean } | null>(null);
+
+  const handleMuteSoloDragStart = useCallback((type: 'mute' | 'solo', value: boolean) => {
+    muteSoloDragRef.current = { type, value };
+  }, []);
+
+  const handleMuteSoloDragEnter = useCallback((trackId: string) => {
+    const drag = muteSoloDragRef.current;
+    if (!drag) return;
+    if (drag.type === 'mute') {
+      updateTrack(trackId, { muted: drag.value });
+    } else {
+      updateTrack(trackId, { solo: drag.value });
+    }
+  }, [updateTrack]);
+
+  useEffect(() => {
+    const handlePointerUp = () => { muteSoloDragRef.current = null; };
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => window.removeEventListener('pointerup', handlePointerUp);
+  }, []);
 
   return (
     <div
@@ -53,7 +78,7 @@ export function TrackLabels({ flatTracks }: TrackLabelsProps) {
       {/* Simple display - NO DnD wrapper, NO drag handles */}
       <div className="py-1">
         {flatTracks.map((node) => (
-          <TrackLabelRow key={node.track.id} node={node} trackHeight={trackHeight} />
+          <TrackLabelRow key={node.track.id} node={node} trackHeight={trackHeight} onMuteSoloDragStart={handleMuteSoloDragStart} onMuteSoloDragEnter={handleMuteSoloDragEnter} />
         ))}
       </div>
     </div>
@@ -61,7 +86,12 @@ export function TrackLabels({ flatTracks }: TrackLabelsProps) {
 }
 
 // Simplified row without drag handle - display only
-function TrackLabelRow({ node, trackHeight }: { node: TrackNode; trackHeight: number }) {
+function TrackLabelRow({ node, trackHeight, onMuteSoloDragStart, onMuteSoloDragEnter }: {
+  node: TrackNode;
+  trackHeight: number;
+  onMuteSoloDragStart: (type: 'mute' | 'solo', value: boolean) => void;
+  onMuteSoloDragEnter: (trackId: string) => void;
+}) {
   const { track, depth } = node;
   const updateTrack = useProjectStore((state) => state.updateTrack);
   const addTrack = useProjectStore((state) => state.addTrack);
@@ -130,10 +160,11 @@ function TrackLabelRow({ node, trackHeight }: { node: TrackNode; trackHeight: nu
     closeContextMenu();
   }, [track.id, selectTrack, collapsedTrackIds, toggleTrackCollapsed, closeContextMenu]);
 
-  // Check if track has automatable params
+  // Check if track has automatable params (instrument or visual plugins)
   const instrument = track.instrumentId ? getInstrument(track.instrumentId) : undefined;
-  const hasAutomatableParams = instrument?.settingsSchema &&
-    Object.values(instrument.settingsSchema).some(f => f.type === 'number');
+  const hasAutomatableParams = (instrument?.settingsSchema &&
+    Object.values(instrument.settingsSchema).some(f => f.type === 'number')) ||
+    (track.visualPlugins && track.visualPlugins.length > 0);
 
   const isSelected = selectedTrackIds.has(track.id);
   const isCollapsed = collapsedTrackIds.has(track.id);
@@ -190,7 +221,7 @@ function TrackLabelRow({ node, trackHeight }: { node: TrackNode; trackHeight: nu
       />
 
       {/* Track Name */}
-      <span className={`flex-1 text-base truncate ${track.muted ? 'text-muted-foreground line-through' : ''}`}>
+      <span className={`flex-1 text-base truncate ${track.muted ? 'text-muted-foreground' : ''}`}>
         {track.name}
       </span>
 
@@ -209,16 +240,34 @@ function TrackLabelRow({ node, trackHeight }: { node: TrackNode; trackHeight: nu
 
       {/* Mute Button */}
       <button
-        onClick={(e) => {
+        onPointerDown={(e) => {
           e.stopPropagation();
           updateTrack(track.id, { muted: !track.muted });
+          onMuteSoloDragStart('mute', !track.muted);
         }}
+        onPointerEnter={() => onMuteSoloDragEnter(track.id)}
         className={`ml-2 w-6 h-6 rounded text-xs flex items-center justify-center transition-colors ${
           track.muted ? 'bg-red-500/20 text-red-400' : 'bg-muted/50 text-muted-foreground hover:bg-muted'
         }`}
         title={track.muted ? 'Unmute' : 'Mute'}
       >
         M
+      </button>
+
+      {/* Solo Button */}
+      <button
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          updateTrack(track.id, { solo: !track.solo });
+          onMuteSoloDragStart('solo', !track.solo);
+        }}
+        onPointerEnter={() => onMuteSoloDragEnter(track.id)}
+        className={`w-6 h-6 rounded text-xs flex items-center justify-center transition-colors ${
+          track.solo ? 'bg-yellow-500/20 text-yellow-400' : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+        }`}
+        title={track.solo ? 'Unsolo' : 'Solo'}
+      >
+        S
       </button>
 
       {/* Context menu */}

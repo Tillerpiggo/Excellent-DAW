@@ -10,6 +10,7 @@ import { useDragDrop } from '@/hooks/useDragDrop';
 import { isAudioFile } from '@/core/audio';
 import { INSTRUMENT_COLORS, TRACK_TYPE_COLORS, darken, tintWhite } from '@/utils/colors';
 import { getInstrument } from '@/instruments';
+import { getPlugin } from '@/plugins';
 
 // Ruler height constant
 const RULER_HEIGHT = 48;
@@ -422,6 +423,7 @@ export function TimelineCanvas({
   const loopEnd = useUIStore((state) => state.loopEnd);
   const setLoopEnabled = useUIStore((state) => state.setLoopEnabled);
   const timelineQuantize = useUIStore((state) => state.timelineQuantize);
+  const timelineSnapEnabled = useUIStore((state) => state.timelineSnapEnabled);
   const updateBlock = useProjectStore((state) => state.updateBlock);
   const addBlock = useProjectStore((state) => state.addBlock);
   const addTrack = useProjectStore((state) => state.addTrack);
@@ -653,14 +655,16 @@ export function TimelineCanvas({
       const { x, y } = screenToWorld(e.clientX, e.clientY);
       if (x === 0 && y === 0) return;
 
-      const quantizePixels = timelineQuantize * pixelsPerBeat;
+      const snapSize = timelineSnapEnabled ? timelineQuantize : 1 / 128;
+      const quantizePixels = snapSize * pixelsPerBeat;
+      const minDurationBars = snapSize / beatsPerBar;
 
       if (dragState.type === 'marquee') {
         setDragState(prev => ({ ...prev, currentX: x, currentY: y }));
       } else if (dragState.type === 'drag' && dragState.originalPositions && dragState.block) {
         const deltaX = x - dragState.startX;
         const deltaQuantizeUnits = Math.round(deltaX / quantizePixels);
-        const deltaBars = (deltaQuantizeUnits * timelineQuantize) / beatsPerBar;
+        const deltaBars = (deltaQuantizeUnits * snapSize) / beatsPerBar;
 
         for (const [blockId, original] of dragState.originalPositions) {
           const newStartBar = Math.max(0, original.startBar + deltaBars);
@@ -669,12 +673,11 @@ export function TimelineCanvas({
       } else if (dragState.type === 'resize-left' && dragState.originalPositions) {
         const deltaX = x - dragState.startX;
         const deltaQuantizeUnits = Math.round(deltaX / quantizePixels);
-        const deltaBars = (deltaQuantizeUnits * timelineQuantize) / beatsPerBar;
+        const deltaBars = (deltaQuantizeUnits * snapSize) / beatsPerBar;
 
         for (const [blockId, original] of dragState.originalPositions) {
           const newStartBar = Math.max(0, original.startBar + deltaBars);
           const startDelta = newStartBar - original.startBar;
-          const minDurationBars = timelineQuantize / beatsPerBar;
           const newDuration = Math.max(minDurationBars, original.durationBars - startDelta);
           const originalEndBar = original.startBar + original.durationBars;
           const clampedDuration = Math.min(newDuration, originalEndBar - newStartBar);
@@ -689,10 +692,9 @@ export function TimelineCanvas({
       } else if ((dragState.type === 'resize-right-loop' || dragState.type === 'resize-right-extend') && dragState.originalPositions) {
         const deltaX = x - dragState.startX;
         const deltaQuantizeUnits = Math.round(deltaX / quantizePixels);
-        const deltaBars = (deltaQuantizeUnits * timelineQuantize) / beatsPerBar;
+        const deltaBars = (deltaQuantizeUnits * snapSize) / beatsPerBar;
 
         for (const [blockId, original] of dragState.originalPositions) {
-          const minDurationBars = timelineQuantize / beatsPerBar;
           const newDuration = Math.max(minDurationBars, original.durationBars + deltaBars);
           const blk = tracks[original.trackId]?.blocks.find(b => b.id === blockId);
 
@@ -758,7 +760,7 @@ export function TimelineCanvas({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [dragState, barWidth, trackHeight, flatTracks, updateBlock, selectBlocks, tracks, beatsPerBar, screenToWorld, pixelsPerBeat, timelineQuantize]);
+  }, [dragState, barWidth, trackHeight, flatTracks, updateBlock, selectBlocks, tracks, beatsPerBar, screenToWorld, pixelsPerBeat, timelineQuantize, timelineSnapEnabled]);
 
   // Loop drag move/up
   useEffect(() => {
@@ -1609,7 +1611,9 @@ export function TimelineCanvas({
               {(() => {
                 const t = tracks[contextMenu.trackId!];
                 const inst = t?.instrumentId ? getInstrument(t.instrumentId) : undefined;
-                if (!inst?.settingsSchema || !Object.values(inst.settingsSchema).some(f => f.type === 'number')) return null;
+                const hasAutoParams = (inst?.settingsSchema && Object.values(inst.settingsSchema).some(f => f.type === 'number')) ||
+                  (t?.visualPlugins && t.visualPlugins.length > 0);
+                if (!hasAutoParams) return null;
                 return (
                   <button
                     onClick={handleAddAutomationTrack}

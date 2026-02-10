@@ -5,18 +5,19 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { PluginInstance } from '@/core/types';
 import { getPlugin } from '@/plugins';
+import { getPluginSettingsWithOverrides } from '@/core/visualPlayback';
 
 interface TransformWrapperProps {
+  trackId: string;
   plugins: PluginInstance[];
   children: React.ReactNode;
 }
 
-export function TransformWrapper({ plugins, children }: TransformWrapperProps) {
+export function TransformWrapper({ trackId, plugins, children }: TransformWrapperProps) {
   const groupRef = useRef<THREE.Group>(null);
 
-  // Get only enabled transform plugins
+  // Get all transform plugins (enabled check is per-frame via automation)
   const transformPlugins = plugins.filter((instance) => {
-    if (!instance.enabled) return false;
     const plugin = getPlugin(instance.pluginId);
     return plugin?.category === 'transform' && plugin.applyTransform;
   });
@@ -29,12 +30,16 @@ export function TransformWrapper({ plugins, children }: TransformWrapperProps) {
     groupRef.current.scale.set(1, 1, 1);
     groupRef.current.position.set(0, 0, 0);
 
-    // Apply each transform plugin in order
+    // Apply each transform plugin in order (with automation overrides)
     const time = state.clock.elapsedTime;
     for (const instance of transformPlugins) {
       const plugin = getPlugin(instance.pluginId);
       if (plugin?.applyTransform) {
-        plugin.applyTransform(groupRef.current, instance.settings, time);
+        const settings = getPluginSettingsWithOverrides(trackId, instance.id, instance.settings);
+        // Check enabled: automation override takes priority, else use store value
+        const isEnabled = settings.enabled !== undefined ? (settings.enabled as number) >= 0.5 : instance.enabled;
+        if (!isEnabled) continue;
+        plugin.applyTransform(groupRef.current, settings, time);
       }
     }
   });

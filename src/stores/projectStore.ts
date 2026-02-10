@@ -28,6 +28,7 @@ interface ProjectState {
   splitBlockAtPosition: (trackId: string, blockId: string, splitBar: number, beatsPerBar: number) => string | null;
   updateBlockDrums: (trackId: string, blockId: string, events: Event[]) => void;
   updateBlockEvents: (trackId: string, blockId: string, events: Event[]) => void;
+  joinBlocks: (trackId: string, blockIds: string[], beatsPerBar: number) => string | null;
 
   // Visual plugin operations
   addVisualPlugin: (trackId: string, pluginId: string) => string;
@@ -71,6 +72,7 @@ function createDefaultTrack(
     typeId: preset?.defaultTrackType || (parentId ? 'add' : 'base'),
     instrumentId: preset?.defaultInstrument,
     muted: false,
+    solo: false,
     collapsed: false,
     blocks: [],
     childIds: [],
@@ -139,6 +141,7 @@ export const useProjectStore = create<ProjectState>()(
           typeId: 'base',
           instrumentId: 'audioPlayer',
           muted: false,
+          solo: false,
           collapsed: false,
           blocks: [],
           childIds: [],
@@ -170,6 +173,7 @@ export const useProjectStore = create<ProjectState>()(
           typeId: 'base',
           automationConfig: { targetParam: paramKey, interpolate: false },
           muted: false,
+          solo: false,
           collapsed: false,
           blocks: [],
           childIds: [],
@@ -298,6 +302,7 @@ export const useProjectStore = create<ProjectState>()(
           name: 'Group',
           typeId: 'base',
           muted: false,
+          solo: false,
           collapsed: false,
           blocks: [],
           childIds: [...trackIds],
@@ -505,6 +510,65 @@ export const useProjectStore = create<ProjectState>()(
 
         block.streams = [{ events }];
       });
+    },
+
+    joinBlocks: (trackId: string, blockIds: string[], beatsPerBar: number) => {
+      if (blockIds.length < 2) return null;
+
+      let joinedId: string | null = null;
+
+      set((state) => {
+        const track = state.project.tracks[trackId];
+        if (!track) return;
+
+        // Find and validate all blocks
+        const blocks = blockIds
+          .map(id => track.blocks.find(b => b.id === id))
+          .filter((b): b is Block => !!b);
+
+        if (blocks.length < 2) return;
+        if (blocks.some(b => b.loop)) return; // no looped blocks
+
+        // Sort by start position
+        blocks.sort((a, b) => a.startBar - b.startBar);
+
+        const firstStart = blocks[0].startBar;
+        const lastEnd = Math.max(...blocks.map(b => b.startBar + b.durationBars));
+        const totalDuration = lastEnd - firstStart;
+
+        // Merge all events, offsetting times relative to the new block start
+        const mergedEvents: Event[] = [];
+        for (const block of blocks) {
+          const blockOffsetBeats = (block.startBar - firstStart) * beatsPerBar;
+          for (const stream of block.streams) {
+            for (const event of stream.events) {
+              mergedEvents.push({
+                ...event,
+                startTimeInBeats: event.startTimeInBeats + blockOffsetBeats,
+              });
+            }
+          }
+        }
+
+        // Create merged block
+        const newId = generateId();
+        const mergedBlock: Block = {
+          id: newId,
+          startBar: firstStart,
+          durationBars: totalDuration,
+          loop: false,
+          streams: [{ events: mergedEvents }],
+        };
+
+        // Remove old blocks and insert merged one
+        track.blocks = track.blocks.filter(b => !blockIds.includes(b.id));
+        track.blocks.push(mergedBlock);
+        track.blocks.sort((a, b) => a.startBar - b.startBar);
+
+        joinedId = newId;
+      });
+
+      return joinedId;
     },
 
     addVisualPlugin: (trackId: string, pluginId: string) => {
@@ -717,6 +781,7 @@ export function addTrackFromInstrument(instrumentId: string, parentId?: string):
     instrumentId,
     instrumentSettings: instrument?.defaultSettings ? { ...instrument.defaultSettings } : undefined,
     muted: false,
+    solo: false,
     collapsed: false,
     blocks: [],
     childIds: [],

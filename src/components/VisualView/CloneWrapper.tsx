@@ -5,14 +5,17 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { PluginInstance } from '@/core/types';
 import { getPlugin } from '@/plugins';
+import { getPluginSettingsWithOverrides } from '@/core/visualPlayback';
 
 interface CloneWrapperProps {
+  trackId: string;
   plugins: PluginInstance[];
   children: ReactNode;
 }
 
 interface CloneData {
   pluginId: string;
+  instanceId: string;
   count: number;
   getTransform: (
     index: number,
@@ -29,12 +32,11 @@ const _position = new THREE.Vector3();
 const _scale = new THREE.Vector3();
 const _quaternion = new THREE.Quaternion();
 
-export function CloneWrapper({ plugins, children }: CloneWrapperProps) {
+export function CloneWrapper({ trackId, plugins, children }: CloneWrapperProps) {
   const groupRefs = useRef<(THREE.Group | null)[]>([]);
 
-  // Get only enabled clone plugins
+  // Get all clone plugins (enabled check is per-frame via automation)
   const clonePlugins = plugins.filter((instance) => {
-    if (!instance.enabled) return false;
     const plugin = getPlugin(instance.pluginId);
     return plugin?.category === 'clone' && plugin.getClones;
   });
@@ -46,6 +48,7 @@ export function CloneWrapper({ plugins, children }: CloneWrapperProps) {
       const cloneConfig = plugin.getClones!(instance.settings);
       return {
         pluginId: instance.pluginId,
+        instanceId: instance.id,
         count: cloneConfig.count,
         getTransform: cloneConfig.getTransform,
         settings: instance.settings,
@@ -83,7 +86,15 @@ export function CloneWrapper({ plugins, children }: CloneWrapperProps) {
         const subIndex = remainingIndex % data.count;
         remainingIndex = Math.floor(remainingIndex / data.count);
 
-        const transform = data.getTransform(subIndex, data.settings, time);
+        const settings = getPluginSettingsWithOverrides(trackId, data.instanceId, data.settings);
+        // Check enabled: automation override takes priority, else use store value
+        const pi = plugins.find(p => p.id === data.instanceId);
+        const isEnabled = settings.enabled !== undefined ? (settings.enabled as number) >= 0.5 : (pi?.enabled ?? true);
+        if (!isEnabled) {
+          remainingIndex = Math.floor(remainingIndex / data.count);
+          continue;
+        }
+        const transform = data.getTransform(subIndex, settings, time);
         _combinedMatrix.premultiply(transform);
       }
 
@@ -95,7 +106,9 @@ export function CloneWrapper({ plugins, children }: CloneWrapperProps) {
       group.scale.copy(_scale);
 
       // Apply opacity falloff via userData (instruments can read this)
-      const opacityFalloff = cloneData[0]?.settings.opacityFalloff as number ?? 0.2;
+      const firstData = cloneData[0];
+      const firstSettings = firstData ? getPluginSettingsWithOverrides(trackId, firstData.instanceId, firstData.settings) : {};
+      const opacityFalloff = firstSettings.opacityFalloff as number ?? 0.2;
       group.userData.opacity = Math.max(0.1, 1 - opacityFalloff * cloneIndex);
       group.userData.cloneIndex = cloneIndex;
     });

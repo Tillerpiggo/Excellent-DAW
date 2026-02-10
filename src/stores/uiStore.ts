@@ -46,8 +46,13 @@ interface UIState {
   scrollLeft: number;
   scrollTop: number;
 
+  // MIDI editor zoom
+  midiPixelsPerBeat: number;
+  midiRowScale: number;
+
   // Timeline quantization (in beats)
   timelineQuantize: number;
+  timelineSnapEnabled: boolean;
 
   // Panel visibility
   showInspector: boolean;
@@ -94,7 +99,10 @@ interface UIState {
   setTrackHeightScale: (scale: number) => void;
   setScrollLeft: (scroll: number) => void;
   setScrollTop: (scroll: number) => void;
+  setMidiPixelsPerBeat: (pixels: number) => void;
+  setMidiRowScale: (scale: number) => void;
   setTimelineQuantize: (beats: number) => void;
+  setTimelineSnapEnabled: (enabled: boolean) => void;
 
   toggleInspector: () => void;
   toggleLibrary: () => void;
@@ -137,8 +145,13 @@ export const useUIStore = create<UIState>((set) => ({
   scrollLeft: 0,
   scrollTop: 0,
 
+  // MIDI editor zoom
+  midiPixelsPerBeat: 40,
+  midiRowScale: 1.0,
+
   // Timeline quantization (default: 4 beats = 1 bar)
   timelineQuantize: 4,
+  timelineSnapEnabled: true,
 
   // Panel visibility
   showInspector: true,
@@ -340,8 +353,20 @@ export const useUIStore = create<UIState>((set) => ({
     set({ scrollTop: Math.max(0, scroll) });
   },
 
+  setMidiPixelsPerBeat: (pixels) => {
+    set({ midiPixelsPerBeat: Math.max(5, Math.min(200, pixels)) });
+  },
+
+  setMidiRowScale: (scale) => {
+    set({ midiRowScale: Math.max(0.5, Math.min(2.0, scale)) });
+  },
+
   setTimelineQuantize: (beats) => {
     set({ timelineQuantize: beats });
+  },
+
+  setTimelineSnapEnabled: (enabled) => {
+    set({ timelineSnapEnabled: enabled });
   },
 
   toggleInspector: () => {

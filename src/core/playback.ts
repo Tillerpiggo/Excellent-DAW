@@ -1,5 +1,5 @@
 import * as Tone from 'tone';
-import { Project, AudioData } from './types';
+import { Project, AudioData, Track } from './types';
 import { resolveProject, ResolvedTrack } from './resolution';
 import { getInstrument, AudioInstance } from '@/instruments';
 import { getAudioFile, createAudioBlobUrl, revokeAudioBlobUrl } from '@/services/audioStorage';
@@ -247,9 +247,20 @@ export class PlaybackEngine {
     Tone.getTransport().loopStart = 0;
   }
 
+  private isAudioTrackSkipped(track: Track, project: Project): boolean {
+    if (track.muted) return true;
+    // Check solo among siblings
+    const siblingIds = track.parentId
+      ? project.tracks[track.parentId]?.childIds ?? []
+      : project.rootTracks;
+    const anySoloed = siblingIds.some(id => project.tracks[id]?.solo);
+    if (anySoloed && !track.solo) return true;
+    return false;
+  }
+
   private async scheduleAudioTrack(trackId: string, project: Project): Promise<void> {
     const track = project.tracks[trackId];
-    if (!track || track.muted) return;
+    if (!track || this.isAudioTrackSkipped(track, project)) return;
 
     for (const block of track.blocks) {
       if (!block.audioData) continue;
@@ -468,7 +479,7 @@ export class PlaybackEngine {
 
     for (const trackId of Object.keys(this.project.tracks)) {
       const track = this.project.tracks[trackId];
-      if (!track || track.muted || track.instrumentId !== 'audioPlayer') continue;
+      if (!track || track.instrumentId !== 'audioPlayer' || this.isAudioTrackSkipped(track, this.project)) continue;
 
       for (const block of track.blocks) {
         if (!block.audioData) continue;

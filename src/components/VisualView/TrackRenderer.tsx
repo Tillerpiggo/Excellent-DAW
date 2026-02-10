@@ -42,23 +42,19 @@ export function TrackRenderer({
     rootGroupRef.current.visible = !(state?.blackedOut ?? false);
   });
 
-  // Check if we have shader plugins (need FBO)
+  // Check plugin categories — include all plugins (even disabled ones) since
+  // automation can toggle enabled state per-frame
   const hasShaderPlugins = plugins.some((instance) => {
-    if (!instance.enabled) return false;
     const plugin = getPlugin(instance.pluginId);
     return plugin?.category === 'shader';
   });
 
-  // Check if we have clone plugins
   const hasClonePlugins = plugins.some((instance) => {
-    if (!instance.enabled) return false;
     const plugin = getPlugin(instance.pluginId);
     return plugin?.category === 'clone';
   });
 
-  // Check if we have transform plugins
   const hasTransformPlugins = plugins.some((instance) => {
-    if (!instance.enabled) return false;
     const plugin = getPlugin(instance.pluginId);
     return plugin?.category === 'transform';
   });
@@ -114,9 +110,13 @@ export function TrackRenderer({
       [];
 
     const collectVisuals = (ids: string[]) => {
+      const siblings = ids.map(id => tracks[id]).filter(Boolean);
+      const anySoloed = siblings.some(t => t.solo);
+
       for (const id of ids) {
         const track = tracks[id];
         if (!track || track.muted) continue;
+        if (anySoloed && !track.solo) continue;
 
         if (track.instrumentId) {
           const inst = getInstrument(track.instrumentId);
@@ -168,7 +168,7 @@ export function TrackRenderer({
 
     // Wrap with TransformWrapper if we have transform plugins
     if (hasTransformPlugins) {
-      element = <TransformWrapper plugins={plugins}>{element}</TransformWrapper>;
+      element = <TransformWrapper trackId={trackId} plugins={plugins}>{element}</TransformWrapper>;
     }
 
     return element;
@@ -181,7 +181,7 @@ export function TrackRenderer({
 
     // Wrap with CloneWrapper if we have clone plugins (and no shaders)
     if (hasClonePlugins) {
-      element = <CloneWrapper plugins={plugins}>{element}</CloneWrapper>;
+      element = <CloneWrapper trackId={trackId} plugins={plugins}>{element}</CloneWrapper>;
     }
 
     return element;
@@ -218,7 +218,7 @@ export function TrackRenderer({
         )}
 
         {/* Apply shader chain and render result */}
-        <ShaderChain inputTexture={fbo.texture} plugins={plugins} />
+        <ShaderChain trackId={trackId} inputTexture={fbo.texture} plugins={plugins} />
       </group>
     );
   }

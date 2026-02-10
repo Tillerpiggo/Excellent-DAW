@@ -331,10 +331,10 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
     const radius = Math.min(vw, vh) * 0.42;
     const dpr = gl.getPixelRatio();
 
-    const particleCount = Math.min(
+    const particleCount = Math.round(Math.min(
       MAX_PARTICLES,
       (state.params.particleCount as number) ?? DEFAULTS.particleCount,
-    );
+    ));
     const dotSize = (state.params.dotSize as number) ?? DEFAULTS.dotSize;
     const speed = (state.params.speed as number) ?? DEFAULTS.speed;
     const intensityP = (state.params.intensity as number) ?? DEFAULTS.intensity;
@@ -786,7 +786,7 @@ export const DotField: Instrument = {
       default: DEFAULTS.speed,
     },
     intensity: {
-      type: 'number', label: 'Intensity', min: 0.1, max: 3, step: 0.1,
+      type: 'number', label: 'Intensity', min: 0, max: 20, step: 0.1,
       default: DEFAULTS.intensity,
     },
     hue: {

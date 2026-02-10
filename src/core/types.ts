@@ -115,7 +115,8 @@ export interface PluginInstance {
 }
 
 export interface AutomationConfig {
-  targetParam: string;          // key into parent instrument's settingsSchema
+  targetParam: string;          // key into settingsSchema
+  pluginInstanceId?: string;    // if set, targets a plugin's param instead of the instrument's
   interpolate: boolean;         // false = instantaneous (step), true = linear interp
 }
 
@@ -128,6 +129,7 @@ export interface Track {
   visualPlugins?: PluginInstance[]; // Visual effects plugin chain
   automationConfig?: AutomationConfig; // present = this is an automation track
   muted: boolean;
+  solo: boolean;
   collapsed: boolean;
   blocks: Block[];
   childIds: string[];
