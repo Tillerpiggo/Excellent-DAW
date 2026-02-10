@@ -52,7 +52,7 @@ function getInheritedInstrument(
 
 export function TrackInspector({ track }: TrackInspectorProps) {
   const [activeTab, setActiveTab] = useState<InspectorTab>('settings');
-  const { updateTrack, deleteTrack, addAutomationTrack } = useProjectStore();
+  const { updateTrack, deleteTrack } = useProjectStore();
   const tracks = useProjectStore((s) => s.project.tracks);
   const { selectTrack } = useUIStore();
 
@@ -264,61 +264,60 @@ export function TrackInspector({ track }: TrackInspectorProps) {
           )}
 
           {/* Automation Track Config */}
-          {track.automationConfig && (
-            <div className="space-y-3 pl-3 border-l-2 border-accent-from/30">
-              <label className="block text-xs text-muted-foreground">Automation</label>
-              <p className="text-sm">
-                Target: <span className="font-medium">{track.automationConfig.targetParam}</span>
-              </p>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={track.automationConfig.interpolate}
-                  onChange={(e) =>
-                    updateTrack(track.id, {
-                      automationConfig: {
-                        ...track.automationConfig!,
-                        interpolate: e.target.checked,
-                      },
-                    })
-                  }
-                  className="w-4 h-4 rounded border-border accent-accent-from"
-                />
-                <span className="text-sm">Interpolate (linear)</span>
-              </label>
-            </div>
-          )}
+          {track.automationConfig && (() => {
+            // Find parent instrument's settingsSchema for the target picker
+            const parentTrack = track.parentId ? tracks[track.parentId] : undefined;
+            const parentInstrument = parentTrack?.instrumentId ? getInstrument(parentTrack.instrumentId) : undefined;
+            const schema = parentInstrument?.settingsSchema as SettingsSchema | undefined;
+            const numericParams = schema
+              ? Object.entries(schema).filter(([, field]) => field.type === 'number')
+              : [];
 
-          {/* Add Automation (for instrument tracks with settingsSchema) */}
-          {!track.automationConfig && instrument?.settingsSchema && (() => {
-            const numericParams = Object.entries(instrument.settingsSchema as SettingsSchema)
-              .filter(([, field]) => field.type === 'number');
-            // Find existing automation children
-            const existingAutomation = new Set(
-              track.childIds
-                .map(id => tracks[id])
-                .filter(t => t?.automationConfig)
-                .map(t => t!.automationConfig!.targetParam)
-            );
-            const availableParams = numericParams.filter(([key]) => !existingAutomation.has(key));
-            if (availableParams.length === 0) return null;
             return (
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Add Automation</label>
-                <select
-                  value=""
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      addAutomationTrack(track.id, e.target.value);
+              <div className="space-y-3 pl-3 border-l-2 border-accent-from/30">
+                <label className="block text-xs text-muted-foreground">Automation</label>
+
+                {/* Target parameter picker */}
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Target Parameter</label>
+                  <select
+                    value={track.automationConfig!.targetParam}
+                    onChange={(e) =>
+                      updateTrack(track.id, {
+                        name: (schema?.[e.target.value]?.label ?? e.target.value) || 'Automation',
+                        automationConfig: {
+                          ...track.automationConfig!,
+                          targetParam: e.target.value,
+                        },
+                      })
                     }
-                  }}
-                  className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
-                >
-                  <option value="">Select parameter...</option>
-                  {availableParams.map(([key, field]) => (
-                    <option key={key} value={key}>{field.label}</option>
-                  ))}
-                </select>
+                    className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
+                  >
+                    {!track.automationConfig!.targetParam && (
+                      <option value="">Select parameter...</option>
+                    )}
+                    {numericParams.map(([key, field]) => (
+                      <option key={key} value={key}>{field.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={track.automationConfig!.interpolate}
+                    onChange={(e) =>
+                      updateTrack(track.id, {
+                        automationConfig: {
+                          ...track.automationConfig!,
+                          interpolate: e.target.checked,
+                        },
+                      })
+                    }
+                    className="w-4 h-4 rounded border-border accent-accent-from"
+                  />
+                  <span className="text-sm">Interpolate (linear)</span>
+                </label>
               </div>
             );
           })()}

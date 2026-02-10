@@ -74,6 +74,9 @@ function getSelectionTextColor(baseColor: string): string {
 }
 
 // Per-block canvas for event dots
+// Debounce delay for canvas redraws during zoom — CSS scale bridges the gap
+const CANVAS_REDRAW_DEBOUNCE_MS = 100;
+
 function BlockEventCanvas({
   block,
   track,
@@ -93,8 +96,11 @@ function BlockEventCanvas({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isAudioBlock = track.instrumentId === 'audioPlayer' && block.audioData;
+  // Track the dimensions/params the canvas was last drawn at
+  const drawnRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
+  const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -127,67 +133,108 @@ function BlockEventCanvas({
         const barHeight = Math.max(1, peak * maxAmplitude);
         ctx.fillRect(x, centerY - barHeight, 1, barHeight * 2);
       }
+    } else {
+      // Draw event dots
+      const allEvents = block.streams?.flatMap((s) => s.events) || [];
+      if (allEvents.length === 0) {
+        drawnRef.current = { width: contentWidth, height: contentHeight };
+        return;
+      }
+
+      const patternLengthBeats = safeMax(allEvents.map((e) => e.startTimeInBeats + (e.duration || 0.25)), beatsPerBar);
+      const patternBars = Math.ceil(patternLengthBeats / beatsPerBar);
+      const patternBeats = patternBars * beatsPerBar;
+      const patternWidthPx = patternBeats * pixelsPerBeat;
+      const blockTotalBeats = block.durationBars * beatsPerBar;
+      const loopCount = block.loop ? Math.ceil(blockTotalBeats / patternBeats) : 1;
+
+      const pitches = allEvents.filter((e) => e.pitch !== undefined).map((e) => e.pitch!);
+      const minPitch = pitches.length > 0 ? safeMin(pitches, 60) : 60;
+      const maxPitch = pitches.length > 0 ? safeMax(pitches, 72) : 72;
+      const pitchRange = Math.max(maxPitch - minPitch + 1, 1);
+
+      for (let loopIdx = 0; loopIdx < loopCount; loopIdx++) {
+        const offsetPx = loopIdx * patternWidthPx;
+
+        for (const event of allEvents) {
+          const eventStartBeat = event.startTimeInBeats + loopIdx * patternBeats;
+          if (eventStartBeat >= blockTotalBeats) continue;
+
+          const eventStartPx = event.startTimeInBeats * pixelsPerBeat + offsetPx;
+          const duration = event.duration || 0.25;
+          const eventWidthPx = Math.max(duration * pixelsPerBeat, 2);
+
+          let topPercent: number;
+          let heightPercent: number;
+
+          const drumType = getDrumType(event.pitch);
+          if (drumType) {
+            const drumLanes: Record<string, number> = { hihat: 0, clap: 1, snare: 2, kick: 3 };
+            const laneCount = 4;
+            const lane = drumLanes[drumType] ?? 2;
+            heightPercent = (100 / laneCount - 4) / 100;
+            topPercent = ((lane / laneCount) * 100 + 2) / 100;
+          } else {
+            const normalizedPitch = (event.pitch - minPitch) / pitchRange;
+            heightPercent = Math.max(1 / pitchRange, 0.06);
+            topPercent = (1 - normalizedPitch) * (1 - heightPercent);
+          }
+
+          const baseOpacity = Math.max((event.velocity || 100) / 127, 0.4);
+          const opacity = loopIdx === 0 ? baseOpacity : baseOpacity * 0.85;
+
+          const y = topPercent * contentHeight;
+          const h = heightPercent * contentHeight;
+          const x = eventStartPx;
+
+          if (x >= contentWidth) continue;
+          const drawW = Math.min(eventWidthPx, contentWidth - x);
+
+          ctx.fillStyle = `rgba(255,255,255,${0.8 * opacity})`;
+          ctx.fillRect(x, y, drawW, h);
+        }
+      }
+    }
+
+    drawnRef.current = { width: contentWidth, height: contentHeight };
+    // Clear CSS scale since we just drew at full resolution
+    canvas.style.transform = '';
+    canvas.style.transformOrigin = '';
+    canvas.style.width = `${contentWidth}px`;
+    canvas.style.height = `${contentHeight}px`;
+  }, [block, track, pixelsPerBeat, beatsPerBar, contentWidth, contentHeight, bpm, isAudioBlock]);
+
+  useEffect(() => {
+    const drawn = drawnRef.current;
+    if (drawn.width === 0) {
+      // First draw — render immediately
+      drawCanvas();
       return;
     }
 
-    // Draw event dots
-    const allEvents = block.streams?.flatMap((s) => s.events) || [];
-    if (allEvents.length === 0) return;
-
-    const patternLengthBeats = safeMax(allEvents.map((e) => e.startTimeInBeats + (e.duration || 0.25)), beatsPerBar);
-    const patternBars = Math.ceil(patternLengthBeats / beatsPerBar);
-    const patternBeats = patternBars * beatsPerBar;
-    const patternWidthPx = patternBeats * pixelsPerBeat;
-    const blockTotalBeats = block.durationBars * beatsPerBar;
-    const loopCount = block.loop ? Math.ceil(blockTotalBeats / patternBeats) : 1;
-
-    const pitches = allEvents.filter((e) => e.pitch !== undefined).map((e) => e.pitch!);
-    const minPitch = pitches.length > 0 ? safeMin(pitches, 60) : 60;
-    const maxPitch = pitches.length > 0 ? safeMax(pitches, 72) : 72;
-    const pitchRange = Math.max(maxPitch - minPitch + 1, 1);
-
-    for (let loopIdx = 0; loopIdx < loopCount; loopIdx++) {
-      const offsetPx = loopIdx * patternWidthPx;
-
-      for (const event of allEvents) {
-        const eventStartBeat = event.startTimeInBeats + loopIdx * patternBeats;
-        if (eventStartBeat >= blockTotalBeats) continue;
-
-        const eventStartPx = event.startTimeInBeats * pixelsPerBeat + offsetPx;
-        const duration = event.duration || 0.25;
-        const eventWidthPx = Math.max(duration * pixelsPerBeat, 2);
-
-        let topPercent: number;
-        let heightPercent: number;
-
-        const drumType = getDrumType(event.pitch);
-        if (drumType) {
-          const drumLanes: Record<string, number> = { hihat: 0, clap: 1, snare: 2, kick: 3 };
-          const laneCount = 4;
-          const lane = drumLanes[drumType] ?? 2;
-          heightPercent = (100 / laneCount - 4) / 100;
-          topPercent = ((lane / laneCount) * 100 + 2) / 100;
-        } else {
-          const normalizedPitch = (event.pitch - minPitch) / pitchRange;
-          heightPercent = Math.max(1 / pitchRange, 0.06);
-          topPercent = (1 - normalizedPitch) * (1 - heightPercent);
-        }
-
-        const baseOpacity = Math.max((event.velocity || 100) / 127, 0.4);
-        const opacity = loopIdx === 0 ? baseOpacity : baseOpacity * 0.85;
-
-        const y = topPercent * contentHeight;
-        const h = heightPercent * contentHeight;
-        const x = eventStartPx;
-
-        if (x >= contentWidth) continue;
-        const drawWidth = Math.min(eventWidthPx, contentWidth - x);
-
-        ctx.fillStyle = `rgba(255,255,255,${0.8 * opacity})`;
-        ctx.fillRect(x, y, drawWidth, h);
-      }
+    // Dimensions changed — apply CSS scale as placeholder, debounce real redraw
+    const canvas = canvasRef.current;
+    if (canvas && drawn.width > 0 && drawn.height > 0) {
+      const scaleX = contentWidth / drawn.width;
+      const scaleY = contentHeight / drawn.height;
+      canvas.style.transformOrigin = 'left top';
+      canvas.style.transform = `scale(${scaleX}, ${scaleY})`;
+      canvas.style.width = `${drawn.width}px`;
+      canvas.style.height = `${drawn.height}px`;
     }
-  }, [block, track, pixelsPerBeat, beatsPerBar, contentWidth, contentHeight, bpm, isAudioBlock]);
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(drawCanvas, CANVAS_REDRAW_DEBOUNCE_MS);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [drawCanvas, contentWidth, contentHeight]);
+
+  // Redraw immediately when block data or non-zoom params change
+  useEffect(() => {
+    drawCanvas();
+  }, [block, track, beatsPerBar, bpm, isAudioBlock]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <canvas

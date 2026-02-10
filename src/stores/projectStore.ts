@@ -161,8 +161,8 @@ export const useProjectStore = create<ProjectState>()(
 
         const instrument = parent.instrumentId ? getInstrument(parent.instrumentId) : undefined;
         const schema = instrument?.settingsSchema;
-        const field = schema?.[paramKey];
-        const label = field?.label ?? paramKey;
+        const field = paramKey ? schema?.[paramKey] : undefined;
+        const label = field?.label ?? (paramKey || 'Automation');
 
         const track: Track = {
           id: trackId,

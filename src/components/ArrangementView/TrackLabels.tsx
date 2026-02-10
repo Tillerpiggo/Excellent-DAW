@@ -6,6 +6,7 @@ import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useDragDrop } from '@/hooks/useDragDrop';
 import { TRACK_TYPE_COLORS, INSTRUMENT_COLORS, withAlpha } from '@/utils/colors';
+import { getInstrument } from '@/instruments';
 
 interface TrackLabelsProps {
   flatTracks: TrackNode[];
@@ -119,6 +120,20 @@ function TrackLabelRow({ node, trackHeight }: { node: TrackNode; trackHeight: nu
     }
     closeContextMenu();
   }, [track.id, addTrack, selectTrack, collapsedTrackIds, toggleTrackCollapsed, closeContextMenu]);
+
+  const handleAddAutomationTrack = useCallback(() => {
+    const newTrackId = useProjectStore.getState().addAutomationTrack(track.id, '');
+    selectTrack(newTrackId);
+    if (collapsedTrackIds.has(track.id)) {
+      toggleTrackCollapsed(track.id);
+    }
+    closeContextMenu();
+  }, [track.id, selectTrack, collapsedTrackIds, toggleTrackCollapsed, closeContextMenu]);
+
+  // Check if track has automatable params
+  const instrument = track.instrumentId ? getInstrument(track.instrumentId) : undefined;
+  const hasAutomatableParams = instrument?.settingsSchema &&
+    Object.values(instrument.settingsSchema).some(f => f.type === 'number');
 
   const isSelected = selectedTrackIds.has(track.id);
   const isCollapsed = collapsedTrackIds.has(track.id);
@@ -237,6 +252,15 @@ function TrackLabelRow({ node, trackHeight }: { node: TrackNode; trackHeight: nu
             <span className="text-muted-foreground">M</span>
             <span>Add Mute Track</span>
           </button>
+          {hasAutomatableParams && (
+            <button
+              onClick={handleAddAutomationTrack}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
+            >
+              <span className="text-muted-foreground">A</span>
+              <span>Add Automation Track</span>
+            </button>
+          )}
         </div>
       )}
     </div>
