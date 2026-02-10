@@ -189,6 +189,7 @@ function buildTrackOutputs(
       instrumentId: undefined,
       instrumentSettings: undefined,
       output: combinedOutput,
+      blackoutRegions: blackoutRegions?.length ? blackoutRegions : undefined,
     });
   }
 

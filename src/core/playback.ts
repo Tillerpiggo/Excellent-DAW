@@ -255,19 +255,6 @@ export class PlaybackEngine {
       : project.rootTracks;
     const anySoloed = siblingIds.some(id => project.tracks[id]?.solo);
     if (anySoloed && !track.solo) return true;
-    // Walk up parent chain — if any ancestor is muted/soloed-out, skip
-    let parentId = track.parentId;
-    while (parentId) {
-      const parent = project.tracks[parentId];
-      if (!parent) break;
-      if (parent.muted) return true;
-      const grandSiblingIds = parent.parentId
-        ? project.tracks[parent.parentId]?.childIds ?? []
-        : project.rootTracks;
-      const anyParentSoloed = grandSiblingIds.some(id => project.tracks[id]?.solo);
-      if (anyParentSoloed && !parent.solo) return true;
-      parentId = parent.parentId;
-    }
     return false;
   }
 

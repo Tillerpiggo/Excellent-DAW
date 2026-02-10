@@ -13,6 +13,18 @@ import { TransformWrapper } from './TransformWrapper';
 import { CloneWrapper } from './CloneWrapper';
 import { ShaderChain } from './ShaderChain';
 
+/** Wraps a child visual component, hiding it when its track is blacked out */
+function BlackoutGroup({ trackId, children }: { trackId: string; children: React.ReactNode }) {
+  const groupRef = useRef<THREE.Group>(null);
+  useFrame(() => {
+    if (!groupRef.current) return;
+    const engine = getVisualPlaybackEngine();
+    const state = engine.getTrackState(trackId);
+    groupRef.current.visible = !(state?.blackedOut ?? false);
+  });
+  return <group ref={groupRef}>{children}</group>;
+}
+
 interface TrackRendererProps {
   trackId: string;
   instrumentId: string;
@@ -151,11 +163,13 @@ export function TrackRenderer({
     let element: React.ReactNode;
 
     if (isGroup) {
-      // Render all child visual instruments
+      // Render all child visual instruments, each wrapped with blackout check
       element = (
         <>
           {childVisualComponents.map(({ trackId: childTrackId, Component: ChildComponent }) => (
-            <ChildComponent key={childTrackId} trackId={childTrackId} />
+            <BlackoutGroup key={childTrackId} trackId={childTrackId}>
+              <ChildComponent trackId={childTrackId} />
+            </BlackoutGroup>
           ))}
         </>
       );
@@ -193,7 +207,9 @@ export function TrackRenderer({
       return (
         <group ref={rootGroupRef} position={[0, 0, 0]}>
           {childVisualComponents.map(({ trackId: childTrackId, Component: ChildComponent }) => (
-            <ChildComponent key={childTrackId} trackId={childTrackId} />
+            <BlackoutGroup key={childTrackId} trackId={childTrackId}>
+              <ChildComponent trackId={childTrackId} />
+            </BlackoutGroup>
           ))}
         </group>
       );
