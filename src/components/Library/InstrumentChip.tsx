@@ -10,7 +10,9 @@ interface InstrumentChipProps {
 }
 
 export function InstrumentChip({ instrument }: InstrumentChipProps) {
-  const { startDragInstrument, endDrag, selectedTrackId } = useUIStore();
+  const startDragInstrument = useUIStore((s) => s.startDragInstrument);
+  const endDrag = useUIStore((s) => s.endDrag);
+  const selectedTrackId = useUIStore((s) => s.selectedTrackId);
   const { updateTrack } = useProjectStore();
   const tracks = useProjectStore((s) => s.project.tracks);
 

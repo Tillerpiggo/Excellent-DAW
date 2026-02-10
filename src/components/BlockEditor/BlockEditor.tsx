@@ -46,7 +46,8 @@ function getEditorForCategory(category: PatternCategory): EditorType {
 }
 
 export function BlockEditor() {
-  const { selectedBlockIds, selectedTrackId } = useUIStore();
+  const selectedBlockIds = useUIStore((s) => s.selectedBlockIds);
+  const selectedTrackId = useUIStore((s) => s.selectedTrackId);
   const { project } = useProjectStore();
 
   const selectedBlockId = selectedBlockIds.size === 1 ? Array.from(selectedBlockIds)[0] : null;

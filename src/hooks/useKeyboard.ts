@@ -8,17 +8,14 @@ import { usePlayback } from './usePlayback';
 
 export function useKeyboard() {
   const { toggle } = usePlayback();
-  const {
-    selectedTrackId,
-    selectedTrackIds,
-    selectedBlockIds,
-    selectTrack,
-    selectBlock,
-    clearBlockSelection,
-    setPixelsPerBeat,
-    pixelsPerBeat,
-    currentBeat,
-  } = useUIStore();
+  const selectedTrackId = useUIStore((s) => s.selectedTrackId);
+  const selectedTrackIds = useUIStore((s) => s.selectedTrackIds);
+  const selectedBlockIds = useUIStore((s) => s.selectedBlockIds);
+  const selectTrack = useUIStore((s) => s.selectTrack);
+  const selectBlock = useUIStore((s) => s.selectBlock);
+  const clearBlockSelection = useUIStore((s) => s.clearBlockSelection);
+  const setPixelsPerBeat = useUIStore((s) => s.setPixelsPerBeat);
+  const pixelsPerBeat = useUIStore((s) => s.pixelsPerBeat);
 
   const { deleteTrack, deleteBlock, splitBlockAtPosition, groupTracks } = useProjectStore();
   const project = useProjectStore((state) => state.project);
@@ -146,7 +143,7 @@ export function useKeyboard() {
             if (selectedBlockIds.size > 0) {
               const tracks = Object.values(project.tracks);
               const beatsPerBar = project.beatsPerBar;
-              const playheadBar = currentBeat / beatsPerBar;
+              const playheadBar = useUIStore.getState().currentBeat / beatsPerBar;
 
               // Track new block IDs for selection
               const newBlockIds: string[] = [];
@@ -216,7 +213,6 @@ export function useKeyboard() {
       clearBlockSelection,
       setPixelsPerBeat,
       pixelsPerBeat,
-      currentBeat,
       project.tracks,
       project.beatsPerBar,
     ]

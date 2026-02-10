@@ -9,6 +9,7 @@ import { usePlayback } from '@/hooks/usePlayback';
 import { useDragDrop } from '@/hooks/useDragDrop';
 import { isAudioFile } from '@/core/audio';
 import { INSTRUMENT_COLORS, TRACK_TYPE_COLORS, darken, tintWhite } from '@/utils/colors';
+import { getInstrument } from '@/instruments';
 
 // Ruler height constant
 const RULER_HEIGHT = 48;
@@ -983,6 +984,16 @@ export function TimelineCanvas({
     closeContextMenu();
   }, [contextMenu, addTrack, closeContextMenu]);
 
+  const handleAddAutomationTrack = useCallback(() => {
+    if (!contextMenu?.trackId) return;
+    const newTrackId = useProjectStore.getState().addAutomationTrack(contextMenu.trackId, '');
+    useUIStore.getState().selectTrack(newTrackId);
+    if (useUIStore.getState().collapsedTrackIds.has(contextMenu.trackId)) {
+      useUIStore.getState().toggleTrackCollapsed(contextMenu.trackId);
+    }
+    closeContextMenu();
+  }, [contextMenu, closeContextMenu]);
+
   // Marquee overlay
   const marqueeStyle = useMemo(() => {
     if (dragState.type !== 'marquee') return null;
@@ -1595,6 +1606,20 @@ export function TimelineCanvas({
                 <span className="text-muted-foreground">M</span>
                 <span>Add Mute Track</span>
               </button>
+              {(() => {
+                const t = tracks[contextMenu.trackId!];
+                const inst = t?.instrumentId ? getInstrument(t.instrumentId) : undefined;
+                if (!inst?.settingsSchema || !Object.values(inst.settingsSchema).some(f => f.type === 'number')) return null;
+                return (
+                  <button
+                    onClick={handleAddAutomationTrack}
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
+                  >
+                    <span className="text-muted-foreground">A</span>
+                    <span>Add Automation Track</span>
+                  </button>
+                );
+              })()}
             </>
           )}
           {contextMenu.trackId && contextMenu.blockId && (

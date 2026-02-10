@@ -15,7 +15,11 @@ export function Header() {
   const totalBars = useProjectStore((state) => state.project.totalBars);
   const beatsPerBar = useProjectStore((state) => state.project.beatsPerBar);
   const { setTotalBars, renameProject } = useProjectStore();
-  const { toggleLibrary, toggleInspector, showLibrary, showInspector, setCurrentView } = useUIStore();
+  const toggleLibrary = useUIStore((s) => s.toggleLibrary);
+  const toggleInspector = useUIStore((s) => s.toggleInspector);
+  const showLibrary = useUIStore((s) => s.showLibrary);
+  const showInspector = useUIStore((s) => s.showInspector);
+  const setCurrentView = useUIStore((s) => s.setCurrentView);
 
   // Imperative beat display refs (avoids 60fps re-renders)
   const barDisplayRef = useRef<HTMLSpanElement>(null);

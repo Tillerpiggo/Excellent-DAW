@@ -9,15 +9,13 @@ import { processAudioFile, audioDurationToBars, isAudioFile } from '@/core/audio
 import { getInstrument } from '@/instruments';
 
 export function useDragDrop() {
-  const {
-    dragState,
-    startDragPreset,
-    startDragBlock,
-    setDropTarget,
-    endDrag,
-    dropTargetTrackId,
-    dropTargetBar,
-  } = useUIStore();
+  const dragState = useUIStore((s) => s.dragState);
+  const startDragPreset = useUIStore((s) => s.startDragPreset);
+  const startDragBlock = useUIStore((s) => s.startDragBlock);
+  const setDropTarget = useUIStore((s) => s.setDropTarget);
+  const endDrag = useUIStore((s) => s.endDrag);
+  const dropTargetTrackId = useUIStore((s) => s.dropTargetTrackId);
+  const dropTargetBar = useUIStore((s) => s.dropTargetBar);
 
   const { addBlock, moveBlock, addAudioTrack, updateTrack } = useProjectStore();
   const project = useProjectStore((state) => state.project);

@@ -8,7 +8,8 @@ import { useDragDrop } from '@/hooks/useDragDrop';
 export function TrackHierarchy() {
   const project = useProjectStore((state) => state.project);
   const { addTrack } = useProjectStore();
-  const { dropTargetTrackId, dragState } = useUIStore();
+  const dropTargetTrackId = useUIStore((s) => s.dropTargetTrackId);
+  const dragState = useUIStore((s) => s.dragState);
   const { handleDragOver, handleDragLeave, handleHierarchyDrop } = useDragDrop();
 
   const hasTracks = Object.keys(project.tracks).length > 0;

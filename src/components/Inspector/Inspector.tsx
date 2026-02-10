@@ -7,7 +7,8 @@ import { useProjectStore } from '@/stores/projectStore';
 import { VisualViewPanel } from '../VisualView';
 
 export function Inspector() {
-  const { selectedTrackId, selectedBlockIds } = useUIStore();
+  const selectedTrackId = useUIStore((s) => s.selectedTrackId);
+  const selectedBlockIds = useUIStore((s) => s.selectedBlockIds);
   const setVisualFullscreen = useUIStore((s) => s.setVisualFullscreen);
   const project = useProjectStore((state) => state.project);
 

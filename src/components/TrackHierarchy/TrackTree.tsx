@@ -24,7 +24,10 @@ interface TrackTreeProps {
 export function TrackTree({ treeId }: TrackTreeProps) {
   const project = useProjectStore((state) => state.project);
   const { moveTrack } = useProjectStore();
-  const { collapsedTrackIds, toggleTrackCollapsed, selectedTrackId, selectTrack } = useUIStore();
+  const collapsedTrackIds = useUIStore((s) => s.collapsedTrackIds);
+  const toggleTrackCollapsed = useUIStore((s) => s.toggleTrackCollapsed);
+  const selectedTrackId = useUIStore((s) => s.selectedTrackId);
+  const selectTrack = useUIStore((s) => s.selectTrack);
 
   // Convert project tracks to tree items
   const treeItems = useMemo(() => tracksToTreeItems(project), [project]);

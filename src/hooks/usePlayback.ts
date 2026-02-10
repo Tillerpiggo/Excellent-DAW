@@ -8,15 +8,13 @@ import { useUIStore } from '@/stores/uiStore';
 export function usePlayback() {
   const engineRef = useRef(getPlaybackEngine());
   const project = useProjectStore((state) => state.project);
-  const {
-    isPlaying,
-    setPlaying,
-    setCurrentBeat,
-    setLoopRegion: setUILoopRegion,
-    loopStart,
-    loopEnd,
-    loopEnabled,
-  } = useUIStore();
+  const isPlaying = useUIStore((s) => s.isPlaying);
+  const setPlaying = useUIStore((s) => s.setPlaying);
+  const setCurrentBeat = useUIStore((s) => s.setCurrentBeat);
+  const setUILoopRegion = useUIStore((s) => s.setLoopRegion);
+  const loopStart = useUIStore((s) => s.loopStart);
+  const loopEnd = useUIStore((s) => s.loopEnd);
+  const loopEnabled = useUIStore((s) => s.loopEnabled);
 
   // Setup callbacks on mount
   useEffect(() => {

@@ -9,7 +9,8 @@ import { TransposeEditor } from './TransposeEditor';
  * BlockEditor determines when to show this panel based on track properties.
  */
 export function TransposeEditorPanel() {
-  const { selectedBlockIds, selectedTrackId } = useUIStore();
+  const selectedBlockIds = useUIStore((s) => s.selectedBlockIds);
+  const selectedTrackId = useUIStore((s) => s.selectedTrackId);
   const { project } = useProjectStore();
 
   const selectedBlockId = selectedBlockIds.size === 1 ? Array.from(selectedBlockIds)[0] : null;

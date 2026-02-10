@@ -17,17 +17,15 @@ export function ArrangementView() {
   const tracks = useProjectStore((state) => state.project.tracks);
   const rootTracks = useProjectStore((state) => state.project.rootTracks);
   const { addTrack } = useProjectStore();
-  const {
-    collapsedTrackIds,
-    pixelsPerBeat,
-    trackHeightScale,
-    scrollLeft,
-    scrollTop,
-    setScrollLeft,
-    setScrollTop,
-    setPixelsPerBeat,
-    setTrackHeightScale,
-  } = useUIStore();
+  const collapsedTrackIds = useUIStore((s) => s.collapsedTrackIds);
+  const pixelsPerBeat = useUIStore((s) => s.pixelsPerBeat);
+  const trackHeightScale = useUIStore((s) => s.trackHeightScale);
+  const scrollLeft = useUIStore((s) => s.scrollLeft);
+  const scrollTop = useUIStore((s) => s.scrollTop);
+  const setScrollLeft = useUIStore((s) => s.setScrollLeft);
+  const setScrollTop = useUIStore((s) => s.setScrollTop);
+  const setPixelsPerBeat = useUIStore((s) => s.setPixelsPerBeat);
+  const setTrackHeightScale = useUIStore((s) => s.setTrackHeightScale);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewportSize, setViewportSize] = useState({ width: 800, height: 600 });

@@ -19,13 +19,11 @@ export function TimelineRuler({
   const totalWidth = totalBars * barWidth;
 
   const { isPlaying, seekTo, setLoopRegion } = usePlayback();
-  const {
-    loopStart,
-    loopEnd,
-    setCurrentBeat,
-    setIsScrubbing,
-    setLoopEnabled,
-  } = useUIStore();
+  const loopStart = useUIStore((s) => s.loopStart);
+  const loopEnd = useUIStore((s) => s.loopEnd);
+  const setCurrentBeat = useUIStore((s) => s.setCurrentBeat);
+  const setIsScrubbing = useUIStore((s) => s.setIsScrubbing);
+  const setLoopEnabled = useUIStore((s) => s.setLoopEnabled);
 
   const rulerRef = useRef<HTMLDivElement>(null);
   const loopDragRef = useRef<{ startBeat: number; isDragging: boolean }>({

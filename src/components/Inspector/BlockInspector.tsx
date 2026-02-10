@@ -11,7 +11,7 @@ interface BlockInspectorProps {
 
 export function BlockInspector({ block, track }: BlockInspectorProps) {
   const { updateBlock, deleteBlock } = useProjectStore();
-  const { selectBlock } = useUIStore();
+  const selectBlock = useUIStore((s) => s.selectBlock);
   const project = useProjectStore((state) => state.project);
 
   const totalEvents = block.streams?.reduce((sum, s) => sum + s.events.length, 0) || 0;

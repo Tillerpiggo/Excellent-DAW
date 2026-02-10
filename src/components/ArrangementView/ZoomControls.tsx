@@ -3,7 +3,10 @@
 import { useUIStore } from '@/stores/uiStore';
 
 export function ZoomControls() {
-  const { pixelsPerBeat, setPixelsPerBeat, trackHeightScale, setTrackHeightScale } = useUIStore();
+  const pixelsPerBeat = useUIStore((s) => s.pixelsPerBeat);
+  const setPixelsPerBeat = useUIStore((s) => s.setPixelsPerBeat);
+  const trackHeightScale = useUIStore((s) => s.trackHeightScale);
+  const setTrackHeightScale = useUIStore((s) => s.setTrackHeightScale);
 
   return (
     <div className="absolute bottom-4 right-4 z-50 flex flex-col gap-2 p-2 rounded-lg bg-surface/80 backdrop-blur-sm border border-border shadow-lg"

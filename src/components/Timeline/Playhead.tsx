@@ -16,7 +16,9 @@ export function Playhead({ currentBeat, pixelsPerBeat, scrollLeft }: PlayheadPro
   const position = currentBeat * pixelsPerBeat - scrollLeft;
 
   const { isPlaying, seekTo } = usePlayback();
-  const { isScrubbing, setIsScrubbing, setCurrentBeat } = useUIStore();
+  const isScrubbing = useUIStore((s) => s.isScrubbing);
+  const setIsScrubbing = useUIStore((s) => s.setIsScrubbing);
+  const setCurrentBeat = useUIStore((s) => s.setCurrentBeat);
   const totalBars = useProjectStore((state) => state.project.totalBars);
   const beatsPerBar = useProjectStore((state) => state.project.beatsPerBar);
 

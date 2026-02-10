@@ -18,7 +18,8 @@ interface EditorPanelProps {
  * It handles selection state, preset application, and provides common layout.
  */
 export function EditorPanel({ presets, color, children }: EditorPanelProps) {
-  const { selectedBlockIds, selectedTrackId } = useUIStore();
+  const selectedBlockIds = useUIStore((s) => s.selectedBlockIds);
+  const selectedTrackId = useUIStore((s) => s.selectedTrackId);
   const { project, updateBlock } = useProjectStore();
 
   const selectedBlockId = selectedBlockIds.size === 1 ? Array.from(selectedBlockIds)[0] : null;

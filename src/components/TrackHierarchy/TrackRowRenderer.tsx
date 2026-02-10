@@ -24,7 +24,9 @@ export function TrackRowRenderer({ item, context, children, depth }: TrackRowRen
   }
 
   const { updateTrack } = useProjectStore();
-  const { trackHeightScale, dropTargetTrackId, dragState } = useUIStore();
+  const trackHeightScale = useUIStore((s) => s.trackHeightScale);
+  const dropTargetTrackId = useUIStore((s) => s.dropTargetTrackId);
+  const dragState = useUIStore((s) => s.dragState);
   const trackHeight = Math.round(64 * trackHeightScale);
   const { handleDragOver, handleDragLeave, handleHierarchyDrop } = useDragDrop();
 

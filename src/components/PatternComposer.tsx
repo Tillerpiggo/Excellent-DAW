@@ -12,7 +12,9 @@ import { useUIStore } from '@/stores/uiStore';
 import { useKeyboard } from '@/hooks/useKeyboard';
 
 export function DAWView() {
-  const { showLibrary, showInspector, visualFullscreen } = useUIStore();
+  const showLibrary = useUIStore((s) => s.showLibrary);
+  const showInspector = useUIStore((s) => s.showInspector);
+  const visualFullscreen = useUIStore((s) => s.visualFullscreen);
 
   // Panel refs for imperative collapse/expand control
   const libraryPanelRef = usePanelRef();

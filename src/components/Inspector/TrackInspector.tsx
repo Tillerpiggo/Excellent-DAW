@@ -54,7 +54,7 @@ export function TrackInspector({ track }: TrackInspectorProps) {
   const [activeTab, setActiveTab] = useState<InspectorTab>('settings');
   const { updateTrack, deleteTrack } = useProjectStore();
   const tracks = useProjectStore((s) => s.project.tracks);
-  const { selectTrack } = useUIStore();
+  const selectTrack = useUIStore((s) => s.selectTrack);
 
   const trackType = TRACK_TYPES[track.typeId];
   const instrument = track.instrumentId ? getInstrument(track.instrumentId) : undefined;
