@@ -12,10 +12,11 @@ import { TransposeEditorPanel } from '../TransposeEditor';
 import { RhythmEditorPanel } from '../RhythmEditor';
 import { SwingEditorPanel } from '../SwingEditor';
 import { GenericMidiEditorPanel } from '../GenericMidiEditor';
+import { WaveformEditorPanel } from '../WaveformEditor';
 import { PatternCategory } from '@/core/types';
 import { getInstrument, getInheritedMidiInstrumentId } from '@/instruments';
 
-export type EditorType = 'chord' | 'drum' | 'arp' | 'suppress' | 'mute' | 'transpose' | 'rhythm' | 'swing' | 'generic' | null;
+export type EditorType = 'chord' | 'drum' | 'arp' | 'suppress' | 'mute' | 'transpose' | 'rhythm' | 'swing' | 'waveform' | 'generic' | null;
 
 /**
  * Maps pattern category to the appropriate editor type.
@@ -57,6 +58,9 @@ export function BlockEditor() {
   // Determine which editor type to show
   const editorType = useMemo((): EditorType => {
     if (!selectedBlock || !selectedTrack) return null;
+
+    // Audio tracks with audio data use the waveform editor
+    if (selectedTrack.instrumentId === 'audioPlayer' && selectedBlock.audioData) return 'waveform';
 
     // Automation tracks always use generic MIDI editor (with value rows)
     if (selectedTrack.automationConfig) return 'generic';
@@ -104,6 +108,8 @@ export function BlockEditor() {
         return <RhythmEditorPanel />;
       case 'swing':
         return <SwingEditorPanel />;
+      case 'waveform':
+        return <WaveformEditorPanel />;
       case 'generic':
         return <GenericMidiEditorPanel />;
       default:

@@ -125,12 +125,19 @@ function BlockEventCanvas({
 
       const centerY = contentHeight / 2;
       const maxAmplitude = contentHeight / 2 - 2;
-      const drawWidth = Math.min(audioWidthPx, contentWidth);
+      const audioOffsetSeconds = block.audioOffset ?? 0;
+      const offsetRatio = audioOffsetSeconds / Math.max(block.audioData.duration, 0.001);
+      const peakOffset = Math.floor(offsetRatio * peaks.length);
+      const remainingDuration = block.audioData.duration - audioOffsetSeconds;
+      const remainingBeats = remainingDuration * beatsPerSecond;
+      const remainingBars = remainingBeats / beatsPerBar;
+      const remainingWidthPx = remainingBars * barWidth;
+      const drawWidth = Math.min(remainingWidthPx, contentWidth);
       const samplesPerPixel = peaks.length / Math.max(1, audioWidthPx);
 
       ctx.fillStyle = 'rgba(255,255,255,0.85)';
       for (let x = 0; x < drawWidth; x++) {
-        const sampleIndex = Math.floor(x * samplesPerPixel);
+        const sampleIndex = peakOffset + Math.floor(x * samplesPerPixel);
         const peak = peaks[Math.min(sampleIndex, peaks.length - 1)] || 0;
         const barHeight = Math.max(1, peak * maxAmplitude);
         ctx.fillRect(x, centerY - barHeight, 1, barHeight * 2);
@@ -452,7 +459,7 @@ export function TimelineCanvas({
     block?: Block;
     track?: Track;
     trackIndex?: number;
-    originalPositions?: Map<string, { startBar: number; durationBars: number; trackId: string }>;
+    originalPositions?: Map<string, { startBar: number; durationBars: number; trackId: string; audioOffset?: number; audioData?: import('@/core/types').AudioData }>;
     isCopying?: boolean;
   }>({
     type: 'none',
@@ -549,7 +556,7 @@ export function TimelineCanvas({
     const blocksToProcess = selectedBlockIds.has(block.id) ? selectedBlockIds : new Set([block.id]);
     const shouldCopy = isAltHeld && dragType === 'drag';
 
-    const originalPositions = new Map<string, { startBar: number; durationBars: number; trackId: string }>();
+    const originalPositions = new Map<string, { startBar: number; durationBars: number; trackId: string; audioOffset?: number; audioData?: import('@/core/types').AudioData }>();
     const newBlockIds: string[] = [];
 
     for (const blockId of blocksToProcess) {
@@ -571,6 +578,8 @@ export function TimelineCanvas({
               startBar: foundBlock.startBar,
               durationBars: foundBlock.durationBars,
               trackId,
+              audioOffset: foundBlock.audioOffset,
+              audioData: foundBlock.audioData,
             });
             newBlockIds.push(newBlockId);
           } else {
@@ -578,6 +587,8 @@ export function TimelineCanvas({
               startBar: foundBlock.startBar,
               durationBars: foundBlock.durationBars,
               trackId,
+              audioOffset: foundBlock.audioOffset,
+              audioData: foundBlock.audioData,
             });
           }
         }
@@ -683,10 +694,20 @@ export function TimelineCanvas({
           const clampedDuration = Math.min(newDuration, originalEndBar - newStartBar);
 
           if (clampedDuration >= minDurationBars) {
-            updateBlock(original.trackId, blockId, {
+            const updates: Record<string, unknown> = {
               startBar: newStartBar,
               durationBars: clampedDuration,
-            });
+            };
+            // For audio blocks, adjust audioOffset so playback starts later/earlier in the file
+            if (original.audioData) {
+              const deltaSeconds = startDelta * beatsPerBar * 60 / bpm;
+              const newOffset = Math.max(0, Math.min(
+                (original.audioOffset ?? 0) + deltaSeconds,
+                original.audioData.duration
+              ));
+              updates.audioOffset = newOffset;
+            }
+            updateBlock(original.trackId, blockId, updates);
           }
         }
       } else if ((dragState.type === 'resize-right-loop' || dragState.type === 'resize-right-extend') && dragState.originalPositions) {
@@ -706,7 +727,14 @@ export function TimelineCanvas({
               loop: shouldLoop,
             });
           } else {
-            updateBlock(original.trackId, blockId, { durationBars: newDuration });
+            let clampedDuration = newDuration;
+            // For non-looping audio blocks, clamp so block doesn't exceed remaining audio
+            if (blk && blk.audioData && !blk.loop) {
+              const remainingAudio = blk.audioData.duration - (original.audioOffset ?? blk.audioOffset ?? 0);
+              const remainingBars = (remainingAudio / 60) * bpm / beatsPerBar;
+              clampedDuration = Math.min(clampedDuration, remainingBars);
+            }
+            updateBlock(original.trackId, blockId, { durationBars: clampedDuration });
           }
         }
       }

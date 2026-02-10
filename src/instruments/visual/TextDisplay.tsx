@@ -33,6 +33,10 @@ interface WordHistoryEntry {
   yOffset: number;  // normalized Y offset at trigger time (-1 to 1)
 }
 
+// Shared canvas cache keyed by (word, canvasSize, strokeWidth, fontFamily, color)
+const canvasCache = new Map<string, HTMLCanvasElement>();
+const CANVAS_CACHE_MAX = 64;
+
 function createTextCanvas(
   word: string,
   canvasSize: number,
@@ -40,6 +44,10 @@ function createTextCanvas(
   fontFamily: string = DEFAULTS.fontFamily,
   color: string = DEFAULTS.color,
 ): HTMLCanvasElement {
+  const key = `${word}|${canvasSize}|${strokeWidth}|${fontFamily}|${color}`;
+  const cached = canvasCache.get(key);
+  if (cached) return cached;
+
   const dpr = window.devicePixelRatio || 1;
   const canvas = document.createElement('canvas');
   canvas.width = canvasSize * dpr;
@@ -74,6 +82,13 @@ function createTextCanvas(
 
   ctx.fillStyle = color;
   ctx.fillText(word, cx, cy);
+
+  // Evict oldest entries if cache is full
+  if (canvasCache.size >= CANVAS_CACHE_MAX) {
+    const firstKey = canvasCache.keys().next().value!;
+    canvasCache.delete(firstKey);
+  }
+  canvasCache.set(key, canvas);
 
   return canvas;
 }

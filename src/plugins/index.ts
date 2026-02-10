@@ -10,6 +10,7 @@ import { EchoPlugin } from './clones/echo';
 import { TilePlugin } from './clones/tile';
 import { RotationalSymmetryPlugin } from './clones/rotationalSymmetry';
 import { RadialSymmetryPlugin } from './clones/radialSymmetry';
+import { LinearDuplicatePlugin } from './clones/linearDuplicate';
 
 // Plugin registry - populated with all plugins
 export const VISUAL_PLUGINS: Record<string, VisualPlugin> = {
@@ -25,6 +26,7 @@ export const VISUAL_PLUGINS: Record<string, VisualPlugin> = {
   [TilePlugin.id]: TilePlugin,
   [RotationalSymmetryPlugin.id]: RotationalSymmetryPlugin,
   [RadialSymmetryPlugin.id]: RadialSymmetryPlugin,
+  [LinearDuplicatePlugin.id]: LinearDuplicatePlugin,
 };
 
 export function getPlugin(id: string): VisualPlugin | undefined {

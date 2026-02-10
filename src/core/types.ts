@@ -64,6 +64,7 @@ export interface Block {
   extractMode?: 'timing' | 'pitch' | 'velocity' | 'all';
   // For audio blocks
   audioData?: AudioData;
+  audioOffset?: number; // seconds into audio file where playback begins (trim)
 }
 
 export type TrackTypeId =

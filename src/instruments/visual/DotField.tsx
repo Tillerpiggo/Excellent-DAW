@@ -31,6 +31,7 @@ const PITCH_WATER_RIPPLE = 60;
 const PITCH_COLOR_MODE = 61;
 const PITCH_CENTER_RIPPLE = 62;
 const PITCH_SCALE_KICK = 63;
+const PITCH_COLOR_PULSE = 64;
 
 const EFFECT_COUNT = 10;
 const COLOR_MODES = ['mono', 'distance', 'angle', 'displacement'];
@@ -169,6 +170,10 @@ interface ScaleKick {
   strength: number;   // peak scale multiplier (e.g. 0.25 = 25% outward burst)
 }
 
+interface ColorPulse {
+  spawnTime: number;
+}
+
 interface BassNote {
   pitchIdx: number;   // 0-11 within bass range
   velScale: number;   // velocity / 127
@@ -262,6 +267,7 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
   const colorModeRef = useRef(0);
   const centerRipples = useRef<CenterRipple[]>([]);
   const scaleKicks = useRef<ScaleKick[]>([]);
+  const colorPulses = useRef<ColorPulse[]>([]);
 
   // Build tracking
   const builtCount = useRef(0);
@@ -431,8 +437,14 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
         for (let i = 0; i < delta; i++) {
           scaleKicks.current.push({
             spawnTime: now,
-            strength: 0.25,
+            strength: 0.5,
           });
+        }
+      }
+
+      if (pitch === PITCH_COLOR_PULSE) {
+        for (let i = 0; i < delta; i++) {
+          colorPulses.current.push({ spawnTime: now });
         }
       }
     }
@@ -466,7 +478,10 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
       (cr) => (now - cr.spawnTime) / 1000 < 3,
     );
     scaleKicks.current = scaleKicks.current.filter(
-      (k) => now - k.spawnTime < 400,
+      (k) => now - k.spawnTime < 700,
+    );
+    colorPulses.current = colorPulses.current.filter(
+      (p) => now - p.spawnTime < 500,
     );
 
     // --- Compute scale kick envelope (instant attack, fast decay) ---
@@ -474,8 +489,8 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
     for (let k = 0; k < scaleKicks.current.length; k++) {
       const kick = scaleKicks.current[k];
       const age = (now - kick.spawnTime) / 1000; // seconds
-      // Instant hit, exponential decay (~gone by 300ms)
-      const envelope = Math.exp(-age * 15);
+      // Damped spring: outward burst → contracts past rest → settles
+      const envelope = Math.exp(-age * 7) * Math.cos(age * 14);
       kickScale += kick.strength * envelope;
     }
 
@@ -489,6 +504,20 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
         });
       }
     }
+
+    // --- Compute color pulse envelope (instant attack, ~400ms release) ---
+    let pulseIntensity = 0;
+    let pulseNewestSpawn = 0;
+    for (let p = 0; p < colorPulses.current.length; p++) {
+      const spawn = colorPulses.current[p].spawnTime;
+      const age = (now - spawn) / 1000;
+      const attack = Math.min(1, age / 0.008);
+      const release = Math.exp(-age * 8);
+      pulseIntensity = Math.min(1, pulseIntensity + attack * release);
+      if (spawn > pulseNewestSpawn) pulseNewestSpawn = spawn;
+    }
+    // Age of newest pulse for radial sweep timing
+    const pulseAge = pulseNewestSpawn > 0 ? (now - pulseNewestSpawn) / 1000 : 0;
 
     // --- Per-particle update ---
     const sc = scratchColor.current;
@@ -682,8 +711,8 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
       pos[i * 3 + 1] = by + dy;
       pos[i * 3 + 2] = 0;
 
-      // Size — particles in the ripple band grow slightly
-      sz[i] = pixelSize * (1 + rippleInfluence * 0.8);
+      // Size — kick swell + ripple band + pulse flash
+      sz[i] = pixelSize * (1 + kickScale * 0.8 + rippleInfluence * 0.8 + pulseIntensity * 1.2);
 
       // Color — compute base color from mode, then blend toward ripple highlight
       let baseR: number, baseG: number, baseB: number;
@@ -711,9 +740,43 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
 
       // Blend toward ripple highlight color
       const ri = rippleInfluence;
-      col[i * 3] = baseR + (rippleColor.r - baseR) * ri;
-      col[i * 3 + 1] = baseG + (rippleColor.g - baseG) * ri;
-      col[i * 3 + 2] = baseB + (rippleColor.b - baseB) * ri;
+      let finalR = baseR + (rippleColor.r - baseR) * ri;
+      let finalG = baseG + (rippleColor.g - baseG) * ri;
+      let finalB = baseB + (rippleColor.b - baseB) * ri;
+
+      // Color pulse — radial sweep using complementary hue from the color scheme
+      if (pulseIntensity > 0) {
+        // Radial wave: particles near center flash first, outer ones follow
+        const sweepRadius = pulseAge * R * 4;
+        const distToSweep = Math.abs(d - sweepRadius);
+        const sweepWidth = R * 0.4;
+        const sweepBoost = distToSweep < sweepWidth
+          ? (1 - distToSweep / sweepWidth) * 0.5 : 0;
+        const localPulse = Math.min(1, pulseIntensity + sweepBoost);
+
+        // Two-phase: bright flash of the scheme color, then complementary hue
+        const flashPhase = Math.max(0, 1 - pulseAge * 12); // bright flash first ~80ms
+        // Complementary hue, full saturation, boosted lightness
+        const compH = (baseH + 0.5) % 1;
+        const pulseL = Math.min(1, baseL + 0.35);
+        sc.setHSL(compH, Math.min(1, baseS + 0.2), pulseL);
+        const compR = sc.r, compG = sc.g, compB = sc.b;
+        // Bright flash: same hue family but very high lightness
+        sc.setHSL(baseH, baseS * 0.5, Math.min(1, baseL + 0.5));
+        const flashR = sc.r, flashG = sc.g, flashB = sc.b;
+        // Lerp between flash and complementary based on age
+        const targetR = compR + (flashR - compR) * flashPhase;
+        const targetG = compG + (flashG - compG) * flashPhase;
+        const targetB = compB + (flashB - compB) * flashPhase;
+
+        finalR = finalR + (targetR - finalR) * localPulse;
+        finalG = finalG + (targetG - finalG) * localPulse;
+        finalB = finalB + (targetB - finalB) * localPulse;
+      }
+
+      col[i * 3] = finalR;
+      col[i * 3 + 1] = finalG;
+      col[i * 3 + 2] = finalB;
     }
 
     // Flag attributes for GPU upload
@@ -749,7 +812,7 @@ export const DotField: Instrument = {
   hasAudio: false,
   hasVisual: true,
   editorType: 'generic',
-  noteRange: { min: PITCH_BASS_RIPPLE_MIN, max: PITCH_SCALE_KICK },
+  noteRange: { min: PITCH_BASS_RIPPLE_MIN, max: PITCH_COLOR_PULSE },
   rangeLabels: [
     { startPitch: PITCH_BASS_RIPPLE_MIN, endPitch: PITCH_BASS_RIPPLE_MAX, label: 'Bass Shake' },
     { startPitch: PITCH_RIPPLE, endPitch: PITCH_RIPPLE, label: 'Ripple' },
@@ -768,6 +831,7 @@ export const DotField: Instrument = {
     { startPitch: PITCH_COLOR_MODE, endPitch: PITCH_COLOR_MODE, label: 'Color Mode' },
     { startPitch: PITCH_CENTER_RIPPLE, endPitch: PITCH_CENTER_RIPPLE, label: 'Center Ripple' },
     { startPitch: PITCH_SCALE_KICK, endPitch: PITCH_SCALE_KICK, label: 'Scale Kick' },
+    { startPitch: PITCH_COLOR_PULSE, endPitch: PITCH_COLOR_PULSE, label: 'Color Pulse' },
   ],
 
   defaultSettings: { ...DEFAULTS },

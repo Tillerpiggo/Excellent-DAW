@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useUIStore } from '@/stores/uiStore';
+import { usePlayback } from '@/hooks/usePlayback';
 import { generateId } from '@/utils/id';
 
 export interface MidiRow {
@@ -56,9 +57,16 @@ interface DragState {
 const DRAG_NONE: DragState = { type: 'none', startX: 0, startY: 0, currentX: 0, currentY: 0 };
 const NOTE_EDGE_WIDTH = 8;
 
-// Helper to lighten a hex color
-function lightenColor(hex: string, amount: number): string {
-  const cleanHex = hex.replace('#', '');
+// Helper to lighten a color (supports both hex and hsl strings)
+function lightenColor(color: string, amount: number): string {
+  const hslMatch = color.match(/^hsl\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*\)$/);
+  if (hslMatch) {
+    const h = parseFloat(hslMatch[1]);
+    const s = parseFloat(hslMatch[2]);
+    const l = Math.min(100, parseFloat(hslMatch[3]) + amount * 100);
+    return `hsl(${h}, ${s}%, ${l}%)`;
+  }
+  const cleanHex = color.replace('#', '');
   const num = parseInt(cleanHex, 16);
   const r = Math.min(255, ((num >> 16) & 0xff) + Math.round(255 * amount));
   const g = Math.min(255, ((num >> 8) & 0xff) + Math.round(255 * amount));
@@ -80,6 +88,9 @@ export function MidiEditor({
 }: MidiEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const playheadRef = useRef<HTMLDivElement>(null);
+
+  const { seekTo } = usePlayback();
 
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
   const [drawingNote, setDrawingNote] = useState<MidiNote | null>(null);
@@ -466,6 +477,56 @@ export function MidiEditor({
     return () => document.removeEventListener('keydown', handleKeyDown, true);
   }, [selectedNoteIds, notes, onNotesChange]);
 
+  // Playhead position via RAF (no React re-renders)
+  useEffect(() => {
+    let rafId: number;
+    const tick = () => {
+      const el = playheadRef.current;
+      if (el) {
+        const beat = useUIStore.getState().currentBeat;
+        el.style.transform = `translateX(${beat * pixelsPerBeat}px)`;
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [pixelsPerBeat]);
+
+  // Scrub handler: click/drag on grid to move playhead
+  const scrubRef = useRef(false);
+
+  const handleScrub = useCallback((clientX: number) => {
+    if (!gridRef.current) return;
+    const rect = gridRef.current.getBoundingClientRect();
+    const gridX = clientX - rect.left;
+    const rawBeat = gridX / pixelsPerBeat;
+    const snapped = snapEnabled
+      ? Math.round(rawBeat / quantize) * quantize
+      : rawBeat;
+    const clamped = Math.max(0, Math.min(totalBeats, snapped));
+    useUIStore.getState().setCurrentBeat(clamped);
+    seekTo(clamped);
+  }, [pixelsPerBeat, snapEnabled, quantize, totalBeats, seekTo]);
+
+  const handlePlayheadPointerDown = useCallback((e: React.PointerEvent) => {
+    e.stopPropagation();
+    scrubRef.current = true;
+    useUIStore.getState().setIsScrubbing(true);
+    handleScrub(e.clientX);
+
+    const onMove = (ev: PointerEvent) => {
+      if (scrubRef.current) handleScrub(ev.clientX);
+    };
+    const onUp = () => {
+      scrubRef.current = false;
+      useUIStore.getState().setIsScrubbing(false);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }, [handleScrub]);
+
   // Click on background deselects (if not dragging)
   const handleContainerClick = useCallback((e: React.MouseEvent) => {
     // Only deselect if the click target is the grid background itself
@@ -686,6 +747,55 @@ export function MidiEditor({
 
           {/* Marquee overlay */}
           {marqueeStyle && <div style={marqueeStyle} />}
+
+          {/* Playhead */}
+          <div
+            ref={playheadRef}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: 1,
+              height: '100%',
+              zIndex: 15,
+              pointerEvents: 'none',
+            }}
+          >
+            {/* Stem */}
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: 1.5,
+              height: '100%',
+              backgroundColor: '#ffd93d',
+            }} />
+            {/* Triangle head */}
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              left: -5,
+              width: 0,
+              height: 0,
+              borderLeft: '5.5px solid transparent',
+              borderRight: '5.5px solid transparent',
+              borderTop: '8px solid #ffd93d',
+            }} />
+            {/* Hit area for scrubbing */}
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: -8,
+                width: 17,
+                height: '100%',
+                cursor: 'col-resize',
+                pointerEvents: 'auto',
+                zIndex: 16,
+              }}
+              onPointerDown={handlePlayheadPointerDown}
+            />
+          </div>
         </div>
       </div>
     </div>

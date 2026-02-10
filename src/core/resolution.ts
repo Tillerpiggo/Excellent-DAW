@@ -357,7 +357,8 @@ export function resolveTrack(
   project: Project,
   context: ProcessContext,
   parentOutput?: Output,
-  inheritedInstrumentId?: string
+  inheritedInstrumentId?: string,
+  parentBlackoutRegions: BlackoutRegion[] = []
 ): ResolvedTrack[] {
   const results: ResolvedTrack[] = [];
 
@@ -386,8 +387,9 @@ export function resolveTrack(
     ? buildAutomationLanes(automation, track, project, enrichedContext)
     : undefined;
 
-  // Step 6: Build this track's resolved outputs
-  const trackOutputs = buildTrackOutputs(track, selfOutput, combinedOutput, inheritedInstrumentId, modifierResult.blackoutRegions);
+  // Step 6: Build this track's resolved outputs (merge parent blackout regions)
+  const mergedBlackoutRegions = [...parentBlackoutRegions, ...modifierResult.blackoutRegions];
+  const trackOutputs = buildTrackOutputs(track, selfOutput, combinedOutput, inheritedInstrumentId, mergedBlackoutRegions);
   // Attach automation lanes to track outputs
   if (automationLanes && automationLanes.length > 0) {
     for (const output of trackOutputs) {
@@ -401,7 +403,7 @@ export function resolveTrack(
   const instrument = track.instrumentId ? getInstrument(track.instrumentId) : undefined;
   const instrumentToInherit = instrument?.hasVisual ? track.instrumentId : inheritedInstrumentId;
   for (const childTrack of regular) {
-    const childResults = resolveTrack(childTrack, project, enrichedContext, combinedOutput, instrumentToInherit);
+    const childResults = resolveTrack(childTrack, project, enrichedContext, combinedOutput, instrumentToInherit, mergedBlackoutRegions);
     results.push(...childResults);
   }
 

@@ -255,6 +255,19 @@ export class PlaybackEngine {
       : project.rootTracks;
     const anySoloed = siblingIds.some(id => project.tracks[id]?.solo);
     if (anySoloed && !track.solo) return true;
+    // Walk up parent chain — if any ancestor is muted/soloed-out, skip
+    let parentId = track.parentId;
+    while (parentId) {
+      const parent = project.tracks[parentId];
+      if (!parent) break;
+      if (parent.muted) return true;
+      const grandSiblingIds = parent.parentId
+        ? project.tracks[parent.parentId]?.childIds ?? []
+        : project.rootTracks;
+      const anyParentSoloed = grandSiblingIds.some(id => project.tracks[id]?.solo);
+      if (anyParentSoloed && !parent.solo) return true;
+      parentId = parent.parentId;
+    }
     return false;
   }
 
@@ -282,10 +295,12 @@ export class PlaybackEngine {
         const endBar = block.startBar + block.durationBars;
         const endTime = `${endBar}:0:0`;
 
+        const audioOffset = block.audioOffset ?? 0;
+
         // Configure looping
         if (block.loop) {
           player.loop = true;
-          player.loopStart = 0;
+          player.loopStart = audioOffset;
           player.loopEnd = block.audioData.duration;
         } else {
           player.loop = false;
@@ -295,7 +310,7 @@ export class PlaybackEngine {
         const startPart = new Tone.Part((time) => {
           // Stop first in case it's already playing (from loop)
           player.stop(time);
-          player.start(time);
+          player.start(time, audioOffset);
         }, [{ time: startTime }]);
 
         startPart.start(0);
@@ -493,17 +508,21 @@ export class PlaybackEngine {
           if (!playerState) continue;
 
           // Calculate offset into the audio file
+          const blockAudioOffset = block.audioOffset ?? 0;
           const beatsIntoBlock = beat - blockStartBeat;
           const secondsIntoBlock = beatsIntoBlock * secondsPerBeat;
 
           // Handle looping audio - wrap the offset
-          let audioOffset = secondsIntoBlock;
+          let seekOffset = blockAudioOffset + secondsIntoBlock;
           if (block.loop && block.audioData.duration > 0) {
-            audioOffset = secondsIntoBlock % block.audioData.duration;
+            const loopLength = block.audioData.duration - blockAudioOffset;
+            if (loopLength > 0) {
+              seekOffset = blockAudioOffset + (secondsIntoBlock % loopLength);
+            }
           }
 
           // Start playback from the calculated offset
-          playerState.player.start(Tone.now(), audioOffset);
+          playerState.player.start(Tone.now(), seekOffset);
         }
       }
     }
