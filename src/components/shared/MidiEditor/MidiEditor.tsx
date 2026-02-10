@@ -39,7 +39,7 @@ export interface MidiEditorProps {
 }
 
 interface DragState {
-  type: 'none' | 'drawing' | 'moving' | 'resizing' | 'marquee';
+  type: 'none' | 'drawing' | 'moving' | 'resizing' | 'marquee' | 'copy-moving';
   startX: number;
   startY: number;
   currentX: number;
@@ -252,6 +252,49 @@ export function MidiEditor({
       setSelectedNoteIds(newSelectedIds);
     } else {
       newSelectedIds = selectedNoteIds;
+    }
+
+    // Option+drag = copy selected notes, then drag the copies
+    if (e.altKey && newSelectedIds.size > 0) {
+      const oldToNew = new Map<string, string>();
+      const duplicates: MidiNote[] = [];
+      for (const n of notes) {
+        if (newSelectedIds.has(n.id)) {
+          const newId = generateId();
+          oldToNew.set(n.id, newId);
+          duplicates.push({ ...n, id: newId });
+        }
+      }
+
+      // Add duplicates to notes (originals stay, copies will be dragged)
+      const updatedNotes = [...notes, ...duplicates];
+      onNotesChange(updatedNotes);
+
+      // Select the copies instead
+      const copyIds = new Set(oldToNew.values());
+      setSelectedNoteIds(copyIds);
+
+      const originalTimes = new Map<string, number>();
+      const originalPitches = new Map<string, number>();
+      for (const dup of duplicates) {
+        originalTimes.set(dup.id, dup.time);
+        originalPitches.set(dup.id, dup.pitch);
+      }
+
+      setDragState({
+        type: 'moving',
+        startX: e.clientX,
+        startY: e.clientY,
+        currentX: e.clientX,
+        currentY: e.clientY,
+        noteId: oldToNew.get(note.id) || note.id,
+        originalTime: note.time,
+        originalPitch: note.pitch,
+        originalTimes,
+        originalPitches,
+      });
+      setCursor('copy');
+      return;
     }
 
     const originalTimes = new Map<string, number>();

@@ -11,6 +11,20 @@ const PITCH_HEIGHT_MIN = 60;  // C4
 const PITCH_HEIGHT_MAX = 72;  // C5
 const PITCH_HEIGHT_CENTER = 66; // F#4 = no offset
 const MAX_DELAY_TAPS = 8;
+const MAX_REVERB_REFLECTIONS = 16;
+
+// Deterministic pseudo-random offsets per reverb reflection (seeded by index)
+const REVERB_OFFSETS = Array.from({ length: MAX_REVERB_REFLECTIONS }, (_, i) => {
+  // Simple seeded hash per index for deterministic values in 0..1
+  const seed = (i + 1) * 2654435761;
+  const hash = (n: number) => ((n >>> 0) & 0x7fffffff) / 0x7fffffff;
+  return {
+    t: hash((seed * 13) ^ 0xdeadbeef),       // time scatter 0..1
+    x: hash((seed * 17) ^ 0xcafebabe) * 2 - 1, // X jitter -1..1
+    y: hash((seed * 23) ^ 0xfeedface) * 2 - 1, // Y jitter -1..1
+    s: hash((seed * 31) ^ 0xbaadf00d),        // scale variation 0..1
+  };
+});
 
 const DEFAULTS = {
   text: 'Hello World',
@@ -24,6 +38,10 @@ const DEFAULTS = {
   heightAmount: 0.35,
   opacity: 1,
   color: '#ffffff',
+  reverbEnabled: false,
+  reverbReflections: 12,
+  reverbDecay: 1.5,
+  reverbSpread: 0.15,
 };
 
 interface WordHistoryEntry {
@@ -114,6 +132,11 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
   const echoLastWordsRef = useRef<string[]>([]);
   const groupRef = useRef<THREE.Group>(null);
 
+  // Reverb reflection state
+  const reverbMeshesRef = useRef<THREE.Mesh[]>([]);
+  const reverbTexturesRef = useRef<THREE.CanvasTexture[]>([]);
+  const reverbLastWordsRef = useRef<string[]>([]);
+
   useEffect(() => {
     const tex = new THREE.CanvasTexture(createTextCanvas('Hello', 512, DEFAULTS.strokeWidth));
     tex.minFilter = THREE.LinearFilter;
@@ -147,11 +170,41 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
     echoTexturesRef.current = textures;
     echoLastWordsRef.current = lastWords;
 
+    // Pre-create reverb reflection meshes
+    const reverbMeshes: THREE.Mesh[] = [];
+    const reverbTextures: THREE.CanvasTexture[] = [];
+    const reverbLastWords: string[] = [];
+    for (let i = 0; i < MAX_REVERB_REFLECTIONS; i++) {
+      const rTex = new THREE.CanvasTexture(createTextCanvas('', 512, DEFAULTS.strokeWidth));
+      rTex.minFilter = THREE.LinearFilter;
+      rTex.magFilter = THREE.LinearFilter;
+      reverbTextures.push(rTex);
+      reverbLastWords.push('');
+
+      const rMat = new THREE.MeshBasicMaterial({
+        map: rTex,
+        transparent: true,
+        depthWrite: false,
+        opacity: 0,
+      });
+      const rMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), rMat);
+      rMesh.visible = false;
+      reverbMeshes.push(rMesh);
+    }
+    reverbMeshesRef.current = reverbMeshes;
+    reverbTexturesRef.current = reverbTextures;
+    reverbLastWordsRef.current = reverbLastWords;
+
     setReady(true);
     return () => {
       tex.dispose();
       for (const t of textures) t.dispose();
       for (const m of meshes) {
+        (m.material as THREE.Material).dispose();
+        m.geometry.dispose();
+      }
+      for (const t of reverbTextures) t.dispose();
+      for (const m of reverbMeshes) {
         (m.material as THREE.Material).dispose();
         m.geometry.dispose();
       }
@@ -164,8 +217,14 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
     for (const mesh of echoMeshesRef.current) {
       groupRef.current.add(mesh);
     }
+    for (const mesh of reverbMeshesRef.current) {
+      groupRef.current.add(mesh);
+    }
     return () => {
       for (const mesh of echoMeshesRef.current) {
+        groupRef.current?.remove(mesh);
+      }
+      for (const mesh of reverbMeshesRef.current) {
         groupRef.current?.remove(mesh);
       }
     };
@@ -186,6 +245,10 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
     const heightAmount = (state.params.heightAmount as number) ?? DEFAULTS.heightAmount;
     const textOpacity = (state.params.opacity as number) ?? DEFAULTS.opacity;
     const color = (state.params.color as string) ?? DEFAULTS.color;
+    const reverbEnabled = (state.params.reverbEnabled as boolean) ?? DEFAULTS.reverbEnabled;
+    const reverbReflections = (state.params.reverbReflections as number) ?? DEFAULTS.reverbReflections;
+    const reverbDecay = (state.params.reverbDecay as number) ?? DEFAULTS.reverbDecay;
+    const reverbSpread = (state.params.reverbSpread as number) ?? DEFAULTS.reverbSpread;
 
     const words = text.split(/\s+/).filter(Boolean);
     if (words.length === 0) return;
@@ -230,7 +293,8 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
     }
 
     // Prune old history entries whose echoes have fully expired
-    const maxEchoLifetime = delayTaps * delayTime + 10; // generous buffer
+    const maxReverbLifetime = reverbEnabled ? reverbDecay + 5 : 0;
+    const maxEchoLifetime = Math.max(delayTaps * delayTime + 10, maxReverbLifetime); // generous buffer
     wordHistoryRef.current = history.filter(
       (e) => now - e.triggerTime < maxEchoLifetime
     );
@@ -310,6 +374,68 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
       const mat = mesh.material as THREE.MeshBasicMaterial;
       mat.opacity = opacity;
       mesh.visible = true;
+    }
+
+    // --- Reverb reflections ---
+    for (let r = 0; r < MAX_REVERB_REFLECTIONS; r++) {
+      const rMesh = reverbMeshesRef.current[r];
+      if (!rMesh) continue;
+
+      if (!reverbEnabled || r >= reverbReflections) {
+        rMesh.visible = false;
+        continue;
+      }
+
+      const offsets = REVERB_OFFSETS[r];
+      const timeOffset = offsets.t * reverbDecay;
+      const dx = offsets.x * reverbSpread * viewport.width;
+      const dy = offsets.y * reverbSpread * viewport.height;
+
+      // Find most recent word entry whose reverb reflection has arrived
+      let bestEntry: WordHistoryEntry | null = null;
+      let bestAge = Infinity;
+      for (let h = history.length - 1; h >= 0; h--) {
+        const age = now - (history[h].triggerTime + timeOffset);
+        if (age >= 0 && age < bestAge) {
+          bestEntry = history[h];
+          bestAge = age;
+          break;
+        }
+      }
+
+      if (!bestEntry) {
+        rMesh.visible = false;
+        continue;
+      }
+
+      // Visible for same duration as original note was held
+      const echoDuration = bestEntry.duration > 0 ? bestEntry.duration : reverbDecay;
+      if (bestAge > echoDuration) {
+        rMesh.visible = false;
+        continue;
+      }
+
+      // Exponential opacity decay based on time offset
+      const reverbOpacity = textOpacity * Math.exp(-3 * timeOffset / reverbDecay);
+
+      // Update texture if word changed
+      const rTex = reverbTexturesRef.current[r];
+      if (bestEntry.word !== reverbLastWordsRef.current[r]) {
+        const canvas = createTextCanvas(bestEntry.word, 512, strokeWidth, fontFamily, color);
+        rTex.image = canvas;
+        rTex.needsUpdate = true;
+        reverbLastWordsRef.current[r] = bestEntry.word;
+      }
+
+      const reverbScale = baseScale * (1 - 0.1 * offsets.s);
+      rMesh.scale.set(reverbScale, reverbScale, 1);
+      rMesh.position.x = dx;
+      rMesh.position.y = bestEntry.yOffset * viewport.height * heightAmount + dy;
+      rMesh.position.z = -0.02 - 0.001 * r; // behind delay taps
+
+      const rMat = rMesh.material as THREE.MeshBasicMaterial;
+      rMat.opacity = reverbOpacity;
+      rMesh.visible = true;
     }
   });
 
@@ -399,6 +525,21 @@ export const TextDisplay: Instrument = {
     heightAmount: {
       type: 'number', label: 'Height Amount', min: 0, max: 1, step: 0.05,
       default: DEFAULTS.heightAmount,
+    },
+    reverbEnabled: {
+      type: 'boolean', label: 'Reverb', default: DEFAULTS.reverbEnabled,
+    },
+    reverbReflections: {
+      type: 'number', label: 'Reverb Reflections', min: 1, max: 16, step: 1,
+      default: DEFAULTS.reverbReflections,
+    },
+    reverbDecay: {
+      type: 'number', label: 'Reverb Decay', min: 0.1, max: 5, step: 0.1,
+      default: DEFAULTS.reverbDecay,
+    },
+    reverbSpread: {
+      type: 'number', label: 'Reverb Spread', min: 0, max: 0.5, step: 0.02,
+      default: DEFAULTS.reverbSpread,
     },
   },
 
