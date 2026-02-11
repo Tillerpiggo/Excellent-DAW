@@ -7,7 +7,8 @@ import { useUIStore } from '@/stores/uiStore';
 import { UndoRedoButtons } from './UndoRedoButtons';
 
 export function Header() {
-  const { isPlaying, play, pause, seekTo, setBpm } = usePlayback();
+  const { isPlaying, play, pause, seekTo, setBpm, setPlaybackSpeed } = usePlayback();
+  const playbackSpeed = useUIStore((s) => s.playbackSpeed);
   // Granular selectors - only re-render when specific values change
   const projectId = useProjectStore((state) => state.project.id);
   const projectName = useProjectStore((state) => state.project.name);
@@ -175,6 +176,22 @@ export function Header() {
             </svg>
           </button>
         </div>
+
+        {/* Speed Toggle */}
+        <button
+          onClick={() => {
+            const next = playbackSpeed === 1 ? 0.5 : playbackSpeed === 0.5 ? 0.25 : 1;
+            setPlaybackSpeed(next);
+          }}
+          className={`px-2 py-1 rounded-lg text-sm font-mono transition-colors ${
+            playbackSpeed !== 1
+              ? 'bg-gradient-to-r from-accent-from/20 to-accent-to/20 text-accent-from'
+              : 'bg-muted hover:bg-muted/80 text-muted-foreground'
+          }`}
+          title="Playback speed"
+        >
+          {playbackSpeed === 1 ? '1x' : playbackSpeed === 0.5 ? '1/2x' : '1/4x'}
+        </button>
 
         {/* Position Display */}
         <div className="bg-background rounded-lg px-4 py-2 font-mono text-lg w-20 text-center">

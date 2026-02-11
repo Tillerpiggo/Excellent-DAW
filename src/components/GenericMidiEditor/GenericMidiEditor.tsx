@@ -141,6 +141,22 @@ export function GenericMidiEditor({ block, track, beatsPerBar, instrumentId }: G
     hasScrolledRef.current = false;
   }, [block.id]);
 
+  // Compute word labels for text display instruments (pitch 48 = next word trigger)
+  const noteLabels = useMemo(() => {
+    if (instrumentId !== 'textDisplay') return undefined;
+    const text = (track.instrumentSettings?.text as string) ?? '';
+    const words = text.split(/\s+/).filter(Boolean);
+    if (words.length === 0) return undefined;
+
+    const labels = new Map<string, string>();
+    // Sort pitch-48 notes by time to assign words in order
+    const wordNotes = notes.filter(n => n.pitch === 48).sort((a, b) => a.time - b.time);
+    wordNotes.forEach((note, i) => {
+      labels.set(note.id, words[i % words.length]);
+    });
+    return labels;
+  }, [instrumentId, track.instrumentSettings?.text, notes]);
+
   return (
     <div ref={containerRef} className="flex flex-col h-full" data-editor-panel="generic">
       {/* Toolbar */}
@@ -205,6 +221,7 @@ export function GenericMidiEditor({ block, track, beatsPerBar, instrumentId }: G
 
       {/* Piano roll area using MidiEditor */}
       <MidiEditor
+        blockStartBeat={block.startBar * beatsPerBar}
         rows={rows}
         notes={notes}
         onNotesChange={handleNotesChange}
@@ -215,6 +232,7 @@ export function GenericMidiEditor({ block, track, beatsPerBar, instrumentId }: G
         pixelsPerBeat={midiPixelsPerBeat}
         rowHeight={Math.round(28 * midiRowScale)}
         rangeLabels={rangeLabels}
+        noteLabels={noteLabels}
       />
     </div>
   );

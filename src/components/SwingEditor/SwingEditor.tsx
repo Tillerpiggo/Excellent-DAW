@@ -192,6 +192,7 @@ export function SwingEditor({ block, track, beatsPerBar }: SwingEditorProps) {
 
       {/* Midi editor with single row and larger row height */}
       <MidiEditor
+        blockStartBeat={block.startBar * beatsPerBar}
         rows={SWING_ROWS}
         notes={notes}
         onNotesChange={handleNotesChange}

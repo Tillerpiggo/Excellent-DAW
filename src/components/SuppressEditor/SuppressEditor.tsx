@@ -81,6 +81,7 @@ export function SuppressEditor({ block, track, beatsPerBar }: SuppressEditorProp
 
       {/* Midi editor with single row and larger row height */}
       <MidiEditor
+        blockStartBeat={block.startBar * beatsPerBar}
         rows={SUPPRESS_ROWS}
         notes={notes}
         onNotesChange={handleNotesChange}

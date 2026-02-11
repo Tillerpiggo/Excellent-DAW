@@ -91,8 +91,15 @@ export function TimelineRuler({
   const handleLoopMouseUp = useCallback(() => {
     if (loopDragRef.current.isDragging) {
       loopDragRef.current.isDragging = false;
+
+      // If loop region has zero length (click without drag), disable looping
+      const { loopStart: ls, loopEnd: le } = useUIStore.getState();
+      if (ls !== null && le !== null && ls === le) {
+        setLoopRegion(null, null);
+        setLoopEnabled(false);
+      }
     }
-  }, []);
+  }, [setLoopRegion, setLoopEnabled]);
 
   // Handle scrubbing (bottom half)
   const handleScrubMouseDown = useCallback(

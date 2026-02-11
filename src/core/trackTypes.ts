@@ -130,6 +130,7 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
     description: 'Only allows parent events through when this track has events',
     category: 'modifier',
     combine: (parent, self) => {
+      if (self.events.length === 0) return parent;
       const gatedEvents = parent.events.filter(parentEvent => {
         return self.events.some(
           gateEvent => Math.abs(gateEvent.startTimeInBeats - parentEvent.startTimeInBeats) < 0.01
@@ -291,7 +292,7 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
     description: 'Triggers parent notes at child event times',
     category: 'modifier',
     combine: (parent, self) => {
-      if (self.events.length === 0) return { events: [], harmony: parent.harmony };
+      if (self.events.length === 0) return parent;
       if (parent.events.length === 0) return { events: [], harmony: parent.harmony };
 
       // Get events active at a given time

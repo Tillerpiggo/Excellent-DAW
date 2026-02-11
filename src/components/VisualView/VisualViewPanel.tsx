@@ -75,6 +75,10 @@ export function VisualViewPanel() {
             id: trackId,
             instrumentId: track.instrumentId!,
           });
+          // Also process children (e.g. nested visual instruments under a visual track with modifiers)
+          if (isGroup) {
+            collectVisualTracks(track.childIds);
+          }
         }
         // Otherwise, process children
         else if (isGroup) {

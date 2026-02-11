@@ -111,6 +111,7 @@ export function ChordEditor({ block, track, beatsPerBar, instrumentId }: ChordEd
 
       {/* Piano roll area using MidiEditor */}
       <MidiEditor
+        blockStartBeat={block.startBar * beatsPerBar}
         rows={rows}
         notes={notes}
         onNotesChange={handleNotesChange}

@@ -32,6 +32,7 @@ interface UIState {
   // Playback
   isPlaying: boolean;
   currentBeat: number;
+  playbackSpeed: number;
 
   // Loop region
   loopStart: number | null;
@@ -87,6 +88,7 @@ interface UIState {
 
   setPlaying: (playing: boolean) => void;
   setCurrentBeat: (beat: number) => void;
+  setPlaybackSpeed: (speed: number) => void;
 
   // Loop region actions
   setLoopRegion: (start: number | null, end: number | null) => void;
@@ -131,6 +133,7 @@ export const useUIStore = create<UIState>((set) => ({
   // Playback
   isPlaying: false,
   currentBeat: 0,
+  playbackSpeed: 1,
 
   // Loop region
   loopStart: null,
@@ -307,6 +310,10 @@ export const useUIStore = create<UIState>((set) => ({
 
   setCurrentBeat: (beat) => {
     set({ currentBeat: beat });
+  },
+
+  setPlaybackSpeed: (speed) => {
+    set({ playbackSpeed: speed });
   },
 
   setLoopRegion: (start, end) => {

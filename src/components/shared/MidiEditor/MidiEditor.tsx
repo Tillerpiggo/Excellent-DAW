@@ -36,6 +36,10 @@ export interface MidiEditorProps {
   pixelsPerBeat?: number;
   rowHeight?: number;
   rangeLabels?: RangeLabel[];
+  /** Beat offset of this block in the project timeline (for playhead positioning) */
+  blockStartBeat?: number;
+  /** Optional labels to render inside notes, keyed by note ID */
+  noteLabels?: Map<string, string>;
 }
 
 interface DragState {
@@ -85,10 +89,13 @@ export function MidiEditor({
   pixelsPerBeat = 40,
   rowHeight = 28,
   rangeLabels,
+  blockStartBeat = 0,
+  noteLabels,
 }: MidiEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
+  const rulerPlayheadRef = useRef<HTMLDivElement>(null);
 
   const { seekTo } = usePlayback();
 
@@ -524,16 +531,24 @@ export function MidiEditor({
   useEffect(() => {
     let rafId: number;
     const tick = () => {
+      const beat = useUIStore.getState().currentBeat - blockStartBeat;
+      const visible = beat >= 0 && beat <= totalBeats;
+      const px = beat * pixelsPerBeat;
       const el = playheadRef.current;
       if (el) {
-        const beat = useUIStore.getState().currentBeat;
-        el.style.transform = `translateX(${beat * pixelsPerBeat}px)`;
+        el.style.transform = `translateX(${px}px)`;
+        el.style.display = visible ? '' : 'none';
+      }
+      const rel = rulerPlayheadRef.current;
+      if (rel) {
+        rel.style.transform = `translateX(${px}px)`;
+        rel.style.display = visible ? '' : 'none';
       }
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [pixelsPerBeat]);
+  }, [pixelsPerBeat, blockStartBeat, totalBeats]);
 
   // Scrub handler: click/drag on grid to move playhead
   const scrubRef = useRef(false);
@@ -547,9 +562,10 @@ export function MidiEditor({
       ? Math.round(rawBeat / quantize) * quantize
       : rawBeat;
     const clamped = Math.max(0, Math.min(totalBeats, snapped));
-    useUIStore.getState().setCurrentBeat(clamped);
-    seekTo(clamped);
-  }, [pixelsPerBeat, snapEnabled, quantize, totalBeats, seekTo]);
+    const projectBeat = clamped + blockStartBeat;
+    useUIStore.getState().setCurrentBeat(projectBeat);
+    seekTo(projectBeat);
+  }, [pixelsPerBeat, snapEnabled, quantize, totalBeats, seekTo, blockStartBeat]);
 
   const handlePlayheadPointerDown = useCallback((e: React.PointerEvent) => {
     e.stopPropagation();
@@ -602,6 +618,9 @@ export function MidiEditor({
     };
   }, [dragState, labelWidth]);
 
+  const rulerHeight = 24;
+  const barCount = Math.ceil(totalBeats / beatsPerBar);
+
   return (
     <div
       ref={containerRef}
@@ -609,6 +628,88 @@ export function MidiEditor({
       style={{ cursor: 'crosshair' }}
       onClick={handleContainerClick}
     >
+      {/* Sticky ruler row */}
+      <div
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+          display: 'flex',
+          width: canvasWidth,
+          height: rulerHeight,
+          backgroundColor: '#1e1e1e',
+          borderBottom: '1px solid rgba(255,255,255,0.1)',
+        }}
+      >
+        {/* Ruler label spacer */}
+        <div style={{ width: labelWidth, flexShrink: 0, backgroundColor: '#242424' }} />
+        {/* Ruler track */}
+        <div
+          style={{
+            flex: 1,
+            position: 'relative',
+            cursor: 'col-resize',
+            overflow: 'hidden',
+          }}
+          onPointerDown={handlePlayheadPointerDown}
+        >
+          {/* Bar numbers */}
+          {Array.from({ length: barCount }).map((_, i) => (
+            <div
+              key={i}
+              style={{
+                position: 'absolute',
+                left: i * beatsPerBar * pixelsPerBeat,
+                top: 0,
+                height: rulerHeight,
+                borderLeft: '1px solid rgba(255,255,255,0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                paddingLeft: 4,
+                fontSize: 10,
+                color: '#666',
+                fontFamily: 'monospace',
+              }}
+            >
+              {i + 1}
+            </div>
+          ))}
+          {/* Ruler playhead */}
+          <div
+            ref={rulerPlayheadRef}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: 1,
+              height: rulerHeight,
+              pointerEvents: 'none',
+              zIndex: 21,
+            }}
+          >
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: 1.5,
+              height: '100%',
+              backgroundColor: '#ffd93d',
+            }} />
+            {/* Triangle head */}
+            <div style={{
+              position: 'absolute',
+              bottom: 0,
+              left: -4,
+              width: 0,
+              height: 0,
+              borderLeft: '4.5px solid transparent',
+              borderRight: '4.5px solid transparent',
+              borderBottom: '6px solid #ffd93d',
+            }} />
+          </div>
+        </div>
+      </div>
+
       <div style={{ width: canvasWidth, height: canvasHeight, position: 'relative', display: 'flex' }}>
         {/* Labels column */}
         <div
@@ -784,7 +885,30 @@ export function MidiEditor({
                 onPointerDown={(e) => handleNotePointerDown(e, note)}
                 onPointerMove={handleNotePointerMove}
                 onPointerOut={() => handleHoverChange(null)}
-              />
+              >
+                {noteLabels?.get(note.id) && (
+                  <span style={{
+                    position: 'absolute',
+                    left: 3,
+                    right: 3,
+                    top: 0,
+                    height: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    fontSize: Math.min(10, h - 2),
+                    lineHeight: 1,
+                    color: 'rgba(0,0,0,0.7)',
+                    fontWeight: 600,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    pointerEvents: 'none',
+                    userSelect: 'none',
+                  }}>
+                    {noteLabels.get(note.id)}
+                  </span>
+                )}
+              </div>
             );
           })}
 
@@ -813,17 +937,6 @@ export function MidiEditor({
               height: '100%',
               backgroundColor: '#ffd93d',
             }} />
-            {/* Triangle head */}
-            <div style={{
-              position: 'absolute',
-              top: 0,
-              left: -5,
-              width: 0,
-              height: 0,
-              borderLeft: '5.5px solid transparent',
-              borderRight: '5.5px solid transparent',
-              borderTop: '8px solid #ffd93d',
-            }} />
             {/* Hit area for scrubbing */}
             <div
               style={{
@@ -840,7 +953,7 @@ export function MidiEditor({
             />
           </div>
         </div>
-      </div>
+      </div>  {/* end grid row */}
     </div>
   );
 }

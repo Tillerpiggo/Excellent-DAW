@@ -39,6 +39,7 @@ export class PlaybackEngine {
   private isInitialized = false;
   private loopStartBeat: number | null = null;
   private loopEndBeat: number | null = null;
+  private playbackSpeed: number = 1;
 
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
@@ -71,8 +72,8 @@ export class PlaybackEngine {
     this.state = 'playing';
     this.callbacks.onStateChange?.('playing');
 
-    // Set BPM
-    Tone.getTransport().bpm.value = project.bpm;
+    // Set BPM (scaled by playback speed)
+    Tone.getTransport().bpm.value = project.bpm * this.playbackSpeed;
 
     // Set starting position before scheduling
     const bars = Math.floor(startBeat / project.beatsPerBar);
@@ -346,6 +347,7 @@ export class PlaybackEngine {
     // Create and load player
     const player = new Tone.Player(blobUrl).toDestination();
     player.volume.value = -6; // Match synth levels
+    player.playbackRate = this.playbackSpeed;
 
     // Wait for buffer to load
     await Tone.loaded();
@@ -457,7 +459,21 @@ export class PlaybackEngine {
   }
 
   setBpm(bpm: number): void {
-    Tone.getTransport().bpm.value = bpm;
+    Tone.getTransport().bpm.value = bpm * this.playbackSpeed;
+  }
+
+  setPlaybackSpeed(speed: number): void {
+    this.playbackSpeed = speed;
+
+    // Update transport BPM with speed factor
+    if (this.project) {
+      Tone.getTransport().bpm.value = this.project.bpm * speed;
+    }
+
+    // Update all active audio players' playback rate
+    for (const { player } of this.audioPlayers.values()) {
+      player.playbackRate = speed;
+    }
   }
 
   seekTo(beat: number, beatsPerBar: number): void {
@@ -522,7 +538,7 @@ export class PlaybackEngine {
   setLoopRegion(startBeat: number | null, endBeat: number | null, beatsPerBar: number): void {
     const transport = Tone.getTransport();
 
-    if (startBeat === null || endBeat === null) {
+    if (startBeat === null || endBeat === null || startBeat === endBeat) {
       // Clear loop region - restore full project loop
       this.loopStartBeat = null;
       this.loopEndBeat = null;

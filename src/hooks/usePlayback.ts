@@ -109,6 +109,12 @@ export function usePlayback() {
     setUILoopRegion(start, end);
   }, [project.beatsPerBar, setUILoopRegion]);
 
+  const setPlaybackSpeed = useCallback((speed: number) => {
+    const engine = engineRef.current;
+    engine.setPlaybackSpeed(speed);
+    useUIStore.getState().setPlaybackSpeed(speed);
+  }, []);
+
   return {
     isPlaying,
     play,
@@ -119,5 +125,6 @@ export function usePlayback() {
     setBpm,
     seekTo,
     setLoopRegion,
+    setPlaybackSpeed,
   };
 }

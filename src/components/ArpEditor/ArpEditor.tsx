@@ -103,6 +103,7 @@ export function ArpEditor({ block, track, beatsPerBar }: ArpEditorProps) {
 
       {/* Piano roll area using MidiEditor */}
       <MidiEditor
+        blockStartBeat={block.startBar * beatsPerBar}
         rows={ARP_ROWS}
         notes={notes}
         onNotesChange={handleNotesChange}

@@ -85,6 +85,7 @@ export function DrumEditor({ block, track, beatsPerBar }: DrumEditorProps) {
 
       {/* Piano roll area using MidiEditor */}
       <MidiEditor
+        blockStartBeat={block.startBar * beatsPerBar}
         rows={DRUM_ROWS}
         notes={notes}
         onNotesChange={handleNotesChange}

@@ -96,7 +96,14 @@ function createTextCanvas(
 
   const sw = Math.max(1, strokeWidth * fontSize);
   ctx.lineWidth = sw;
-  ctx.strokeStyle = 'black';
+  // Pick stroke contrast based on text color luminance
+  ctx.fillStyle = color;
+  const tmp = ctx.fillStyle; // browser-parsed hex
+  const r = parseInt(tmp.slice(1, 3), 16);
+  const g = parseInt(tmp.slice(3, 5), 16);
+  const b = parseInt(tmp.slice(5, 7), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  ctx.strokeStyle = luminance > 0.5 ? 'black' : 'white';
   ctx.lineJoin = 'round';
   const cx = canvasSize / 2;
   const cy = canvasSize / 2;

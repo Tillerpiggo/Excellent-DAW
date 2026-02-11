@@ -117,6 +117,7 @@ export function TransposeEditor({ block, track, beatsPerBar }: TransposeEditorPr
       {/* Editor */}
       <div className="flex-1 overflow-hidden">
         <MidiEditor
+          blockStartBeat={block.startBar * beatsPerBar}
           notes={notes}
           rows={TRANSPOSE_ROWS}
           onNotesChange={handleNotesChange}

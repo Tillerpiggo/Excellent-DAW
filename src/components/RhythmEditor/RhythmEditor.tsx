@@ -105,6 +105,7 @@ export function RhythmEditor({ block, track, beatsPerBar }: RhythmEditorProps) {
 
       {/* Midi editor with single row and larger row height */}
       <MidiEditor
+        blockStartBeat={block.startBar * beatsPerBar}
         rows={RHYTHM_ROWS}
         notes={notes}
         onNotesChange={handleNotesChange}

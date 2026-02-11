@@ -81,6 +81,7 @@ export function MuteEditor({ block, track, beatsPerBar }: MuteEditorProps) {
 
       {/* Midi editor with single row and larger row height */}
       <MidiEditor
+        blockStartBeat={block.startBar * beatsPerBar}
         rows={MUTE_ROWS}
         notes={notes}
         onNotesChange={handleNotesChange}
