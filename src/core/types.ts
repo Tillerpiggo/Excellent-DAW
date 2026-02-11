@@ -115,10 +115,13 @@ export interface PluginInstance {
   settings: Record<string, unknown>;
 }
 
+export type InterpolationMode = 'step' | 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | 'exponential' | 'smooth-step';
+
 export interface AutomationConfig {
   targetParam: string;          // key into settingsSchema
   pluginInstanceId?: string;    // if set, targets a plugin's param instead of the instrument's
-  interpolate: boolean;         // false = instantaneous (step), true = linear interp
+  interpolate: boolean;         // legacy: false = step, true = linear (kept for compat)
+  interpolation?: InterpolationMode; // new: specific curve type
 }
 
 export interface Track {

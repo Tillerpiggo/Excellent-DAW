@@ -394,22 +394,30 @@ export function TrackInspector({ track }: TrackInspectorProps) {
                   </select>
                 </div>
 
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={track.automationConfig!.interpolate}
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Interpolation</label>
+                  <select
+                    value={track.automationConfig!.interpolation ?? (track.automationConfig!.interpolate ? 'linear' : 'step')}
                     onChange={(e) =>
                       updateTrack(track.id, {
                         automationConfig: {
                           ...track.automationConfig!,
-                          interpolate: e.target.checked,
+                          interpolation: e.target.value as import('@/core/types').InterpolationMode,
+                          interpolate: e.target.value !== 'step',
                         },
                       })
                     }
-                    className="w-4 h-4 rounded border-border accent-accent-from"
-                  />
-                  <span className="text-sm">Interpolate (linear)</span>
-                </label>
+                    className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
+                  >
+                    <option value="step">Step (instant)</option>
+                    <option value="linear">Linear</option>
+                    <option value="ease-in">Ease In</option>
+                    <option value="ease-out">Ease Out</option>
+                    <option value="ease-in-out">Ease In-Out</option>
+                    <option value="exponential">Exponential</option>
+                    <option value="smooth-step">Smooth Step</option>
+                  </select>
+                </div>
               </div>
             );
           })()}

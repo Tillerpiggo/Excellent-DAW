@@ -22,6 +22,7 @@ import { MetronomeBalls } from './visual/MetronomeBalls';
 import { DotField } from './visual/DotField';
 import { Stars } from './visual/Stars';
 import { TextDisplay } from './visual/TextDisplay';
+import { Sun } from './visual/Sun';
 
 // Flat registry for quick lookup by ID
 export const INSTRUMENTS: Record<string, Instrument> = {
@@ -44,6 +45,7 @@ export const INSTRUMENTS: Record<string, Instrument> = {
   dotField: DotField,
   stars: Stars,
   textDisplay: TextDisplay,
+  sun: Sun,
 };
 
 // Get instrument by ID
@@ -87,7 +89,7 @@ export function getInstrumentFolderTree(): InstrumentFolder {
       },
       {
         name: 'Visual',
-        instruments: ['silkSymmetry', 'hexagonDots', 'fractalTunnel', 'circleGrid', 'neonPolar', 'hopfFibration', 'icosahedronBurst', 'metronomeBalls', 'dotField', 'stars', 'textDisplay'],
+        instruments: ['silkSymmetry', 'hexagonDots', 'fractalTunnel', 'circleGrid', 'neonPolar', 'hopfFibration', 'icosahedronBurst', 'metronomeBalls', 'dotField', 'stars', 'textDisplay', 'sun'],
       },
     ],
   };

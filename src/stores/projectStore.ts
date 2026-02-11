@@ -171,7 +171,7 @@ export const useProjectStore = create<ProjectState>()(
           id: trackId,
           name: label,
           typeId: 'base',
-          automationConfig: { targetParam: paramKey, interpolate: false },
+          automationConfig: { targetParam: paramKey, interpolate: false, interpolation: 'step' },
           muted: false,
           solo: false,
           collapsed: false,

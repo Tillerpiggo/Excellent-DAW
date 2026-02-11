@@ -149,3 +149,62 @@ button, input, select {
   cursor: grabbing;
 }
 
+/* react-complex-tree overrides for track tree alignment */
+.track-tree-reset ul,
+.track-tree-reset li {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.track-tree-reset .rct-tree-root {
+  padding: 0;
+  background-color: transparent;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.track-tree-reset .rct-tree-root-focus {
+  outline: none;
+}
+
+.track-tree-reset .rct-tree-items-container {
+  padding: 0;
+}
+
+/* Disable react-complex-tree's own selection/hover backgrounds — we handle them in TrackRowRenderer */
+.track-tree-reset .rct-tree-item-title-container,
+.track-tree-reset .rct-tree-item-title-container-selected,
+.track-tree-reset .rct-tree-item-title-container-focused,
+.track-tree-reset .rct-tree-item-title-container-dragging-over,
+.track-tree-reset .rct-tree-root:not(.rct-tree-root-focus) .rct-tree-item-title-container-selected,
+.track-tree-reset .rct-tree-root.rct-tree-root-focus .rct-tree-item-title-container-selected,
+.track-tree-reset .rct-tree-root.rct-tree-root-focus .rct-tree-item-title-container-focused {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.track-tree-reset .rct-tree-item-button,
+.track-tree-reset .rct-tree-item-title-container-selected .rct-tree-item-button {
+  background-color: transparent !important;
+  height: auto;
+  padding: 0;
+  margin: 0;
+  border-radius: 0;
+}
+
+.track-tree-reset .rct-tree-item-button:hover {
+  background-color: transparent !important;
+}
+
+.track-tree-reset .rct-tree-item-title-container-selected .rct-tree-item-button::before {
+  display: none;
+}
+
+/* Hide the default arrow — we render our own expand/collapse toggle */
+.track-tree-reset .rct-tree-item-arrow {
+  display: none;
+}
+

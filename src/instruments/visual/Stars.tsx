@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useEffect } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { getVisualPlaybackEngine } from '@/core/visualPlayback';
 import { Instrument } from '../types';
@@ -23,6 +23,27 @@ const PITCH_PULSE = 57;
 const PITCH_BRAKE = 58;
 const PITCH_STREAK = 59;
 
+// Background theme pitches — one per theme
+const PITCH_BG_VOID = 60;
+const PITCH_BG_DEEP_SPACE = 61;
+const PITCH_BG_NEBULA = 62;
+const PITCH_BG_CRIMSON = 63;
+const PITCH_BG_OCEAN = 64;
+const PITCH_BG_FOREST = 65;
+const PITCH_BG_AMBER = 66;
+const PITCH_BG_MIDNIGHT = 67;
+
+const BG_THEMES: Record<number, string> = {
+  [PITCH_BG_VOID]:       '#0a0a0f',
+  [PITCH_BG_DEEP_SPACE]: '#05051a',
+  [PITCH_BG_NEBULA]:     '#1a0a2e',
+  [PITCH_BG_CRIMSON]:    '#1a0505',
+  [PITCH_BG_OCEAN]:      '#051a1a',
+  [PITCH_BG_FOREST]:     '#0a1a05',
+  [PITCH_BG_AMBER]:      '#1a1005',
+  [PITCH_BG_MIDNIGHT]:   '#0a0a1f',
+};
+
 const DEFAULTS = {
   starCount: 1500,
   dotSize: 2,
@@ -31,6 +52,10 @@ const DEFAULTS = {
   depth: 15,
   drift: 0.1,
   tint: 220,
+  bgColor: '#0a0a0f',
+  ground: false,
+  groundY: -3,
+  groundColor: '#4a3a8a',
 };
 
 // --- Shaders ---
@@ -102,6 +127,9 @@ interface PulseEvent {
 function StarsVisual({ trackId }: { trackId: string }) {
   const rootRef = useRef<THREE.Group>(null);
   const engineRef = useRef(getVisualPlaybackEngine());
+  const { scene } = useThree();
+  const bgColorObj = useRef(new THREE.Color(DEFAULTS.bgColor));
+  const bgTargetColor = useRef(new THREE.Color(DEFAULTS.bgColor));
 
   // Scene objects
   const pointsObj = useRef<THREE.Points | null>(null);
@@ -129,6 +157,11 @@ function StarsVisual({ trackId }: { trackId: string }) {
   const builtCount = useRef(0);
   const builtSpread = useRef(0);
   const builtDepth = useRef(0);
+
+  // Ground plane
+  const groundGroup = useRef<THREE.Group | null>(null);
+  const groundBuilt = useRef(false);
+  const groundOffset = useRef({ x: 0, z: 0 });
 
   // Scratch color
   const scratchColor = useRef(new THREE.Color());
@@ -181,6 +214,64 @@ function StarsVisual({ trackId }: { trackId: string }) {
     builtCount.current = count;
     builtSpread.current = spread;
     builtDepth.current = depth;
+  }
+
+  function buildGround(spread: number, depth: number, groundY: number, color: string) {
+    const root = rootRef.current;
+    if (!root) return;
+
+    // Remove old ground
+    if (groundGroup.current) {
+      root.remove(groundGroup.current);
+      groundGroup.current.traverse((child) => {
+        if ((child as THREE.Mesh).geometry) (child as THREE.Mesh).geometry.dispose();
+        if ((child as THREE.Mesh).material) ((child as THREE.Mesh).material as THREE.Material).dispose();
+      });
+    }
+
+    const grp = new THREE.Group();
+    grp.position.y = groundY;
+
+    const gridSize = spread * 4;
+    const divisions = 40;
+    const step = gridSize / divisions;
+    const gridDepth = depth * 2;
+    const depthDivisions = Math.ceil(gridDepth / step);
+
+    const gridColor = new THREE.Color(color);
+
+    // Create grid lines as a single LineSegments geometry
+    const vertices: number[] = [];
+
+    // Lines along X (横 rows at different Z)
+    for (let i = 0; i <= depthDivisions; i++) {
+      const z = -gridDepth / 2 + i * step;
+      vertices.push(-gridSize / 2, 0, z, gridSize / 2, 0, z);
+    }
+
+    // Lines along Z (縦 columns at different X)
+    for (let i = 0; i <= divisions; i++) {
+      const x = -gridSize / 2 + i * step;
+      vertices.push(x, 0, -gridDepth / 2, x, 0, gridDepth / 2);
+    }
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+
+    const mat = new THREE.LineBasicMaterial({
+      color: gridColor,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+    });
+
+    const lines = new THREE.LineSegments(geom, mat);
+    grp.add(lines);
+
+    root.add(grp);
+    groundGroup.current = grp;
+    groundBuilt.current = true;
+    groundOffset.current = { x: 0, z: 0 };
   }
 
   useFrame((_state, delta) => {
@@ -238,6 +329,10 @@ function StarsVisual({ trackId }: { trackId: string }) {
         for (let i = 0; i < noteDelta; i++) {
           pulses.current.push({ spawnTime: now, strength: 1 });
         }
+      }
+
+      if (pitch in BG_THEMES) {
+        bgTargetColor.current.set(BG_THEMES[pitch]);
       }
     }
     prevCounts.current = new Map(tState.pitchNoteOnCounts);
@@ -435,6 +530,70 @@ function StarsVisual({ trackId }: { trackId: string }) {
       alp[i] = 1.0 - depthFrac * 0.7;
     }
 
+    // --- Background color ---
+    const bgColor = (tState.params.bgColor as string) ?? DEFAULTS.bgColor;
+    // If no BG theme note is active, use the setting color
+    let hasBgNote = false;
+    for (const [p] of tState.activeNotes) {
+      if (p in BG_THEMES) { hasBgNote = true; break; }
+    }
+    if (!hasBgNote) {
+      bgTargetColor.current.set(bgColor);
+    }
+    // Smooth lerp toward target
+    bgColorObj.current.lerp(bgTargetColor.current, Math.min(1, 4 * dt));
+    scene.background = bgColorObj.current;
+    // Also update fog color to match
+    if (scene.fog && scene.fog instanceof THREE.Fog) {
+      scene.fog.color.copy(bgColorObj.current);
+    }
+
+    // --- Ground plane ---
+    const showGround = !!tState.params.ground;
+    const groundY = (tState.params.groundY as number) ?? DEFAULTS.groundY;
+    const groundColor = (tState.params.groundColor as string) ?? DEFAULTS.groundColor;
+
+    if (showGround && !groundBuilt.current) {
+      buildGround(spread, depth, groundY, groundColor);
+    } else if (!showGround && groundBuilt.current) {
+      if (groundGroup.current && rootRef.current) {
+        rootRef.current.remove(groundGroup.current);
+        groundGroup.current.traverse((child) => {
+          if ((child as THREE.Mesh).geometry) (child as THREE.Mesh).geometry.dispose();
+          if ((child as THREE.Mesh).material) ((child as THREE.Mesh).material as THREE.Material).dispose();
+        });
+        groundGroup.current = null;
+      }
+      groundBuilt.current = false;
+    }
+
+    if (showGround && groundGroup.current) {
+      groundGroup.current.position.y = groundY;
+
+      // Scroll the ground with the camera velocity, wrapping to avoid drifting away
+      const gStep = (spread * 4) / 40; // grid cell size
+      groundOffset.current.x += vel.x * dt;
+      groundOffset.current.z += vel.z * dt;
+
+      // Wrap offsets to stay within one grid cell
+      groundOffset.current.x = ((groundOffset.current.x % gStep) + gStep) % gStep;
+      groundOffset.current.z = ((groundOffset.current.z % gStep) + gStep) % gStep;
+
+      groundGroup.current.position.x = groundOffset.current.x;
+      groundGroup.current.position.z = groundOffset.current.z;
+
+      // Apply roll rotation to ground too
+      if (rollSpeed !== 0) {
+        groundGroup.current.rotation.z += rollSpeed * dt;
+      }
+
+      // Fade ground based on distance effect
+      const lineMat = (groundGroup.current.children[0] as THREE.LineSegments)?.material as THREE.LineBasicMaterial;
+      if (lineMat) {
+        lineMat.color.set(groundColor);
+      }
+    }
+
     // Flag attributes for GPU upload
     const posAttr = geom.getAttribute('position') as THREE.BufferAttribute;
     const sizeAttr = geom.getAttribute('aSize') as THREE.BufferAttribute;
@@ -448,10 +607,22 @@ function StarsVisual({ trackId }: { trackId: string }) {
 
   useEffect(() => {
     return () => {
+      // Restore default background
+      scene.background = new THREE.Color('#0a0a0f');
+      if (scene.fog && scene.fog instanceof THREE.Fog) {
+        scene.fog.color.set('#0a0a0f');
+      }
       if (pointsObj.current && rootRef.current)
         rootRef.current.remove(pointsObj.current);
       geomRef.current?.dispose();
       matRef.current?.dispose();
+      if (groundGroup.current && rootRef.current) {
+        rootRef.current.remove(groundGroup.current);
+        groundGroup.current.traverse((child) => {
+          if ((child as THREE.Mesh).geometry) (child as THREE.Mesh).geometry.dispose();
+          if ((child as THREE.Mesh).material) ((child as THREE.Mesh).material as THREE.Material).dispose();
+        });
+      }
     };
   }, []);
 
@@ -470,7 +641,7 @@ export const Stars: Instrument = {
   hasAudio: false,
   hasVisual: true,
   editorType: 'generic',
-  noteRange: { min: PITCH_WARP_FWD, max: PITCH_STREAK },
+  noteRange: { min: PITCH_WARP_FWD, max: PITCH_BG_MIDNIGHT },
   rangeLabels: [
     { startPitch: PITCH_WARP_FWD, endPitch: PITCH_WARP_FWD, label: 'Warp Forward' },
     { startPitch: PITCH_WARP_BWD, endPitch: PITCH_WARP_BWD, label: 'Warp Backward' },
@@ -484,6 +655,14 @@ export const Stars: Instrument = {
     { startPitch: PITCH_PULSE, endPitch: PITCH_PULSE, label: 'Pulse' },
     { startPitch: PITCH_BRAKE, endPitch: PITCH_BRAKE, label: 'Brake' },
     { startPitch: PITCH_STREAK, endPitch: PITCH_STREAK, label: 'Streak Toggle' },
+    { startPitch: PITCH_BG_VOID, endPitch: PITCH_BG_VOID, label: 'BG: Void' },
+    { startPitch: PITCH_BG_DEEP_SPACE, endPitch: PITCH_BG_DEEP_SPACE, label: 'BG: Deep Space' },
+    { startPitch: PITCH_BG_NEBULA, endPitch: PITCH_BG_NEBULA, label: 'BG: Nebula' },
+    { startPitch: PITCH_BG_CRIMSON, endPitch: PITCH_BG_CRIMSON, label: 'BG: Crimson' },
+    { startPitch: PITCH_BG_OCEAN, endPitch: PITCH_BG_OCEAN, label: 'BG: Ocean' },
+    { startPitch: PITCH_BG_FOREST, endPitch: PITCH_BG_FOREST, label: 'BG: Forest' },
+    { startPitch: PITCH_BG_AMBER, endPitch: PITCH_BG_AMBER, label: 'BG: Amber' },
+    { startPitch: PITCH_BG_MIDNIGHT, endPitch: PITCH_BG_MIDNIGHT, label: 'BG: Midnight' },
   ],
 
   defaultSettings: { ...DEFAULTS },
@@ -516,6 +695,22 @@ export const Stars: Instrument = {
     tint: {
       type: 'number', label: 'Tint Hue', min: 0, max: 360, step: 1,
       default: DEFAULTS.tint,
+    },
+    bgColor: {
+      type: 'color', label: 'Background Color',
+      default: DEFAULTS.bgColor,
+    },
+    ground: {
+      type: 'boolean', label: 'Ground Plane',
+      default: DEFAULTS.ground,
+    },
+    groundY: {
+      type: 'number', label: 'Ground Height', min: -50, max: 50, step: 0.5,
+      default: DEFAULTS.groundY,
+    },
+    groundColor: {
+      type: 'color', label: 'Ground Color',
+      default: DEFAULTS.groundColor,
     },
   },
 

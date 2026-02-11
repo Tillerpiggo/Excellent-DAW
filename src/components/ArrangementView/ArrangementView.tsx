@@ -2,7 +2,7 @@
 
 import { useRef, useCallback, useEffect, useState } from 'react';
 import { TimelineCanvas } from './TimelineCanvas';
-import { TrackLabels } from './TrackLabels';
+import { TrackTree } from '../TrackHierarchy/TrackTree';
 import { TimelineToolbar } from './TimelineToolbar';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -147,7 +147,9 @@ export function ArrangementView() {
                 </button>
               </div>
             </div>
-            <TrackLabels flatTracks={flatTracks} />
+            <div className="track-tree-reset">
+              <TrackTree treeId="arrangement-tracks" />
+            </div>
           </div>
 
           {/* Timeline Content */}

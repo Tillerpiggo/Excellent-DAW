@@ -152,12 +152,35 @@ export class VisualPlaybackEngine {
         if (aLo === 0) continue; // no keyframe before current beat
 
         let value: number;
-        if (!lane.interpolate || aLo >= kf.length) {
+        const mode = lane.interpolation ?? (lane.interpolate ? 'linear' : 'step');
+        if (mode === 'step' || aLo >= kf.length) {
           value = kf[aLo - 1].value;
         } else {
           const prev = kf[aLo - 1];
           const next = kf[aLo];
-          const t = (beat - prev.beatTime) / (next.beatTime - prev.beatTime);
+          const tLinear = (beat - prev.beatTime) / (next.beatTime - prev.beatTime);
+          let t: number;
+          switch (mode) {
+            case 'ease-in':
+              t = tLinear * tLinear;
+              break;
+            case 'ease-out':
+              t = 1 - (1 - tLinear) * (1 - tLinear);
+              break;
+            case 'ease-in-out':
+              t = tLinear < 0.5
+                ? 2 * tLinear * tLinear
+                : 1 - 2 * (1 - tLinear) * (1 - tLinear);
+              break;
+            case 'exponential':
+              t = tLinear * tLinear * tLinear;
+              break;
+            case 'smooth-step':
+              t = tLinear * tLinear * (3 - 2 * tLinear);
+              break;
+            default: // linear
+              t = tLinear;
+          }
           value = prev.value + t * (next.value - prev.value);
         }
 

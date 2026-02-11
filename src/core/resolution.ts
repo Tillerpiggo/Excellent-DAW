@@ -28,6 +28,7 @@ export interface AutomationLane {
   paramKey: string;
   pluginInstanceId?: string;  // if set, targets a plugin's param
   interpolate: boolean;
+  interpolation: import('./types').InterpolationMode;
   keyframes: AutomationKeyframe[];  // sorted by beatTime
 }
 
@@ -321,6 +322,7 @@ function buildAutomationLanes(
       paramKey: config.targetParam,
       pluginInstanceId: config.pluginInstanceId,
       interpolate: config.interpolate,
+      interpolation: config.interpolation ?? (config.interpolate ? 'linear' : 'step'),
       keyframes,
     });
   }
