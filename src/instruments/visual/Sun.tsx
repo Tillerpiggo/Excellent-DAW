@@ -532,7 +532,7 @@ export const Sun: Instrument = {
       default: DEFAULTS.coronaSize,
     },
     z: {
-      type: 'number', label: 'Depth (Z)', min: -20, max: 0, step: 0.5,
+      type: 'number', label: 'Depth (Z)', min: -200, max: 0, step: 0.5,
       default: DEFAULTS.z,
     },
   },

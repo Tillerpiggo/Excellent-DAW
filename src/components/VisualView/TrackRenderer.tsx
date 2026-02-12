@@ -144,9 +144,14 @@ export function TrackRenderer({
       }
     };
 
+    // Include the group track's own visual instrument (if it has one)
+    if (instrument?.hasVisual && instrument.VisualComponent) {
+      components.unshift({ trackId, Component: instrument.VisualComponent });
+    }
+
     collectVisuals(childIds);
     return components;
-  }, [isGroup, childIds, tracks]);
+  }, [isGroup, childIds, tracks, trackId, instrument]);
 
   // For groups without any visual children, nothing to render
   if (isGroup && childVisualComponents.length === 0) {

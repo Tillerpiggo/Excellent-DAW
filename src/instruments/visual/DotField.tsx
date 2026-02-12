@@ -34,7 +34,7 @@ const PITCH_SCALE_KICK = 63;
 const PITCH_COLOR_PULSE = 64;
 
 const EFFECT_COUNT = 10;
-const COLOR_MODES = ['mono', 'distance', 'angle', 'displacement'];
+const COLOR_SCHEMES = ['crimsonSunrise', 'oceanDepths', 'auroraBorealis'] as const;
 const DISRUPTOR_ALGOS = ['elastic', 'gaussian', 'curl', 'fluid', 'wake'] as const;
 type DisruptorAlgo = (typeof DISRUPTOR_ALGOS)[number];
 
@@ -43,9 +43,6 @@ const DEFAULTS = {
   dotSize: 3,
   speed: 1,
   intensity: 1,
-  hue: 200,
-  saturation: 70,
-  lightness: 50,
   bladeCount: 3,
   disruptorStrength: 0.08,
   disruptorSpeed: 2,
@@ -344,9 +341,6 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
     const dotSize = (state.params.dotSize as number) ?? DEFAULTS.dotSize;
     const speed = (state.params.speed as number) ?? DEFAULTS.speed;
     const intensityP = (state.params.intensity as number) ?? DEFAULTS.intensity;
-    const hue = (state.params.hue as number) ?? DEFAULTS.hue;
-    const saturation = (state.params.saturation as number) ?? DEFAULTS.saturation;
-    const lightness = (state.params.lightness as number) ?? DEFAULTS.lightness;
     const bladeCount = (state.params.bladeCount as number) ?? DEFAULTS.bladeCount;
     const disruptorStrength =
       (state.params.disruptorStrength as number) ?? DEFAULTS.disruptorStrength;
@@ -420,7 +414,7 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
 
       if (pitch === PITCH_COLOR_MODE) {
         for (let i = 0; i < delta; i++)
-          colorModeRef.current = (colorModeRef.current + 1) % COLOR_MODES.length;
+          colorModeRef.current = (colorModeRef.current + 1) % COLOR_SCHEMES.length;
       }
 
       if (pitch === PITCH_CENTER_RIPPLE) {
@@ -521,20 +515,23 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
 
     // --- Per-particle update ---
     const sc = scratchColor.current;
-    const baseH = hue / 360;
-    const baseS = saturation / 100;
-    const baseL = lightness / 100;
     const pixelSize = dotSize * dpr;
-    const mode = colorModeRef.current;
+    const scheme = colorModeRef.current % COLOR_SCHEMES.length;
 
-    // Pre-compute mono color once
-    if (mode === 0) sc.setHSL(baseH, baseS, baseL);
+    // Scheme-specific base parameters (used for pulses/ripple highlights)
+    // 0: Crimson Sunrise — magenta → coral → golden amber
+    // 1: Ocean Depths — deep teal → turquoise → seafoam/gold
+    // 2: Aurora Borealis — indigo → violet → electric cyan
+    const schemeH = scheme === 0 ? 0.0 : scheme === 1 ? 0.48 : 0.75;
+    const schemeS = scheme === 0 ? 0.9 : scheme === 1 ? 0.75 : 0.85;
+    const schemeL = scheme === 0 ? 0.45 : scheme === 1 ? 0.45 : 0.4;
 
-    // Pre-compute ripple highlight color (complementary hue, boosted lightness)
+    // Ripple highlight: contrasting warm/cool accent from opposite end of gradient
+    const rippleH = scheme === 0 ? 0.1 : scheme === 1 ? 0.15 : 0.52;
     const rippleColor = rippleColorRef.current.setHSL(
-      (baseH + 0.5) % 1,
-      Math.min(1, baseS + 0.2),
-      Math.min(0.9, baseL + 0.25),
+      rippleH,
+      Math.min(1, schemeS + 0.1),
+      Math.min(0.85, schemeL + 0.3),
     );
 
     const pos = posBuf.current;
@@ -714,29 +711,39 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
       // Size — kick swell + ripple band + pulse flash
       sz[i] = pixelSize * (1 + kickScale * 0.8 + rippleInfluence * 0.8 + pulseIntensity * 1.2);
 
-      // Color — compute base color from mode, then blend toward ripple highlight
+      // Color — compute base color from scheme, then blend toward ripple highlight
       let baseR: number, baseG: number, baseB: number;
-      if (mode === 0) {
-        baseR = sc.r; baseG = sc.g; baseB = sc.b;
-      } else if (mode === 1) {
-        sc.setHSL((baseH + (d / R) * 0.3) % 1, baseS, baseL);
-        baseR = sc.r; baseG = sc.g; baseB = sc.b;
-      } else if (mode === 2) {
-        sc.setHSL(
-          (baseH + (a + Math.PI) / (Math.PI * 2)) % 1,
-          baseS,
-          baseL,
-        );
-        baseR = sc.r; baseG = sc.g; baseB = sc.b;
+      const normD = d / R;
+      const dispFrac = Math.min(1, totalDisp / (R * 0.1));
+
+      // Gradient blend factor: combines radial distance + angular position for rich 2D gradient
+      const angleNorm = (a + Math.PI) / (Math.PI * 2); // 0→1 around circle
+      const gradT = normD * 0.6 + angleNorm * 0.4; // blend of radius and angle
+      const organic = Math.sin(a * 3.0 + normD * 8.0) * Math.sin(a * 5.0 - normD * 4.0) * 0.5 + 0.5;
+
+      if (scheme === 0) {
+        // Crimson Sunrise: hot pink center → fiery red → coral → golden yellow edges
+        const h = (0.92 + gradT * 0.2 + organic * 0.05) % 1; // pink (0.92) → red → orange (0.08) → yellow (0.12)
+        const s = 1.0 - gradT * 0.1 + organic * 0.05 + dispFrac * 0.1;
+        const l = 0.38 + gradT * 0.22 + organic * 0.12 + dispFrac * 0.12;
+        sc.setHSL(h, Math.min(1, Math.max(0.6, s)), Math.min(0.82, l));
+      } else if (scheme === 1) {
+        // Ocean Depths: deep blue center → teal → emerald green → warm gold edges
+        const h = (0.58 - gradT * 0.35 - organic * 0.05 + 1) % 1; // blue (0.58) → teal (0.48) → green (0.35) → gold (0.12)
+        const s = 0.85 - gradT * 0.1 + organic * 0.1 + dispFrac * 0.1;
+        const l = 0.32 + gradT * 0.25 + organic * 0.1 + dispFrac * 0.12;
+        sc.setHSL(h, Math.min(1, Math.max(0.45, s)), Math.min(0.82, l));
       } else {
-        const dispFrac = Math.min(1, totalDisp / (R * 0.1));
-        sc.setHSL(
-          (baseH + dispFrac * 0.5) % 1,
-          baseS,
-          Math.min(0.9, baseL + dispFrac * 0.3),
-        );
-        baseR = sc.r; baseG = sc.g; baseB = sc.b;
+        // Aurora Borealis: deep indigo center → violet → magenta → electric cyan/green edges
+        const hBase = gradT < 0.5
+          ? 0.72 + gradT * 0.36  // indigo (0.72) → magenta (0.9)
+          : 0.9 - (gradT - 0.5) * 0.7; // magenta (0.9) → cyan (0.55) → green edge
+        const h = (hBase + organic * 0.06) % 1;
+        const s = 0.85 + gradT * 0.1 + organic * 0.05 + dispFrac * 0.05;
+        const l = 0.34 + gradT * 0.24 + organic * 0.12 + dispFrac * 0.15;
+        sc.setHSL(h % 1, Math.min(1, s), Math.min(0.85, l));
       }
+      baseR = sc.r; baseG = sc.g; baseB = sc.b;
 
       // Blend toward ripple highlight color
       const ri = rippleInfluence;
@@ -757,12 +764,12 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
         // Two-phase: bright flash of the scheme color, then complementary hue
         const flashPhase = Math.max(0, 1 - pulseAge * 12); // bright flash first ~80ms
         // Complementary hue, full saturation, boosted lightness
-        const compH = (baseH + 0.5) % 1;
-        const pulseL = Math.min(1, baseL + 0.35);
-        sc.setHSL(compH, Math.min(1, baseS + 0.2), pulseL);
+        const compH = (schemeH + 0.5) % 1;
+        const pulseL = Math.min(1, schemeL + 0.35);
+        sc.setHSL(compH, Math.min(1, schemeS + 0.2), pulseL);
         const compR = sc.r, compG = sc.g, compB = sc.b;
         // Bright flash: same hue family but very high lightness
-        sc.setHSL(baseH, baseS * 0.5, Math.min(1, baseL + 0.5));
+        sc.setHSL(schemeH, schemeS * 0.5, Math.min(1, schemeL + 0.5));
         const flashR = sc.r, flashG = sc.g, flashB = sc.b;
         // Lerp between flash and complementary based on age
         const targetR = compR + (flashR - compR) * flashPhase;
@@ -828,7 +835,7 @@ export const DotField: Instrument = {
     { startPitch: PITCH_DISRUPTOR, endPitch: PITCH_DISRUPTOR, label: 'Disruptor' },
     { startPitch: PITCH_DISRUPTOR_ALGO, endPitch: PITCH_DISRUPTOR_ALGO, label: 'Cycle Algo' },
     { startPitch: PITCH_WATER_RIPPLE, endPitch: PITCH_WATER_RIPPLE, label: 'Water Ripple' },
-    { startPitch: PITCH_COLOR_MODE, endPitch: PITCH_COLOR_MODE, label: 'Color Mode' },
+    { startPitch: PITCH_COLOR_MODE, endPitch: PITCH_COLOR_MODE, label: 'Color Scheme' },
     { startPitch: PITCH_CENTER_RIPPLE, endPitch: PITCH_CENTER_RIPPLE, label: 'Center Ripple' },
     { startPitch: PITCH_SCALE_KICK, endPitch: PITCH_SCALE_KICK, label: 'Scale Kick' },
     { startPitch: PITCH_COLOR_PULSE, endPitch: PITCH_COLOR_PULSE, label: 'Color Pulse' },
@@ -852,18 +859,6 @@ export const DotField: Instrument = {
     intensity: {
       type: 'number', label: 'Intensity', min: 0, max: 20, step: 0.1,
       default: DEFAULTS.intensity,
-    },
-    hue: {
-      type: 'number', label: 'Hue', min: 0, max: 360, step: 1,
-      default: DEFAULTS.hue,
-    },
-    saturation: {
-      type: 'number', label: 'Saturation', min: 0, max: 100, step: 1,
-      default: DEFAULTS.saturation,
-    },
-    lightness: {
-      type: 'number', label: 'Lightness', min: 10, max: 90, step: 1,
-      default: DEFAULTS.lightness,
     },
     bladeCount: {
       type: 'number', label: 'Blade Count', min: 1, max: 8, step: 1,

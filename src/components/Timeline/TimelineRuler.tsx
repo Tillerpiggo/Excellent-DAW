@@ -32,6 +32,7 @@ export function TimelineRuler({
   });
   const scrubDragRef = useRef<{ isDragging: boolean }>({ isDragging: false });
 
+  // Convert pixel position to beat, snapped to current quantize setting
   // Convert pixel position to beat, snapped to bar boundaries
   const pixelToBar = useCallback(
     (pixelX: number) => {

@@ -519,8 +519,10 @@ export function TimelineCanvas({
 
   const pixelToBar = useCallback((pixelX: number) => {
     const beat = pixelX / pixelsPerBeat;
-    const bar = Math.round(beat / beatsPerBar);
-    return Math.max(0, Math.min(totalBars, bar)) * beatsPerBar;
+    const { timelineQuantize: q, timelineSnapEnabled: snapOn } = useUIStore.getState();
+    const snap = snapOn ? q : beatsPerBar;
+    const snapped = Math.round(beat / snap) * snap;
+    return Math.max(0, Math.min(totalBars * beatsPerBar, snapped));
   }, [pixelsPerBeat, beatsPerBar, totalBars]);
 
   // Block pointer down
