@@ -406,9 +406,9 @@ export function TimelineCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
   const trackHeightScale = useUIStore((state) => state.trackHeightScale);
-  const { handleAudioFileDrop, isProcessingAudio } = useDragDrop();
+  const { handleAudioFileDrop, handleImageFileDrop, handleVideoFileDrop, isProcessingAudio } = useDragDrop();
 
-  const [isDraggingAudioFile, setIsDraggingAudioFile] = useState(false);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
   const dragCounter = useRef(0);
 
   // Context menu state
@@ -860,13 +860,13 @@ export function TimelineCanvas({
   const handleFileDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     dragCounter.current++;
-    if (e.dataTransfer.types.includes('Files')) setIsDraggingAudioFile(true);
+    if (e.dataTransfer.types.includes('Files')) setIsDraggingFile(true);
   }, []);
 
   const handleFileDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     dragCounter.current--;
-    if (dragCounter.current === 0) setIsDraggingAudioFile(false);
+    if (dragCounter.current === 0) setIsDraggingFile(false);
   }, []);
 
   const handleFileDragOver = useCallback((e: React.DragEvent) => {
@@ -877,13 +877,12 @@ export function TimelineCanvas({
   const handleFileDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     dragCounter.current = 0;
-    setIsDraggingAudioFile(false);
+    setIsDraggingFile(false);
 
     const files = e.dataTransfer.files;
     if (!files || files.length === 0) return;
 
     const file = files[0];
-    if (!isAudioFile(file)) return;
 
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -894,8 +893,16 @@ export function TimelineCanvas({
     const trackIndex = Math.floor(y / trackHeight);
     const targetTrack = trackIndex >= 0 ? flatTracks[trackIndex]?.track : undefined;
 
-    await handleAudioFileDrop(file, targetTrack?.id || null, bar);
-  }, [barWidth, trackHeight, flatTracks, handleAudioFileDrop]);
+    const videoExts = /\.(mp4|webm|mov)$/i;
+    const imageExts = /\.(png|jpe?g|gif|webp|svg)$/i;
+    if (videoExts.test(file.name)) {
+      await handleVideoFileDrop(file, targetTrack?.id || null, bar);
+    } else if (imageExts.test(file.name)) {
+      await handleImageFileDrop(file, targetTrack?.id || null, bar);
+    } else if (isAudioFile(file)) {
+      await handleAudioFileDrop(file, targetTrack?.id || null, bar);
+    }
+  }, [barWidth, trackHeight, flatTracks, handleAudioFileDrop, handleImageFileDrop, handleVideoFileDrop]);
 
   // Context menu
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -1590,7 +1597,7 @@ export function TimelineCanvas({
       )}
 
       {/* Audio file drop zone overlay */}
-      {isDraggingAudioFile && (
+      {isDraggingFile && (
         <div
           className="z-50 flex items-center justify-center pointer-events-none"
           style={{
@@ -1605,7 +1612,7 @@ export function TimelineCanvas({
         >
           <div className="bg-surface/95 px-6 py-3 rounded-lg shadow-lg border border-green-500/30">
             <span className="text-green-400 font-medium text-lg">
-              {isProcessingAudio ? 'Processing audio...' : 'Drop audio file here'}
+              {isProcessingAudio ? 'Processing file...' : 'Drop file here'}
             </span>
           </div>
         </div>

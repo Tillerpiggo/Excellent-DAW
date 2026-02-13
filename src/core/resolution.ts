@@ -307,13 +307,37 @@ function buildAutomationLanes(
     // Resolve this automation track's events
     const output = resolveBlocks(autoTrack.blocks, project, context);
 
-    const keyframes: AutomationKeyframe[] = output.events.map(e => {
+    let keyframes: AutomationKeyframe[] = output.events.map(e => {
       const t = Math.max(0, Math.min(1, (e.pitch - pitchMin) / pitchSpan));
       return {
         beatTime: e.startTimeInBeats,
         value: paramMin + t * (paramMax - paramMin),
       };
     });
+
+    // Apply suppress children: filter out keyframes in suppress regions
+    const autoChildren = autoTrack.childIds
+      .map(id => project.tracks[id])
+      .filter((t): t is Track => !!t);
+    const anyAutoChildSoloed = autoChildren.some(t => t.solo);
+
+    for (const child of autoChildren) {
+      if (isTrackSkipped(child, anyAutoChildSoloed)) continue;
+      const childType = getTrackType(child.typeId);
+      if (childType.category === 'modifier' && child.typeId === 'suppress') {
+        const suppressOutput = resolveBlocks(child.blocks, project, context);
+        if (suppressOutput.events.length > 0) {
+          keyframes = keyframes.filter(kf => {
+            for (const se of suppressOutput.events) {
+              const start = se.startTimeInBeats;
+              const end = start + (se.duration ?? 0.25);
+              if (kf.beatTime >= start && kf.beatTime < end) return false;
+            }
+            return true;
+          });
+        }
+      }
+    }
 
     // Sort by beat time
     keyframes.sort((a, b) => a.beatTime - b.beatTime);

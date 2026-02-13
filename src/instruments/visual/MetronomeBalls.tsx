@@ -20,7 +20,7 @@ interface MetronomeBallsProps {
 }
 
 // Color palettes: [background, foreground, accent, glow, tertiary]
-interface Palette { bg: number; fg: number; accent: number; glow: number; tertiary: number }
+interface Palette { bg: number; fg: number; accent: number; glow: number; tertiary: number; invertFg?: number }
 
 const PALETTES: Record<string, Palette> = {
   default:  { bg: 0xf5f2eb, fg: 0x1a2744, accent: 0xb5563e, glow: 0xb5563e, tertiary: 0x4a7a6f },
@@ -28,6 +28,8 @@ const PALETTES: Record<string, Palette> = {
   midnight: { bg: 0x0d1117, fg: 0xc9d1d9, accent: 0xd4a847, glow: 0xd4a847, tertiary: 0x58a6c9 },
   botanical:{ bg: 0xeae6df, fg: 0x2d4a3e, accent: 0xb47a4e, glow: 0x6b8f6b, tertiary: 0x8a5a7a },
   plum:     { bg: 0xf0e8f0, fg: 0x3a1f4a, accent: 0xc25a7c, glow: 0xc25a7c, tertiary: 0x5a8a6a },
+  crimson:  { bg: 0x0a0a0a, fg: 0xdc143c, accent: 0x8b0000, glow: 0xdc143c, tertiary: 0x4a0010, invertFg: 0xffffff },
+  scarlet:  { bg: 0xdc143c, fg: 0x0a0a0a, accent: 0x4a0010, glow: 0x8b0000, tertiary: 0x2a0008, invertFg: 0xffffff },
 };
 
 // MIDI trigger pitches
@@ -40,6 +42,7 @@ const PITCH_PAL_SEPIA = 58;
 const PITCH_PAL_MIDNIGHT = 60;
 const PITCH_PAL_BOTANICAL = 62;
 const PITCH_PAL_PLUM = 64;
+const PITCH_PAL_CRIMSON = 65;
 const PITCH_WAVE_MIN = 66;
 const PITCH_WAVE_MAX = 70;
 const PITCH_WARP_MIN = 72;
@@ -51,6 +54,8 @@ const PITCH_LINE_WEIGHT = 84;
 const PITCH_SNARE_L = 86;
 const PITCH_SNARE_C = 88;
 const PITCH_SNARE_R = 90;
+const PITCH_PAL_SCARLET = 92;
+const PITCH_INVERT_LINES = 94;
 
 // Spiral dot constants
 const SPIRAL_ARMS = 5;
@@ -421,6 +426,7 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
   const inkBlobs = useRef<InkBlob[]>([]);
   const inkSeedCounter = useRef(0);
   const inverted = useRef(false);
+  const invertedLines = useRef(false);
   const paletteKey = useRef('default');
 
   // Spiral dot state
@@ -858,8 +864,10 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
   function updateColors(refs: SceneRefs) {
     const pal = PALETTES[paletteKey.current] ?? PALETTES.default;
     const inv = inverted.current;
+    const invLines = invertedLines.current;
     const colBg = inv ? pal.fg : pal.bg;
-    const colFg = inv ? pal.bg : pal.fg;
+    let colFg = inv ? pal.bg : pal.fg;
+    if (invLines) colFg = pal.invertFg ?? (0xffffff - colFg);
     const colAccent = inv ? pal.bg : pal.accent;
     const colGlow = inv ? pal.bg : pal.glow;
     const colTertiary = inv ? pal.bg : pal.tertiary;
@@ -1067,6 +1075,9 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
         lineWeightTicks.current = LINE_WEIGHT_HOLD_TICKS;
         lineWeightTickTime.current = performance.now();
         lineWeightDirty = true;
+      } else if (pitch === PITCH_INVERT_LINES) {
+        for (let i = 0; i < delta; i++) invertedLines.current = !invertedLines.current;
+        colorsDirty = true;
       } else if (SNARE_PITCHES.includes(pitch)) {
         const pi = SNARE_PITCHES.indexOf(pitch);
         for (let i = 0; i < delta; i++) {
@@ -1097,6 +1108,7 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
     const palPitches: [number, string][] = [
       [PITCH_PAL_SEPIA, 'sepia'], [PITCH_PAL_MIDNIGHT, 'midnight'],
       [PITCH_PAL_BOTANICAL, 'botanical'], [PITCH_PAL_PLUM, 'plum'],
+      [PITCH_PAL_CRIMSON, 'crimson'], [PITCH_PAL_SCARLET, 'scarlet'],
     ];
     let winningPalKey: string | null = null;
     let winningPalDelta = 0;
@@ -1322,7 +1334,7 @@ export const MetronomeBalls: Instrument = {
   hasVisual: true,
   disableBloom: true,
   editorType: 'generic',
-  noteRange: { min: PITCH_FG, max: PITCH_SNARE_R },
+  noteRange: { min: PITCH_FG, max: PITCH_INVERT_LINES },
   rangeLabels: [
     { startPitch: PITCH_FG, endPitch: PITCH_FG, label: 'Foreground' },
     { startPitch: PITCH_BG, endPitch: PITCH_BG, label: 'Background' },
@@ -1333,6 +1345,7 @@ export const MetronomeBalls: Instrument = {
     { startPitch: PITCH_PAL_MIDNIGHT, endPitch: PITCH_PAL_MIDNIGHT, label: 'Midnight' },
     { startPitch: PITCH_PAL_BOTANICAL, endPitch: PITCH_PAL_BOTANICAL, label: 'Botanical' },
     { startPitch: PITCH_PAL_PLUM, endPitch: PITCH_PAL_PLUM, label: 'Plum' },
+    { startPitch: PITCH_PAL_CRIMSON, endPitch: PITCH_PAL_CRIMSON, label: 'Crimson' },
     { startPitch: PITCH_WAVE_MIN, endPitch: PITCH_WAVE_MAX, label: 'Ink Wave' },
     { startPitch: PITCH_WARP_MIN, endPitch: PITCH_WARP_MAX, label: 'Warp Field' },
     { startPitch: PITCH_SPIRAL, endPitch: PITCH_SPIRAL, label: 'Spiral' },
@@ -1342,6 +1355,8 @@ export const MetronomeBalls: Instrument = {
     { startPitch: PITCH_SNARE_L, endPitch: PITCH_SNARE_L, label: 'Snare L' },
     { startPitch: PITCH_SNARE_C, endPitch: PITCH_SNARE_C, label: 'Snare C' },
     { startPitch: PITCH_SNARE_R, endPitch: PITCH_SNARE_R, label: 'Snare R' },
+    { startPitch: PITCH_PAL_SCARLET, endPitch: PITCH_PAL_SCARLET, label: 'Scarlet' },
+    { startPitch: PITCH_INVERT_LINES, endPitch: PITCH_INVERT_LINES, label: 'Invert Lines' },
   ],
 
   defaultSettings: {

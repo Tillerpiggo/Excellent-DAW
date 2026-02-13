@@ -7,6 +7,9 @@ import { Preset } from '@/core/types';
 import { PATTERN_PRESETS } from '@/core/presets';
 import { processAudioFile, audioDurationToBars, isAudioFile } from '@/core/audio';
 import { getInstrument } from '@/instruments';
+import { storeImageFile } from '@/services/imageStorage';
+import { storeVideoFile } from '@/services/videoStorage';
+import { generateId } from '@/utils/id';
 
 export function useDragDrop() {
   const dragState = useUIStore((s) => s.dragState);
@@ -17,7 +20,7 @@ export function useDragDrop() {
   const dropTargetTrackId = useUIStore((s) => s.dropTargetTrackId);
   const dropTargetBar = useUIStore((s) => s.dropTargetBar);
 
-  const { addBlock, moveBlock, addAudioTrack, updateTrack } = useProjectStore();
+  const { addBlock, moveBlock, addAudioTrack, addImageTrack, addVideoTrack, updateTrack } = useProjectStore();
   const project = useProjectStore((state) => state.project);
 
   // Track if we're currently processing an audio file drop
@@ -123,6 +126,106 @@ export function useDragDrop() {
     [isProcessingAudio, project.bpm, project.beatsPerBar, project.tracks, addAudioTrack, addBlock]
   );
 
+  // Handle image file drop
+  const handleImageFileDrop = useCallback(
+    async (file: File, _trackId: string | null, bar: number) => {
+      try {
+        const imageStorageId = generateId();
+
+        // Get image dimensions
+        const bitmap = await createImageBitmap(file);
+        const width = bitmap.width;
+        const height = bitmap.height;
+        bitmap.close();
+
+        // Store in IndexedDB
+        await storeImageFile(imageStorageId, file, {
+          fileName: file.name,
+          mimeType: file.type,
+          width,
+          height,
+        });
+
+        // Create track
+        const newTrackId = addImageTrack(file.name.replace(/\.[^.]+$/, ''), imageStorageId);
+
+        // Add a 4-bar block with a single note so the image is visible by default
+        addBlock(newTrackId, {
+          startBar: bar,
+          durationBars: 4,
+          loop: true,
+          streams: [{
+            events: [{ pitch: 60, startTimeInBeats: 0, duration: 16, velocity: 100 }],
+          }],
+        });
+      } catch (error) {
+        console.error('Error processing image file:', error);
+      }
+    },
+    [addImageTrack, addBlock]
+  );
+
+  // Handle video file drop
+  const handleVideoFileDrop = useCallback(
+    async (file: File, _trackId: string | null, bar: number) => {
+      try {
+        const videoStorageId = generateId();
+        const numSlices = 8;
+
+        // Extract video metadata
+        const metadata = await new Promise<{ width: number; height: number; duration: number }>((resolve, reject) => {
+          const video = document.createElement('video');
+          video.preload = 'metadata';
+          video.onloadedmetadata = () => {
+            resolve({
+              width: video.videoWidth,
+              height: video.videoHeight,
+              duration: video.duration,
+            });
+            URL.revokeObjectURL(video.src);
+          };
+          video.onerror = () => {
+            URL.revokeObjectURL(video.src);
+            reject(new Error('Failed to load video metadata'));
+          };
+          video.src = URL.createObjectURL(file);
+        });
+
+        // Store in IndexedDB
+        await storeVideoFile(videoStorageId, file, {
+          fileName: file.name,
+          mimeType: file.type,
+          width: metadata.width,
+          height: metadata.height,
+          duration: metadata.duration,
+        });
+
+        // Create track
+        const newTrackId = addVideoTrack(file.name.replace(/\.[^.]+$/, ''), videoStorageId, numSlices);
+
+        // Auto-generate sliced MIDI block: 4 bars, one note per slice
+        const blockDurationBars = 4;
+        const beatsPerSlice = (blockDurationBars * project.beatsPerBar) / numSlices;
+        const events = Array.from({ length: numSlices }, (_, i) => ({
+          pitch: 60 + i,
+          startTimeInBeats: i * beatsPerSlice,
+          duration: beatsPerSlice,
+          velocity: 100,
+        }));
+
+        addBlock(newTrackId, {
+          startBar: bar,
+          durationBars: blockDurationBars,
+          loop: true,
+          streams: [{ events }],
+        });
+      } catch (error) {
+        console.error('Error processing video file:', error);
+      }
+    },
+    [addVideoTrack, addBlock, project.beatsPerBar]
+  );
+
   // Handle drop on timeline
   const handleTimelineDrop = useCallback(
     async (e: DragEvent, trackId: string | null, bar: number) => {
@@ -132,6 +235,23 @@ export function useDragDrop() {
       const files = e.dataTransfer?.files;
       if (files && files.length > 0) {
         const file = files[0];
+
+        // Check video files first
+        const videoExts = /\.(mp4|webm|mov)$/i;
+        if (videoExts.test(file.name)) {
+          await handleVideoFileDrop(file, trackId, bar);
+          endDrag();
+          return;
+        }
+
+        // Check image files before audio
+        const imageExts = /\.(png|jpe?g|gif|webp|svg)$/i;
+        if (imageExts.test(file.name)) {
+          await handleImageFileDrop(file, trackId, bar);
+          endDrag();
+          return;
+        }
+
         if (isAudioFile(file)) {
           await handleAudioFileDrop(file, trackId, bar);
           endDrag();
@@ -209,7 +329,7 @@ export function useDragDrop() {
 
       endDrag();
     },
-    [addBlock, moveBlock, updateTrack, project.tracks, endDrag, handleAudioFileDrop]
+    [addBlock, moveBlock, updateTrack, project.tracks, endDrag, handleAudioFileDrop, handleImageFileDrop, handleVideoFileDrop]
   );
 
   // Handle drop on track hierarchy (adds a child track)
@@ -258,5 +378,7 @@ export function useDragDrop() {
     handleHierarchyDrop,
     handleDragEnd,
     handleAudioFileDrop,
+    handleImageFileDrop,
+    handleVideoFileDrop,
   };
 }

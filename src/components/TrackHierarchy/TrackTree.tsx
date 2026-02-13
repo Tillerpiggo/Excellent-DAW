@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   UncontrolledTreeEnvironment,
   Tree,
@@ -23,22 +23,47 @@ interface TrackTreeProps {
 
 export function TrackTree({ treeId }: TrackTreeProps) {
   const project = useProjectStore((state) => state.project);
-  const { moveTrack } = useProjectStore();
+  const { moveTrack, duplicateTrack } = useProjectStore();
   const collapsedTrackIds = useUIStore((s) => s.collapsedTrackIds);
   const toggleTrackCollapsed = useUIStore((s) => s.toggleTrackCollapsed);
-  const selectedTrackId = useUIStore((s) => s.selectedTrackId);
-  const selectTrack = useUIStore((s) => s.selectTrack);
+  const selectedTrackIds = useUIStore((s) => s.selectedTrackIds);
+  const selectTracks = useUIStore((s) => s.selectTracks);
+
+  // Track Alt key state for opt+drag duplicate
+  const altKeyRef = useRef(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { altKeyRef.current = e.altKey; };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKey);
+    };
+  }, []);
 
   // Convert project tracks to tree items
   const treeItems = useMemo(() => tracksToTreeItems(project), [project]);
 
-  // Create data provider (memoized to prevent re-creation)
+  // Key that changes when track structure changes, forcing tree remount.
+  // StaticTreeDataProvider has private data that can't be updated externally,
+  // so we remount the entire tree when tracks are added/removed/reordered.
+  const treeKey = useMemo(() => {
+    const rootStr = project.rootTracks.join(',');
+    const childStr = Object.entries(project.tracks)
+      .map(([id, t]) => `${id}:${t.childIds.join('.')}:${t.name}`)
+      .sort()
+      .join('|');
+    return `${rootStr}||${childStr}`;
+  }, [project.tracks, project.rootTracks]);
+
+  // Create data provider (memoized per treeKey)
   const dataProvider = useMemo(() => {
     return new StaticTreeDataProvider(treeItems, (item, newName) => ({
       ...item,
       data: { ...item.data, name: newName },
     }));
-  }, [treeItems]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [treeKey]);
 
   // Validate drop - prevent circular references
   const canDropAt = useCallback(
@@ -104,20 +129,22 @@ export function TrackTree({ treeId }: TrackTreeProps) {
           return;
       }
 
-      moveTrack(draggedId, newParentId, insertIndex);
+      if (altKeyRef.current) {
+        duplicateTrack(draggedId, newParentId, insertIndex);
+      } else {
+        moveTrack(draggedId, newParentId, insertIndex);
+      }
     },
-    [project, moveTrack]
+    [project, moveTrack, duplicateTrack]
   );
 
   // Sync selection
   const handleSelectItems = useCallback(
     (items: TreeItemIndex[]) => {
-      const id = items[0] as string;
-      if (id && id !== 'root') {
-        selectTrack(id);
-      }
+      const ids = items.map(String).filter((id) => id !== 'root');
+      selectTracks(ids);
     },
-    [selectTrack]
+    [selectTracks]
   );
 
   // Sync expand/collapse
@@ -141,19 +168,20 @@ export function TrackTree({ treeId }: TrackTreeProps) {
     [collapsedTrackIds, toggleTrackCollapsed]
   );
 
-  // Calculate initially expanded items (inverse of collapsed)
+  // Calculate expanded items (inverse of collapsed) - recomputed on remount via treeKey
   const defaultExpandedItems = useMemo(() => {
     return Object.keys(project.tracks).filter((id) => !collapsedTrackIds.has(id));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [treeKey]);
 
   return (
     <UncontrolledTreeEnvironment
+      key={treeKey}
       dataProvider={dataProvider}
       getItemTitle={(item) => item.data?.name || ''}
       viewState={{
         [treeId]: {
-          selectedItems: selectedTrackId ? [selectedTrackId] : [],
+          selectedItems: Array.from(selectedTrackIds),
           expandedItems: defaultExpandedItems,
         },
       }}

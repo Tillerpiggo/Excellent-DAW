@@ -49,6 +49,7 @@ const DEFAULTS = {
   disruptorLifetime: 2,
   rippleSpeed: 1.2,
   rippleStrength: 0.06,
+  opacity: 1,
 };
 
 // --- Displacement functions ---
@@ -223,13 +224,14 @@ const vertexShader = `
 `;
 
 const fragmentShader = `
+  uniform float uOpacity;
   varying vec3 vColor;
 
   void main() {
     vec2 cxy = gl_PointCoord * 2.0 - 1.0;
     float r = dot(cxy, cxy);
     if (r > 1.0) discard;
-    float alpha = 1.0 - smoothstep(0.6, 1.0, r);
+    float alpha = (1.0 - smoothstep(0.6, 1.0, r)) * uOpacity;
     gl_FragColor = vec4(vColor, alpha);
   }
 `;
@@ -300,6 +302,7 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
     const mat = new THREE.ShaderMaterial({
       vertexShader,
       fragmentShader,
+      uniforms: { uOpacity: { value: 1.0 } },
       transparent: true,
       depthWrite: false,
       depthTest: false,
@@ -352,6 +355,7 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
       (state.params.rippleSpeed as number) ?? DEFAULTS.rippleSpeed;
     const rippleStrength =
       (state.params.rippleStrength as number) ?? DEFAULTS.rippleStrength;
+    const opacity = (state.params.opacity as number) ?? DEFAULTS.opacity;
 
     // Rebuild if particle count or radius changed
     if (
@@ -533,6 +537,11 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
       Math.min(1, schemeS + 0.1),
       Math.min(0.85, schemeL + 0.3),
     );
+
+    // Update opacity uniform
+    if (matRef.current) {
+      matRef.current.uniforms.uOpacity.value = opacity;
+    }
 
     const pos = posBuf.current;
     const sz = sizeBuf.current;
@@ -883,6 +892,10 @@ export const DotField: Instrument = {
     rippleStrength: {
       type: 'number', label: 'Ripple Strength', min: 0.01, max: 0.2, step: 0.01,
       default: DEFAULTS.rippleStrength,
+    },
+    opacity: {
+      type: 'number', label: 'Opacity', min: 0, max: 1, step: 0.05,
+      default: DEFAULTS.opacity,
     },
   },
 

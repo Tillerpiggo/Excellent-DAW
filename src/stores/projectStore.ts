@@ -14,9 +14,12 @@ interface ProjectState {
   addTrack: (parentId?: string, preset?: typeof PATTERN_PRESETS[0]) => string;
   addAutomationTrack: (parentTrackId: string, paramKey: string) => string;
   addAudioTrack: (name: string) => string;
+  addImageTrack: (name: string, imageStorageId: string) => string;
+  addVideoTrack: (name: string, videoStorageId: string, numSlices?: number) => string;
   updateTrack: (trackId: string, updates: Partial<Track>) => void;
   deleteTrack: (trackId: string) => void;
   moveTrack: (trackId: string, newParentId?: string, index?: number) => void;
+  duplicateTrack: (trackId: string, newParentId?: string, index?: number) => string;
   reorderTrack: (trackId: string, direction: 'up' | 'down') => void;
   groupTracks: (trackIds: string[]) => string | null;
 
@@ -119,6 +122,14 @@ export const useProjectStore = create<ProjectState>()(
           }
         }
 
+        // Inherit automationConfig from parent if it has one
+        if (parentId) {
+          const parent = state.project.tracks[parentId];
+          if (parent?.automationConfig) {
+            track.automationConfig = { ...parent.automationConfig };
+          }
+        }
+
         state.project.tracks[track.id] = track;
 
         if (parentId && state.project.tracks[parentId]) {
@@ -140,6 +151,62 @@ export const useProjectStore = create<ProjectState>()(
           name: name || 'Audio Track',
           typeId: 'base',
           instrumentId: 'audioPlayer',
+          muted: false,
+          solo: false,
+          collapsed: false,
+          blocks: [],
+          childIds: [],
+        };
+
+        state.project.tracks[trackId] = track;
+        state.project.rootTracks.push(trackId);
+      });
+
+      return trackId;
+    },
+
+    addImageTrack: (name: string, imageStorageId: string) => {
+      const trackId = generateId();
+
+      set((state) => {
+        const track: Track = {
+          id: trackId,
+          name: name || 'Image Track',
+          typeId: 'base',
+          instrumentId: 'imageDisplay',
+          instrumentSettings: { imageStorageId, x: 0, y: 0, scale: 1, opacity: 1 },
+          muted: false,
+          solo: false,
+          collapsed: false,
+          blocks: [],
+          childIds: [],
+        };
+
+        state.project.tracks[trackId] = track;
+        state.project.rootTracks.push(trackId);
+      });
+
+      return trackId;
+    },
+
+    addVideoTrack: (name: string, videoStorageId: string, numSlices: number = 8) => {
+      const trackId = generateId();
+
+      set((state) => {
+        const track: Track = {
+          id: trackId,
+          name: name || 'Video Track',
+          typeId: 'base',
+          instrumentId: 'videoSampler',
+          instrumentSettings: {
+            videoStorageId,
+            numSlices,
+            playbackMode: 'hold',
+            x: 0,
+            y: 0,
+            scale: 1,
+            opacity: 1,
+          },
           muted: false,
           solo: false,
           collapsed: false,
@@ -262,6 +329,84 @@ export const useProjectStore = create<ProjectState>()(
           }
         }
       });
+    },
+
+    duplicateTrack: (trackId: string, newParentId?: string, index?: number) => {
+      let rootCloneId = '';
+
+      set((state) => {
+        const cloneTrack = (srcId: string, parentId?: string): string => {
+          const src = state.project.tracks[srcId];
+          if (!src) return '';
+
+          const cloneId = generateId();
+          if (!rootCloneId) rootCloneId = cloneId;
+
+          // Deep clone blocks
+          const clonedBlocks = src.blocks.map(block => ({
+            ...block,
+            id: generateId(),
+            streams: block.streams.map(stream => ({
+              ...stream,
+              events: stream.events.map(e => ({ ...e })),
+            })),
+            audioData: block.audioData ? { ...block.audioData } : undefined,
+          }));
+
+          // Deep clone visual plugins
+          const clonedPlugins = src.visualPlugins?.map(p => ({
+            ...p,
+            id: generateId(),
+            settings: { ...p.settings },
+          }));
+
+          const isRoot = !rootCloneId;
+          const cloned = {
+            ...src,
+            id: cloneId,
+            name: isRoot ? `${src.name} (Copy)` : src.name,
+            blocks: clonedBlocks,
+            visualPlugins: clonedPlugins,
+            instrumentSettings: src.instrumentSettings ? { ...src.instrumentSettings } : undefined,
+            automationConfig: src.automationConfig ? { ...src.automationConfig } : undefined,
+            parentId,
+            childIds: [] as string[],
+          };
+
+          state.project.tracks[cloneId] = cloned;
+
+          // Recursively clone children
+          for (const childId of src.childIds) {
+            const childCloneId = cloneTrack(childId, cloneId);
+            if (childCloneId) cloned.childIds.push(childCloneId);
+          }
+
+          return cloneId;
+        };
+
+        rootCloneId = '';
+        const clonedId = cloneTrack(trackId, newParentId);
+
+        // Insert into parent's child list or rootTracks
+        if (newParentId) {
+          const parent = state.project.tracks[newParentId];
+          if (parent) {
+            if (index !== undefined) {
+              parent.childIds.splice(index, 0, clonedId);
+            } else {
+              parent.childIds.push(clonedId);
+            }
+          }
+        } else {
+          if (index !== undefined) {
+            state.project.rootTracks.splice(index, 0, clonedId);
+          } else {
+            state.project.rootTracks.push(clonedId);
+          }
+        }
+      });
+
+      return rootCloneId;
     },
 
     reorderTrack: (trackId: string, direction: 'up' | 'down') => {
