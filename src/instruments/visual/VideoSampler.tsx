@@ -52,7 +52,14 @@ function VideoSamplerVisual({ trackId }: { trackId: string }) {
     // Load video if videoStorageId changed
     if (videoStorageId && videoStorageId !== loadedIdRef.current) {
       loadedIdRef.current = videoStorageId;
+      setReady(false);
+      hasTriggeredRef.current = false;
+      wasActiveRef.current = false;
+      activeSliceRef.current = -1;
+      activeNoteStartRef.current = -1;
       getVideoFile(videoStorageId).then((file) => {
+        // Guard against stale load (user switched again before this resolved)
+        if (loadedIdRef.current !== videoStorageId) return;
         if (!file) return;
 
         // Revoke old blob URL
