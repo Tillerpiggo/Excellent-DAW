@@ -25,6 +25,7 @@ import { TextDisplay } from './visual/TextDisplay';
 import { Sun } from './visual/Sun';
 import { ImageDisplay } from './visual/ImageDisplay';
 import { VideoSampler } from './visual/VideoSampler';
+import { VideoKaleidoscope } from './visual/VideoKaleidoscope';
 
 // Flat registry for quick lookup by ID
 export const INSTRUMENTS: Record<string, Instrument> = {
@@ -50,6 +51,7 @@ export const INSTRUMENTS: Record<string, Instrument> = {
   sun: Sun,
   imageDisplay: ImageDisplay,
   videoSampler: VideoSampler,
+  videoKaleidoscope: VideoKaleidoscope,
 };
 
 // Get instrument by ID
@@ -93,7 +95,7 @@ export function getInstrumentFolderTree(): InstrumentFolder {
       },
       {
         name: 'Visual',
-        instruments: ['silkSymmetry', 'hexagonDots', 'fractalTunnel', 'circleGrid', 'neonPolar', 'hopfFibration', 'icosahedronBurst', 'metronomeBalls', 'dotField', 'stars', 'textDisplay', 'sun', 'imageDisplay', 'videoSampler'],
+        instruments: ['silkSymmetry', 'hexagonDots', 'fractalTunnel', 'circleGrid', 'neonPolar', 'hopfFibration', 'icosahedronBurst', 'metronomeBalls', 'dotField', 'stars', 'textDisplay', 'sun', 'imageDisplay', 'videoSampler', 'videoKaleidoscope'],
       },
     ],
   };

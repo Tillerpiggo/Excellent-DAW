@@ -16,6 +16,7 @@ interface ProjectState {
   addAudioTrack: (name: string) => string;
   addImageTrack: (name: string, imageStorageId: string) => string;
   addVideoTrack: (name: string, videoStorageId: string, numSlices?: number) => string;
+  addVideoKaleidoscopeTrack: (name: string, sliceVideoMap: Record<string, string>, numSegments?: number) => string;
   updateTrack: (trackId: string, updates: Partial<Track>) => void;
   deleteTrack: (trackId: string) => void;
   moveTrack: (trackId: string, newParentId?: string, index?: number) => void;
@@ -206,6 +207,41 @@ export const useProjectStore = create<ProjectState>()(
             y: 0,
             scale: 1,
             opacity: 1,
+          },
+          muted: false,
+          solo: false,
+          collapsed: false,
+          blocks: [],
+          childIds: [],
+        };
+
+        state.project.tracks[trackId] = track;
+        state.project.rootTracks.push(trackId);
+      });
+
+      return trackId;
+    },
+
+    addVideoKaleidoscopeTrack: (name: string, sliceVideoMap: Record<string, string>, numSegments: number = 6) => {
+      const trackId = generateId();
+
+      set((state) => {
+        const track: Track = {
+          id: trackId,
+          name: name || 'Video Kaleidoscope',
+          typeId: 'base',
+          instrumentId: 'videoKaleidoscope',
+          instrumentSettings: {
+            numSegments,
+            sliceVideoMap,
+            spiralIntensity: 0,
+            rotationSpeed: 0,
+            x: 0,
+            y: 0,
+            scale: 1,
+            opacity: 1,
+            mirrorMode: false,
+            featherEdge: 0.02,
           },
           muted: false,
           solo: false,

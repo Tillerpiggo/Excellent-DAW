@@ -20,7 +20,7 @@ export function useDragDrop() {
   const dropTargetTrackId = useUIStore((s) => s.dropTargetTrackId);
   const dropTargetBar = useUIStore((s) => s.dropTargetBar);
 
-  const { addBlock, moveBlock, addAudioTrack, addImageTrack, addVideoTrack, updateTrack } = useProjectStore();
+  const { addBlock, moveBlock, addAudioTrack, addImageTrack, addVideoTrack, addVideoKaleidoscopeTrack, updateTrack } = useProjectStore();
   const project = useProjectStore((state) => state.project);
 
   // Track if we're currently processing an audio file drop
@@ -226,6 +226,146 @@ export function useDragDrop() {
     [addVideoTrack, addBlock, project.beatsPerBar]
   );
 
+  // Handle multiple video files drop → kaleidoscope
+  const handleMultiVideoKaleidoscopeDrop = useCallback(
+    async (videoFiles: File[], bar: number) => {
+      try {
+        const numSegments = videoFiles.length;
+        const sliceVideoMap: Record<string, string> = {};
+
+        // Store each video and build the slice map
+        for (let i = 0; i < videoFiles.length; i++) {
+          const file = videoFiles[i];
+          const videoStorageId = generateId();
+
+          const metadata = await new Promise<{ width: number; height: number; duration: number }>((resolve, reject) => {
+            const video = document.createElement('video');
+            video.preload = 'metadata';
+            video.onloadedmetadata = () => {
+              resolve({
+                width: video.videoWidth,
+                height: video.videoHeight,
+                duration: video.duration,
+              });
+              URL.revokeObjectURL(video.src);
+            };
+            video.onerror = () => {
+              URL.revokeObjectURL(video.src);
+              reject(new Error('Failed to load video metadata'));
+            };
+            video.src = URL.createObjectURL(file);
+          });
+
+          await storeVideoFile(videoStorageId, file, {
+            fileName: file.name,
+            mimeType: file.type,
+            width: metadata.width,
+            height: metadata.height,
+            duration: metadata.duration,
+          });
+
+          sliceVideoMap[String(i)] = videoStorageId;
+        }
+
+        // Create kaleidoscope track
+        const newTrackId = addVideoKaleidoscopeTrack('Video Kaleidoscope', sliceVideoMap, numSegments);
+
+        // Auto-generate MIDI block: 4 bars, one note per segment
+        const blockDurationBars = 4;
+        const beatsPerSegment = (blockDurationBars * project.beatsPerBar) / numSegments;
+        const events = Array.from({ length: numSegments }, (_, i) => ({
+          pitch: 60 + i,
+          startTimeInBeats: i * beatsPerSegment,
+          duration: beatsPerSegment,
+          velocity: 100,
+        }));
+
+        addBlock(newTrackId, {
+          startBar: bar,
+          durationBars: blockDurationBars,
+          loop: true,
+          streams: [{ events }],
+        });
+      } catch (error) {
+        console.error('Error creating video kaleidoscope:', error);
+      }
+    },
+    [addVideoKaleidoscopeTrack, addBlock, project.beatsPerBar]
+  );
+
+  // Handle single video drop onto existing kaleidoscope track
+  const handleVideoOntoKaleidoscope = useCallback(
+    async (file: File, trackId: string) => {
+      try {
+        const videoStorageId = generateId();
+
+        const metadata = await new Promise<{ width: number; height: number; duration: number }>((resolve, reject) => {
+          const video = document.createElement('video');
+          video.preload = 'metadata';
+          video.onloadedmetadata = () => {
+            resolve({
+              width: video.videoWidth,
+              height: video.videoHeight,
+              duration: video.duration,
+            });
+            URL.revokeObjectURL(video.src);
+          };
+          video.onerror = () => {
+            URL.revokeObjectURL(video.src);
+            reject(new Error('Failed to load video metadata'));
+          };
+          video.src = URL.createObjectURL(file);
+        });
+
+        await storeVideoFile(videoStorageId, file, {
+          fileName: file.name,
+          mimeType: file.type,
+          width: metadata.width,
+          height: metadata.height,
+          duration: metadata.duration,
+        });
+
+        // Find next empty segment slot
+        const track = project.tracks[trackId];
+        const existingMap = (track.instrumentSettings?.sliceVideoMap as Record<string, string>) || {};
+        const numSegments = (track.instrumentSettings?.numSegments as number) || 6;
+        let nextSlot = -1;
+        for (let i = 0; i < numSegments; i++) {
+          if (!existingMap[String(i)]) {
+            nextSlot = i;
+            break;
+          }
+        }
+
+        if (nextSlot === -1) {
+          // All slots full - expand numSegments if under 16
+          if (numSegments < 16) {
+            nextSlot = numSegments;
+            updateTrack(trackId, {
+              instrumentSettings: {
+                ...track.instrumentSettings,
+                numSegments: numSegments + 1,
+                sliceVideoMap: { ...existingMap, [String(nextSlot)]: videoStorageId },
+              },
+            });
+          } else {
+            console.warn('All 16 kaleidoscope segments are full');
+          }
+        } else {
+          updateTrack(trackId, {
+            instrumentSettings: {
+              ...track.instrumentSettings,
+              sliceVideoMap: { ...existingMap, [String(nextSlot)]: videoStorageId },
+            },
+          });
+        }
+      } catch (error) {
+        console.error('Error adding video to kaleidoscope:', error);
+      }
+    },
+    [project.tracks, updateTrack]
+  );
+
   // Handle drop on timeline
   const handleTimelineDrop = useCallback(
     async (e: DragEvent, trackId: string | null, bar: number) => {
@@ -234,11 +374,30 @@ export function useDragDrop() {
       // Check for file drop first
       const files = e.dataTransfer?.files;
       if (files && files.length > 0) {
+        const videoExts = /\.(mp4|webm|mov)$/i;
+
+        // Check if multiple video files were dropped → kaleidoscope
+        const videoFiles = Array.from(files).filter(f => videoExts.test(f.name));
+        if (videoFiles.length > 1) {
+          await handleMultiVideoKaleidoscopeDrop(videoFiles, bar);
+          endDrag();
+          return;
+        }
+
+        // Single video drop
         const file = files[0];
 
         // Check video files first
-        const videoExts = /\.(mp4|webm|mov)$/i;
         if (videoExts.test(file.name)) {
+          // If dropping onto an existing kaleidoscope track, add to it
+          if (trackId) {
+            const track = project.tracks[trackId];
+            if (track?.instrumentId === 'videoKaleidoscope') {
+              await handleVideoOntoKaleidoscope(file, trackId);
+              endDrag();
+              return;
+            }
+          }
           await handleVideoFileDrop(file, trackId, bar);
           endDrag();
           return;
@@ -329,7 +488,7 @@ export function useDragDrop() {
 
       endDrag();
     },
-    [addBlock, moveBlock, updateTrack, project.tracks, endDrag, handleAudioFileDrop, handleImageFileDrop, handleVideoFileDrop]
+    [addBlock, moveBlock, updateTrack, project.tracks, endDrag, handleAudioFileDrop, handleImageFileDrop, handleVideoFileDrop, handleMultiVideoKaleidoscopeDrop, handleVideoOntoKaleidoscope]
   );
 
   // Handle drop on track hierarchy (adds a child track)
@@ -380,5 +539,7 @@ export function useDragDrop() {
     handleAudioFileDrop,
     handleImageFileDrop,
     handleVideoFileDrop,
+    handleMultiVideoKaleidoscopeDrop,
+    handleVideoOntoKaleidoscope,
   };
 }

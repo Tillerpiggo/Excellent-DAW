@@ -406,7 +406,7 @@ export function TimelineCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
   const trackHeightScale = useUIStore((state) => state.trackHeightScale);
-  const { handleAudioFileDrop, handleImageFileDrop, handleVideoFileDrop, isProcessingAudio } = useDragDrop();
+  const { handleAudioFileDrop, handleImageFileDrop, handleVideoFileDrop, handleMultiVideoKaleidoscopeDrop, handleVideoOntoKaleidoscope, isProcessingAudio } = useDragDrop();
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const dragCounter = useRef(0);
@@ -882,8 +882,6 @@ export function TimelineCanvas({
     const files = e.dataTransfer.files;
     if (!files || files.length === 0) return;
 
-    const file = files[0];
-
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
 
@@ -895,14 +893,29 @@ export function TimelineCanvas({
 
     const videoExts = /\.(mp4|webm|mov)$/i;
     const imageExts = /\.(png|jpe?g|gif|webp|svg)$/i;
+
+    // Check for multiple video files → kaleidoscope
+    const videoFiles = Array.from(files).filter(f => videoExts.test(f.name));
+    if (videoFiles.length > 1) {
+      await handleMultiVideoKaleidoscopeDrop(videoFiles, bar);
+      return;
+    }
+
+    const file = files[0];
+
     if (videoExts.test(file.name)) {
-      await handleVideoFileDrop(file, targetTrack?.id || null, bar);
+      // Single video onto existing kaleidoscope track
+      if (targetTrack?.instrumentId === 'videoKaleidoscope') {
+        await handleVideoOntoKaleidoscope(file, targetTrack.id);
+      } else {
+        await handleVideoFileDrop(file, targetTrack?.id || null, bar);
+      }
     } else if (imageExts.test(file.name)) {
       await handleImageFileDrop(file, targetTrack?.id || null, bar);
     } else if (isAudioFile(file)) {
       await handleAudioFileDrop(file, targetTrack?.id || null, bar);
     }
-  }, [barWidth, trackHeight, flatTracks, handleAudioFileDrop, handleImageFileDrop, handleVideoFileDrop]);
+  }, [barWidth, trackHeight, flatTracks, handleAudioFileDrop, handleImageFileDrop, handleVideoFileDrop, handleMultiVideoKaleidoscopeDrop, handleVideoOntoKaleidoscope]);
 
   // Context menu
   const handleContextMenu = useCallback((e: React.MouseEvent) => {

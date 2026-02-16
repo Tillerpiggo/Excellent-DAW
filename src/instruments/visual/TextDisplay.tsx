@@ -12,6 +12,7 @@ const PITCH_HEIGHT_MAX = 72;  // C5
 const PITCH_HEIGHT_CENTER = 66; // F#4 = no offset
 const MAX_DELAY_TAPS = 8;
 const MAX_REVERB_REFLECTIONS = 16;
+const MAX_WALL_SLOTS = 50;
 
 // Deterministic pseudo-random offsets per reverb reflection (seeded by index)
 const REVERB_OFFSETS = Array.from({ length: MAX_REVERB_REFLECTIONS }, (_, i) => {
@@ -46,7 +47,35 @@ const DEFAULTS = {
   reverbReflections: 12,
   reverbDecay: 1.5,
   reverbSpread: 0.15,
+  wallEnabled: false,
+  wallAnimateDuration: 0.5,
+  wallThreshold: 10,
+  wallClearDuration: 0.6,
+  wallScaleVariation: 0.3,
+  wallRotationMax: 15,
 };
+
+// Pre-generated deterministic wall slot positions (seeded per slot index)
+const WALL_SLOTS = Array.from({ length: MAX_WALL_SLOTS }, (_, i) => {
+  const seed = (i + 1) * 2654435761;
+  const hash = (n: number) => ((n >>> 0) & 0x7fffffff) / 0x7fffffff;
+  return {
+    x: hash((seed * 37) ^ 0xdeadbeef) * 0.8 - 0.4,   // -0.4..0.4
+    y: hash((seed * 41) ^ 0xcafebabe) * 0.7 - 0.35,   // -0.35..0.35
+    rot: hash((seed * 53) ^ 0xfeedface) * 2 - 1,       // -1..1 (scaled by wallRotationMax)
+    scale: hash((seed * 59) ^ 0xbaadf00d) * 2 - 1,     // -1..1 (scaled by wallScaleVariation)
+    entryAngle: hash((seed * 67) ^ 0xdeadc0de) * Math.PI * 2, // 0..2π
+  };
+});
+
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+const easeInCubic = (t: number) => t * t * t;
+
+interface WallEntry {
+  word: string;
+  triggerTime: number;
+  slotIndex: number;
+}
 
 interface WordHistoryEntry {
   word: string;
@@ -150,6 +179,14 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
   const reverbTexturesRef = useRef<THREE.CanvasTexture[]>([]);
   const reverbLastWordsRef = useRef<string[]>([]);
 
+  // Wall mode state
+  const wallMeshesRef = useRef<THREE.Mesh[]>([]);
+  const wallTexturesRef = useRef<THREE.CanvasTexture[]>([]);
+  const wallLastWordsRef = useRef<string[]>([]);
+  const wallEntriesRef = useRef<WallEntry[]>([]);
+  const wallPageRef = useRef(0);
+  const wallClearStartRef = useRef(-1);
+
   useEffect(() => {
     const tex = new THREE.CanvasTexture(createTextCanvas('Hello', 512, DEFAULTS.strokeWidth));
     tex.minFilter = THREE.LinearFilter;
@@ -208,6 +245,31 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
     reverbTexturesRef.current = reverbTextures;
     reverbLastWordsRef.current = reverbLastWords;
 
+    // Pre-create wall meshes
+    const wallMeshes: THREE.Mesh[] = [];
+    const wallTextures: THREE.CanvasTexture[] = [];
+    const wallLastWords: string[] = [];
+    for (let i = 0; i < MAX_WALL_SLOTS; i++) {
+      const wTex = new THREE.CanvasTexture(createTextCanvas('', 512, DEFAULTS.strokeWidth));
+      wTex.minFilter = THREE.LinearFilter;
+      wTex.magFilter = THREE.LinearFilter;
+      wallTextures.push(wTex);
+      wallLastWords.push('');
+
+      const wMat = new THREE.MeshBasicMaterial({
+        map: wTex,
+        transparent: true,
+        depthWrite: false,
+        opacity: 0,
+      });
+      const wMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), wMat);
+      wMesh.visible = false;
+      wallMeshes.push(wMesh);
+    }
+    wallMeshesRef.current = wallMeshes;
+    wallTexturesRef.current = wallTextures;
+    wallLastWordsRef.current = wallLastWords;
+
     setReady(true);
     return () => {
       tex.dispose();
@@ -218,6 +280,11 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
       }
       for (const t of reverbTextures) t.dispose();
       for (const m of reverbMeshes) {
+        (m.material as THREE.Material).dispose();
+        m.geometry.dispose();
+      }
+      for (const t of wallTextures) t.dispose();
+      for (const m of wallMeshes) {
         (m.material as THREE.Material).dispose();
         m.geometry.dispose();
       }
@@ -233,11 +300,17 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
     for (const mesh of reverbMeshesRef.current) {
       groupRef.current.add(mesh);
     }
+    for (const mesh of wallMeshesRef.current) {
+      groupRef.current.add(mesh);
+    }
     return () => {
       for (const mesh of echoMeshesRef.current) {
         groupRef.current?.remove(mesh);
       }
       for (const mesh of reverbMeshesRef.current) {
+        groupRef.current?.remove(mesh);
+      }
+      for (const mesh of wallMeshesRef.current) {
         groupRef.current?.remove(mesh);
       }
     };
@@ -266,6 +339,12 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
     const reverbReflections = (state.params.reverbReflections as number) ?? DEFAULTS.reverbReflections;
     const reverbDecay = (state.params.reverbDecay as number) ?? DEFAULTS.reverbDecay;
     const reverbSpread = (state.params.reverbSpread as number) ?? DEFAULTS.reverbSpread;
+    const wallEnabled = (state.params.wallEnabled as boolean) ?? DEFAULTS.wallEnabled;
+    const wallAnimateDuration = (state.params.wallAnimateDuration as number) ?? DEFAULTS.wallAnimateDuration;
+    const wallThreshold = (state.params.wallThreshold as number) ?? DEFAULTS.wallThreshold;
+    const wallClearDuration = (state.params.wallClearDuration as number) ?? DEFAULTS.wallClearDuration;
+    const wallScaleVariation = (state.params.wallScaleVariation as number) ?? DEFAULTS.wallScaleVariation;
+    const wallRotationMax = (state.params.wallRotationMax as number) ?? DEFAULTS.wallRotationMax;
 
     const words = text.split(/\s+/).filter(Boolean);
     if (words.length === 0) return;
@@ -302,7 +381,8 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
       }
     }
 
-    if (currentCount !== prevCountRef.current && currentCount > 0) {
+    const isNewTrigger = currentCount !== prevCountRef.current && currentCount > 0;
+    if (isNewTrigger) {
       wordHistoryRef.current.push({ word: currentWord, triggerTime: now, duration: 0, yOffset: currentYOffsetRef.current });
       noteOnTimeRef.current = now;
       prevCountRef.current = currentCount;
@@ -327,147 +407,265 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
       (e) => now - e.triggerTime < maxEchoLifetime
     );
 
-    // Update main mesh texture
-    if (currentWord !== lastWordRef.current || strokeWidth !== lastStrokeRef.current || fontFamily !== lastFontRef.current || color !== lastColorRef.current) {
-      const canvas = createTextCanvas(currentWord, 512, strokeWidth, fontFamily, color);
-      textureRef.current.image = canvas;
-      textureRef.current.needsUpdate = true;
-      lastWordRef.current = currentWord;
-      lastStrokeRef.current = strokeWidth;
-      lastFontRef.current = fontFamily;
-      lastColorRef.current = color;
-    }
-
-    // Main mesh visibility and opacity — only while note is held
-    meshRef.current.visible = isNoteHeld;
-    (meshRef.current.material as THREE.MeshBasicMaterial).opacity = textOpacity;
-
     const baseScale = Math.min(viewport.width, viewport.height) * 0.6 * fontSize;
-    meshRef.current.scale.set(baseScale, baseScale, 1);
-    meshRef.current.position.y = currentYOffsetRef.current * viewport.height * heightAmount;
 
-    for (let tap = 0; tap < MAX_DELAY_TAPS; tap++) {
-      const mesh = echoMeshesRef.current[tap];
-      if (!mesh) continue;
-
-      if (tap >= delayTaps) {
-        mesh.visible = false;
-        continue;
+    // --- Wall mode ---
+    if (wallEnabled) {
+      // Hide main mesh and all delay/reverb meshes
+      meshRef.current.visible = false;
+      for (let i = 0; i < MAX_DELAY_TAPS; i++) {
+        const m = echoMeshesRef.current[i];
+        if (m) m.visible = false;
+      }
+      for (let i = 0; i < MAX_REVERB_REFLECTIONS; i++) {
+        const m = reverbMeshesRef.current[i];
+        if (m) m.visible = false;
       }
 
-      const tapNum = tap + 1; // tap 1, 2, 3...
-      const tapOffset = tapNum * delayTime;
+      const wallEntries = wallEntriesRef.current;
+      const isClearing = wallClearStartRef.current >= 0;
+      const rotMaxRad = (wallRotationMax * Math.PI) / 180;
+      const entryDistance = Math.max(viewport.width, viewport.height) * 0.8;
 
-      // Find the most recent trigger whose echo has arrived for this tap
-      let bestEntry: WordHistoryEntry | null = null;
-      let bestEchoAge = Infinity;
-      for (let h = history.length - 1; h >= 0; h--) {
-        const echoAge = now - (history[h].triggerTime + tapOffset);
-        if (echoAge >= 0 && echoAge < bestEchoAge) {
-          bestEntry = history[h];
-          bestEchoAge = echoAge;
-          break; // history is chronological, most recent match wins
+      // Handle new word trigger
+      if (isNewTrigger) {
+        if (isClearing) {
+          // Still clearing — ignore until clear finishes
+        } else if (wallEntries.length >= wallThreshold) {
+          // Start clearing animation
+          wallClearStartRef.current = now;
+        } else {
+          // Add new entry
+          const slotIndex = wallEntries.length;
+          wallEntries.push({ word: currentWord, triggerTime: now, slotIndex });
         }
       }
 
-      if (!bestEntry) {
-        mesh.visible = false;
-        continue;
-      }
-
-      // Echo is visible for the same duration as the original note was held
-      const echoDuration = bestEntry.duration > 0 ? bestEntry.duration : delayTime;
-      if (bestEchoAge > echoDuration) {
-        mesh.visible = false;
-        continue;
-      }
-
-      const tapOpacity = Math.max(0.01, 1 - delayOpacityFalloff * tapNum);
-      const opacity = tapOpacity * textOpacity;
-
-      // Update texture if word changed for this slot
-      const tex = echoTexturesRef.current[tap];
-      if (bestEntry.word !== echoLastWordsRef.current[tap]) {
-        const canvas = createTextCanvas(bestEntry.word, 512, strokeWidth, fontFamily, color);
-        tex.image = canvas;
-        tex.needsUpdate = true;
-        echoLastWordsRef.current[tap] = bestEntry.word;
-      }
-
-      const tapScale = baseScale * Math.max(0.1, 1 - delayScaleFalloff * tapNum);
-      mesh.scale.set(tapScale, tapScale, 1);
-      // Ping-pong: odd taps go left, even taps go right
-      mesh.position.x = pingPongEnabled
-        ? (tapNum % 2 === 1 ? -1 : 1) * pingPongWidth * viewport.width * 0.5
-        : 0;
-      mesh.position.y = bestEntry.yOffset * viewport.height * heightAmount;
-      mesh.position.z = -0.01 * tapNum;
-
-      const mat = mesh.material as THREE.MeshBasicMaterial;
-      mat.opacity = opacity;
-      mesh.visible = true;
-    }
-
-    // --- Reverb reflections ---
-    for (let r = 0; r < MAX_REVERB_REFLECTIONS; r++) {
-      const rMesh = reverbMeshesRef.current[r];
-      if (!rMesh) continue;
-
-      if (!reverbEnabled || r >= reverbReflections) {
-        rMesh.visible = false;
-        continue;
-      }
-
-      const offsets = REVERB_OFFSETS[r];
-      const timeOffset = offsets.t * reverbDecay;
-      const dx = offsets.x * reverbSpread * viewport.width;
-      const dy = offsets.y * reverbSpread * viewport.height;
-
-      // Find most recent word entry whose reverb reflection has arrived
-      let bestEntry: WordHistoryEntry | null = null;
-      let bestAge = Infinity;
-      for (let h = history.length - 1; h >= 0; h--) {
-        const age = now - (history[h].triggerTime + timeOffset);
-        if (age >= 0 && age < bestAge) {
-          bestEntry = history[h];
-          bestAge = age;
-          break;
+      // Handle clearing animation completion
+      if (isClearing) {
+        const clearT = Math.min((now - wallClearStartRef.current) / wallClearDuration, 1);
+        if (clearT >= 1) {
+          // Clear done — reset and add the triggering word as first entry
+          wallEntriesRef.current = [{ word: currentWord, triggerTime: now, slotIndex: 0 }];
+          wallPageRef.current++;
+          wallClearStartRef.current = -1;
         }
       }
 
-      if (!bestEntry) {
-        rMesh.visible = false;
-        continue;
+      // Animate wall meshes
+      const currentEntries = wallEntriesRef.current;
+      for (let i = 0; i < MAX_WALL_SLOTS; i++) {
+        const wMesh = wallMeshesRef.current[i];
+        if (!wMesh) continue;
+
+        if (i >= currentEntries.length) {
+          wMesh.visible = false;
+          continue;
+        }
+
+        const entry = currentEntries[i];
+        const slot = WALL_SLOTS[entry.slotIndex % MAX_WALL_SLOTS];
+
+        // Update texture if needed
+        const wTex = wallTexturesRef.current[i];
+        if (entry.word !== wallLastWordsRef.current[i]) {
+          const canvas = createTextCanvas(entry.word, 512, strokeWidth, fontFamily, color);
+          wTex.image = canvas;
+          wTex.needsUpdate = true;
+          wallLastWordsRef.current[i] = entry.word;
+        }
+
+        // Target position/rotation/scale
+        const targetX = slot.x * viewport.width;
+        const targetY = slot.y * viewport.height;
+        const targetRot = slot.rot * rotMaxRad;
+        const targetScale = baseScale * (1 + slot.scale * wallScaleVariation);
+
+        // Entry start position (off-screen along entry angle)
+        const startX = Math.cos(slot.entryAngle) * entryDistance;
+        const startY = Math.sin(slot.entryAngle) * entryDistance;
+
+        if (wallClearStartRef.current >= 0) {
+          // Scatter-out animation
+          const clearT = easeInCubic(Math.min((now - wallClearStartRef.current) / wallClearDuration, 1));
+          // Scatter direction: outward from center
+          const scatterAngle = Math.atan2(targetY, targetX || 0.001);
+          const scatterDist = entryDistance * 1.2;
+          const scatterX = targetX + Math.cos(scatterAngle) * scatterDist * clearT;
+          const scatterY = targetY + Math.sin(scatterAngle) * scatterDist * clearT;
+
+          wMesh.position.set(scatterX, scatterY, -0.01 * i);
+          wMesh.rotation.z = targetRot + clearT * Math.PI * 0.5;
+          wMesh.scale.set(targetScale, targetScale, 1);
+          const wMat = wMesh.material as THREE.MeshBasicMaterial;
+          wMat.opacity = textOpacity * (1 - clearT);
+          wMesh.visible = true;
+        } else {
+          // Fly-in animation
+          const flyT = easeOutCubic(Math.min((now - entry.triggerTime) / wallAnimateDuration, 1));
+          const posX = startX + (targetX - startX) * flyT;
+          const posY = startY + (targetY - startY) * flyT;
+
+          wMesh.position.set(posX, posY, -0.01 * i);
+          wMesh.rotation.z = targetRot * flyT;
+          wMesh.scale.set(targetScale * flyT || 0.001, targetScale * flyT || 0.001, 1);
+          const wMat = wMesh.material as THREE.MeshBasicMaterial;
+          wMat.opacity = textOpacity * flyT;
+          wMesh.visible = true;
+        }
+      }
+    } else {
+      // --- Normal mode (non-wall) ---
+      // Hide wall meshes
+      for (let i = 0; i < MAX_WALL_SLOTS; i++) {
+        const m = wallMeshesRef.current[i];
+        if (m) m.visible = false;
+      }
+      // Reset wall state when wall mode is disabled
+      wallEntriesRef.current = [];
+      wallClearStartRef.current = -1;
+
+      // Update main mesh texture
+      if (currentWord !== lastWordRef.current || strokeWidth !== lastStrokeRef.current || fontFamily !== lastFontRef.current || color !== lastColorRef.current) {
+        const canvas = createTextCanvas(currentWord, 512, strokeWidth, fontFamily, color);
+        textureRef.current.image = canvas;
+        textureRef.current.needsUpdate = true;
+        lastWordRef.current = currentWord;
+        lastStrokeRef.current = strokeWidth;
+        lastFontRef.current = fontFamily;
+        lastColorRef.current = color;
       }
 
-      // Visible for same duration as original note was held
-      const echoDuration = bestEntry.duration > 0 ? bestEntry.duration : reverbDecay;
-      if (bestAge > echoDuration) {
-        rMesh.visible = false;
-        continue;
+      // Main mesh visibility and opacity — only while note is held
+      meshRef.current.visible = isNoteHeld;
+      (meshRef.current.material as THREE.MeshBasicMaterial).opacity = textOpacity;
+
+      meshRef.current.scale.set(baseScale, baseScale, 1);
+      meshRef.current.position.y = currentYOffsetRef.current * viewport.height * heightAmount;
+
+      for (let tap = 0; tap < MAX_DELAY_TAPS; tap++) {
+        const mesh = echoMeshesRef.current[tap];
+        if (!mesh) continue;
+
+        if (tap >= delayTaps) {
+          mesh.visible = false;
+          continue;
+        }
+
+        const tapNum = tap + 1; // tap 1, 2, 3...
+        const tapOffset = tapNum * delayTime;
+
+        // Find the most recent trigger whose echo has arrived for this tap
+        let bestEntry: WordHistoryEntry | null = null;
+        let bestEchoAge = Infinity;
+        for (let h = history.length - 1; h >= 0; h--) {
+          const echoAge = now - (history[h].triggerTime + tapOffset);
+          if (echoAge >= 0 && echoAge < bestEchoAge) {
+            bestEntry = history[h];
+            bestEchoAge = echoAge;
+            break; // history is chronological, most recent match wins
+          }
+        }
+
+        if (!bestEntry) {
+          mesh.visible = false;
+          continue;
+        }
+
+        // Echo is visible for the same duration as the original note was held
+        const echoDuration = bestEntry.duration > 0 ? bestEntry.duration : delayTime;
+        if (bestEchoAge > echoDuration) {
+          mesh.visible = false;
+          continue;
+        }
+
+        const tapOpacity = Math.max(0.01, 1 - delayOpacityFalloff * tapNum);
+        const opacity = tapOpacity * textOpacity;
+
+        // Update texture if word changed for this slot
+        const tex = echoTexturesRef.current[tap];
+        if (bestEntry.word !== echoLastWordsRef.current[tap]) {
+          const canvas = createTextCanvas(bestEntry.word, 512, strokeWidth, fontFamily, color);
+          tex.image = canvas;
+          tex.needsUpdate = true;
+          echoLastWordsRef.current[tap] = bestEntry.word;
+        }
+
+        const tapScale = baseScale * Math.max(0.1, 1 - delayScaleFalloff * tapNum);
+        mesh.scale.set(tapScale, tapScale, 1);
+        // Ping-pong: odd taps go left, even taps go right
+        mesh.position.x = pingPongEnabled
+          ? (tapNum % 2 === 1 ? -1 : 1) * pingPongWidth * viewport.width * 0.5
+          : 0;
+        mesh.position.y = bestEntry.yOffset * viewport.height * heightAmount;
+        mesh.position.z = -0.01 * tapNum;
+
+        const mat = mesh.material as THREE.MeshBasicMaterial;
+        mat.opacity = opacity;
+        mesh.visible = true;
       }
 
-      // Exponential opacity decay based on time offset
-      const reverbOpacity = textOpacity * Math.exp(-3 * timeOffset / reverbDecay);
+      // --- Reverb reflections ---
+      for (let r = 0; r < MAX_REVERB_REFLECTIONS; r++) {
+        const rMesh = reverbMeshesRef.current[r];
+        if (!rMesh) continue;
 
-      // Update texture if word changed
-      const rTex = reverbTexturesRef.current[r];
-      if (bestEntry.word !== reverbLastWordsRef.current[r]) {
-        const canvas = createTextCanvas(bestEntry.word, 512, strokeWidth, fontFamily, color);
-        rTex.image = canvas;
-        rTex.needsUpdate = true;
-        reverbLastWordsRef.current[r] = bestEntry.word;
+        if (!reverbEnabled || r >= reverbReflections) {
+          rMesh.visible = false;
+          continue;
+        }
+
+        const offsets = REVERB_OFFSETS[r];
+        const timeOffset = offsets.t * reverbDecay;
+        const dx = offsets.x * reverbSpread * viewport.width;
+        const dy = offsets.y * reverbSpread * viewport.height;
+
+        // Find most recent word entry whose reverb reflection has arrived
+        let bestEntry: WordHistoryEntry | null = null;
+        let bestAge = Infinity;
+        for (let h = history.length - 1; h >= 0; h--) {
+          const age = now - (history[h].triggerTime + timeOffset);
+          if (age >= 0 && age < bestAge) {
+            bestEntry = history[h];
+            bestAge = age;
+            break;
+          }
+        }
+
+        if (!bestEntry) {
+          rMesh.visible = false;
+          continue;
+        }
+
+        // Visible for same duration as original note was held
+        const echoDuration = bestEntry.duration > 0 ? bestEntry.duration : reverbDecay;
+        if (bestAge > echoDuration) {
+          rMesh.visible = false;
+          continue;
+        }
+
+        // Exponential opacity decay based on time offset
+        const reverbOpacity = textOpacity * Math.exp(-3 * timeOffset / reverbDecay);
+
+        // Update texture if word changed
+        const rTex = reverbTexturesRef.current[r];
+        if (bestEntry.word !== reverbLastWordsRef.current[r]) {
+          const canvas = createTextCanvas(bestEntry.word, 512, strokeWidth, fontFamily, color);
+          rTex.image = canvas;
+          rTex.needsUpdate = true;
+          reverbLastWordsRef.current[r] = bestEntry.word;
+        }
+
+        const reverbScale = baseScale * (1 - 0.1 * offsets.s);
+        rMesh.scale.set(reverbScale, reverbScale, 1);
+        rMesh.position.x = dx;
+        rMesh.position.y = bestEntry.yOffset * viewport.height * heightAmount + dy;
+        rMesh.position.z = -0.02 - 0.001 * r; // behind delay taps
+
+        const rMat = rMesh.material as THREE.MeshBasicMaterial;
+        rMat.opacity = reverbOpacity;
+        rMesh.visible = true;
       }
-
-      const reverbScale = baseScale * (1 - 0.1 * offsets.s);
-      rMesh.scale.set(reverbScale, reverbScale, 1);
-      rMesh.position.x = dx;
-      rMesh.position.y = bestEntry.yOffset * viewport.height * heightAmount + dy;
-      rMesh.position.z = -0.02 - 0.001 * r; // behind delay taps
-
-      const rMat = rMesh.material as THREE.MeshBasicMaterial;
-      rMat.opacity = reverbOpacity;
-      rMesh.visible = true;
     }
   });
 
@@ -586,6 +784,29 @@ export const TextDisplay: Instrument = {
     reverbSpread: {
       type: 'number', label: 'Reverb Spread', min: 0, max: 0.5, step: 0.02,
       default: DEFAULTS.reverbSpread,
+    },
+    wallEnabled: {
+      type: 'boolean', label: 'Wall Mode', default: DEFAULTS.wallEnabled,
+    },
+    wallAnimateDuration: {
+      type: 'number', label: 'Wall Fly-In Duration', min: 0.1, max: 2, step: 0.05,
+      default: DEFAULTS.wallAnimateDuration,
+    },
+    wallThreshold: {
+      type: 'number', label: 'Wall Threshold', min: 1, max: 50, step: 1,
+      default: DEFAULTS.wallThreshold,
+    },
+    wallClearDuration: {
+      type: 'number', label: 'Wall Clear Duration', min: 0.1, max: 2, step: 0.05,
+      default: DEFAULTS.wallClearDuration,
+    },
+    wallScaleVariation: {
+      type: 'number', label: 'Wall Scale Variation', min: 0, max: 1, step: 0.05,
+      default: DEFAULTS.wallScaleVariation,
+    },
+    wallRotationMax: {
+      type: 'number', label: 'Wall Rotation Max (°)', min: 0, max: 45, step: 1,
+      default: DEFAULTS.wallRotationMax,
     },
   },
 
