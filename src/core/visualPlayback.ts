@@ -291,6 +291,22 @@ export class VisualPlaybackEngine {
     return Array.from(this.trackStates.keys());
   }
 
+  /**
+   * Returns noteOnCount at an arbitrary beat for a given track (for look-ahead).
+   */
+  getNoteOnCountAtBeat(trackId: string, beat: number): number {
+    const trackEvents = this.perTrackEvents.find(e => e.trackId === trackId);
+    if (!trackEvents) return 0;
+    const events = trackEvents.events;
+    let lo = 0, hi = events.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (events[mid].startTimeInBeats <= beat) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  }
+
   getTrackState(trackId: string): VisualInstrumentState | undefined {
     return this.trackStates.get(trackId);
   }

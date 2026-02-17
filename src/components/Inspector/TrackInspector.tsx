@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback, DragEvent } from 'react';
 import { Track, TrackTypeId } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -9,6 +9,8 @@ import { INSTRUMENTS, getInstrument, getInstrumentOptions } from '@/instruments'
 import { PluginInspector } from './PluginInspector';
 import { SettingsSchema } from '@/instruments/types';
 import { getPlugin } from '@/plugins';
+import { storeVideoFile } from '@/services/videoStorage';
+import { generateId } from '@/utils/id';
 
 type InspectorTab = 'settings' | 'effects';
 
@@ -53,9 +55,84 @@ function getInheritedInstrument(
 
 export function TrackInspector({ track }: TrackInspectorProps) {
   const [activeTab, setActiveTab] = useState<InspectorTab>('settings');
+  const [videoDragOver, setVideoDragOver] = useState(false);
   const { updateTrack, deleteTrack } = useProjectStore();
   const tracks = useProjectStore((s) => s.project.tracks);
   const selectTrack = useUIStore((s) => s.selectTrack);
+
+  const isVideoSampler = track.instrumentId === 'videoSampler';
+
+  const handleVideoDrop = useCallback(
+    async (e: DragEvent) => {
+      e.preventDefault();
+      setVideoDragOver(false);
+      if (!isVideoSampler) return;
+
+      const files = e.dataTransfer?.files;
+      if (!files || files.length === 0) return;
+
+      const file = files[0];
+      const videoExts = /\.(mp4|webm|mov)$/i;
+      if (!videoExts.test(file.name)) return;
+
+      try {
+        const videoStorageId = generateId();
+
+        const metadata = await new Promise<{ width: number; height: number; duration: number }>((resolve, reject) => {
+          const video = document.createElement('video');
+          video.preload = 'metadata';
+          video.onloadedmetadata = () => {
+            resolve({ width: video.videoWidth, height: video.videoHeight, duration: video.duration });
+            URL.revokeObjectURL(video.src);
+          };
+          video.onerror = () => {
+            URL.revokeObjectURL(video.src);
+            reject(new Error('Failed to load video metadata'));
+          };
+          video.src = URL.createObjectURL(file);
+        });
+
+        await storeVideoFile(videoStorageId, file, {
+          fileName: file.name,
+          mimeType: file.type,
+          width: metadata.width,
+          height: metadata.height,
+          duration: metadata.duration,
+        });
+
+        updateTrack(track.id, {
+          instrumentSettings: {
+            ...track.instrumentSettings,
+            videoStorageId,
+          },
+        });
+      } catch (error) {
+        console.error('Error replacing video:', error);
+      }
+    },
+    [isVideoSampler, track.id, track.instrumentSettings, updateTrack]
+  );
+
+  const handleVideoDragOver = useCallback(
+    (e: DragEvent) => {
+      if (!isVideoSampler) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      setVideoDragOver(true);
+    },
+    [isVideoSampler]
+  );
+
+  const handleVideoDragLeave = useCallback(
+    (e: DragEvent) => {
+      const relatedTarget = e.relatedTarget as HTMLElement;
+      const currentTarget = e.currentTarget as HTMLElement;
+      if (!currentTarget.contains(relatedTarget)) {
+        setVideoDragOver(false);
+      }
+    },
+    []
+  );
 
   const trackType = TRACK_TYPES[track.typeId];
   const instrument = track.instrumentId ? getInstrument(track.instrumentId) : undefined;
@@ -99,7 +176,19 @@ export function TrackInspector({ track }: TrackInspectorProps) {
   };
 
   return (
-    <div className="space-y-4">
+    <div
+      className="space-y-4"
+      onDrop={handleVideoDrop}
+      onDragOver={handleVideoDragOver}
+      onDragLeave={handleVideoDragLeave}
+    >
+      {/* Video drop zone indicator */}
+      {isVideoSampler && videoDragOver && (
+        <div className="rounded-lg border-2 border-dashed border-accent-from/60 bg-accent-from/10 p-4 text-center">
+          <p className="text-sm text-accent-from">Drop video to replace</p>
+        </div>
+      )}
+
       {/* Tab switcher */}
       {showEffectsTab && (
         <div className="flex gap-1 p-1 bg-background rounded-lg">
