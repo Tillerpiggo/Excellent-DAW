@@ -307,6 +307,56 @@ export class VisualPlaybackEngine {
     return lo;
   }
 
+  /**
+   * Evaluate a parameter's value at an arbitrary beat for a given track,
+   * taking automation into account. Returns defaultValue if no automation exists.
+   */
+  getParamAtBeat(trackId: string, paramKey: string, beat: number, defaultValue: number): number {
+    const trackEvents = this.perTrackEvents.find(e => e.trackId === trackId);
+    if (!trackEvents) return defaultValue;
+
+    // Find the automation lane for this param
+    const lane = trackEvents.automationLanes.find(l => !l.pluginInstanceId && l.paramKey === paramKey);
+    if (!lane) return defaultValue;
+
+    const kf = lane.keyframes;
+    if (kf.length === 0) return defaultValue;
+
+    // Binary search: find last keyframe with beatTime <= beat
+    let aLo = 0, aHi = kf.length;
+    while (aLo < aHi) {
+      const mid = (aLo + aHi) >>> 1;
+      if (kf[mid].beatTime <= beat) aLo = mid + 1;
+      else aHi = mid;
+    }
+
+    if (aLo === 0) return defaultValue;
+
+    const mode = lane.interpolation ?? (lane.interpolate ? 'linear' : 'step');
+    if (mode === 'step' || aLo >= kf.length) {
+      return kf[aLo - 1].value;
+    }
+
+    const prev = kf[aLo - 1];
+    const next = kf[aLo];
+    const tLinear = (beat - prev.beatTime) / (next.beatTime - prev.beatTime);
+    let t: number;
+    switch (mode) {
+      case 'ease-in':      t = tLinear * tLinear; break;
+      case 'ease-out':     t = 1 - (1 - tLinear) * (1 - tLinear); break;
+      case 'ease-in-out':  t = tLinear < 0.5 ? 2 * tLinear * tLinear : 1 - 2 * (1 - tLinear) * (1 - tLinear); break;
+      case 'exponential':  t = tLinear * tLinear * tLinear; break;
+      case 'smooth-step':  t = tLinear * tLinear * (3 - 2 * tLinear); break;
+      default:             t = tLinear;
+    }
+    return prev.value + t * (next.value - prev.value);
+  }
+
+  getTrackEvents(trackId: string): PerTrackEvents['events'] | null {
+    const te = this.perTrackEvents.find(e => e.trackId === trackId);
+    return te ? te.events : null;
+  }
+
   getTrackState(trackId: string): VisualInstrumentState | undefined {
     return this.trackStates.get(trackId);
   }

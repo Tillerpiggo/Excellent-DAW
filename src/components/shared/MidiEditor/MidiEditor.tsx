@@ -104,6 +104,9 @@ export function MidiEditor({
   const [dragState, setDragState] = useState<DragState>(DRAG_NONE);
   const dragStateRef = useRef(dragState);
   dragStateRef.current = dragState;
+  const drawingNoteRef = useRef(drawingNote);
+  drawingNoteRef.current = drawingNote;
+  const didDragRef = useRef(false);
 
   // Direct DOM cursor updates (no re-renders)
   const setCursor = useCallback((cursor: string) => {
@@ -140,6 +143,28 @@ export function MidiEditor({
   // Snap resolution: use quantize grid when enabled, fine resolution when off
   const snapSize = snapEnabled ? quantize : 1 / 128;
   const snapValue = useCallback((v: number) => Math.round(v / snapSize) * snapSize, [snapSize]);
+
+  // Refs for values needed by window drag listeners (avoids stale closures)
+  const notesRef = useRef(notes);
+  notesRef.current = notes;
+  const onNotesChangeRef = useRef(onNotesChange);
+  onNotesChangeRef.current = onNotesChange;
+  const snapValueRef = useRef(snapValue);
+  snapValueRef.current = snapValue;
+  const snapSizeRef = useRef(snapSize);
+  snapSizeRef.current = snapSize;
+  const snapEnabledRef = useRef(snapEnabled);
+  snapEnabledRef.current = snapEnabled;
+  const pixelsPerBeatRef = useRef(pixelsPerBeat);
+  pixelsPerBeatRef.current = pixelsPerBeat;
+  const totalBeatsRef = useRef(totalBeats);
+  totalBeatsRef.current = totalBeats;
+  const rowHeightRef = useRef(rowHeight);
+  rowHeightRef.current = rowHeight;
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  const quantizeRef = useRef(quantize);
+  quantizeRef.current = quantize;
 
   // Canvas dimensions
   const labelWidth = 64;
@@ -209,6 +234,118 @@ export function MidiEditor({
     else setCursor('crosshair');
   }, [setCursor]);
 
+  // Get notes within marquee bounds
+  const getNotesInMarquee = useCallback((x1: number, y1: number, x2: number, y2: number): string[] => {
+    const minX = Math.min(x1, x2) - labelWidth;
+    const maxX = Math.max(x1, x2) - labelWidth;
+    const minY = Math.min(y1, y2);
+    const maxY = Math.max(y1, y2);
+
+    const matchingIds: string[] = [];
+
+    for (const note of notes) {
+      const rowIndex = pitchToRowIndex(note.pitch);
+      if (rowIndex === -1) continue;
+
+      const noteTop = rowIndex * rowHeight;
+      const noteBottom = noteTop + rowHeight;
+      const noteLeft = note.time * pixelsPerBeat;
+      const noteRight = noteLeft + note.duration * pixelsPerBeat;
+
+      if (maxX >= noteLeft && minX <= noteRight && maxY >= noteTop && minY <= noteBottom) {
+        matchingIds.push(note.id);
+      }
+    }
+
+    return matchingIds;
+  }, [notes, pitchToRowIndex, rowHeight, pixelsPerBeat, labelWidth]);
+
+  const getNotesInMarqueeRef = useRef(getNotesInMarquee);
+  getNotesInMarqueeRef.current = getNotesInMarquee;
+
+  // Start tracking a drag via window-level listeners.
+  // All state is read from refs so closures never go stale.
+  const startWindowDrag = useCallback(() => {
+    const handleMove = (e: PointerEvent) => {
+      const ds = dragStateRef.current;
+      if (ds.type === 'drawing') {
+        const dn = drawingNoteRef.current;
+        if (!dn) return;
+        const deltaX = e.clientX - ds.startX;
+        const deltaDuration = deltaX / pixelsPerBeatRef.current;
+        const baseDuration = snapEnabledRef.current ? quantizeRef.current : 0.25;
+        let newDuration = snapValueRef.current(baseDuration + deltaDuration);
+        newDuration = Math.max(snapSizeRef.current, Math.min(totalBeatsRef.current - dn.time, newDuration));
+
+        if (newDuration !== dn.duration) {
+          setDrawingNote(prev => prev ? { ...prev, duration: newDuration } : null);
+        }
+      } else if (ds.type === 'moving' && ds.originalTimes && ds.originalPitches) {
+        const deltaX = e.clientX - ds.startX;
+        const deltaBeats = deltaX / pixelsPerBeatRef.current;
+        const snappedDelta = snapValueRef.current(deltaBeats);
+
+        const deltaY = e.clientY - ds.startY;
+        const rowDelta = Math.round(deltaY / rowHeightRef.current);
+        const curRows = rowsRef.current;
+        const curTotalBeats = totalBeatsRef.current;
+
+        onNotesChangeRef.current(notesRef.current.map(n => {
+          const originalTime = ds.originalTimes!.get(n.id);
+          const originalPitch = ds.originalPitches!.get(n.id);
+          if (originalTime !== undefined && originalPitch !== undefined) {
+            const origRowIndex = curRows.findIndex(r => r.pitch === originalPitch);
+            const newRowIndex = Math.max(0, Math.min(curRows.length - 1, origRowIndex + rowDelta));
+            const newPitch = curRows[newRowIndex].pitch;
+            const newTime = Math.max(0, Math.min(curTotalBeats - n.duration, originalTime + snappedDelta));
+            return { ...n, time: newTime, pitch: newPitch };
+          }
+          return n;
+        }));
+      } else if (ds.type === 'resizing' && ds.originalDurations) {
+        const deltaX = e.clientX - ds.startX;
+        const deltaBeats = deltaX / pixelsPerBeatRef.current;
+        const snappedDelta = snapValueRef.current(deltaBeats);
+
+        onNotesChangeRef.current(notesRef.current.map(n => {
+          const originalDuration = ds.originalDurations!.get(n.id);
+          if (originalDuration !== undefined) {
+            const newDuration = Math.max(snapSizeRef.current, originalDuration + snappedDelta);
+            return { ...n, duration: newDuration };
+          }
+          return n;
+        }));
+      } else if (ds.type === 'marquee' && gridRef.current) {
+        const rect = gridRef.current.getBoundingClientRect();
+        const currentX = e.clientX - rect.left + labelWidth;
+        const currentY = e.clientY - rect.top;
+        setDragState(prev => ({ ...prev, currentX, currentY }));
+      }
+    };
+
+    const handleUp = () => {
+      const ds = dragStateRef.current;
+      if (ds.type === 'drawing' && drawingNoteRef.current) {
+        onNotesChangeRef.current([...notesRef.current, drawingNoteRef.current]);
+        setDrawingNote(null);
+      } else if (ds.type === 'marquee') {
+        const ids = getNotesInMarqueeRef.current(ds.startX, ds.startY, ds.currentX, ds.currentY);
+        if (ids.length > 0) {
+          setSelectedNoteIds(prev => new Set([...prev, ...ids]));
+        }
+      }
+
+      setDragState(DRAG_NONE);
+      setCursor('crosshair');
+      didDragRef.current = true;
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+  }, [setCursor]);
+
   // Handle note body pointer down -> start moving
   const handleNotePointerDown = useCallback((e: React.PointerEvent, note: MidiNote) => {
     e.stopPropagation();
@@ -244,6 +381,7 @@ export function MidiEditor({
         originalDurations,
       });
       setCursor('ew-resize');
+      startWindowDrag();
       return;
     }
 
@@ -301,6 +439,7 @@ export function MidiEditor({
         originalPitches,
       });
       setCursor('copy');
+      startWindowDrag();
       return;
     }
 
@@ -326,7 +465,8 @@ export function MidiEditor({
       originalPitches,
     });
     setCursor('grabbing');
-  }, [selectedNoteIds, notes, setCursor]);
+    startWindowDrag();
+  }, [selectedNoteIds, notes, setCursor, startWindowDrag]);
 
   // Handle note hover for cursor changes
   const handleNotePointerMove = useCallback((e: React.PointerEvent) => {
@@ -382,6 +522,7 @@ export function MidiEditor({
             startWorldX: gridX + labelWidth,
             pitch,
           });
+          startWindowDrag();
         }
       }
       return;
@@ -397,113 +538,8 @@ export function MidiEditor({
       currentY: gridY,
     });
     setCursor('crosshair');
-  }, [labelWidth, rowHeight, rows, pixelsPerBeat, snapValue, snapEnabled, snapSize, totalBeats, setCursor]);
-
-  // Get notes within marquee bounds
-  const getNotesInMarquee = useCallback((x1: number, y1: number, x2: number, y2: number): string[] => {
-    const minX = Math.min(x1, x2) - labelWidth;
-    const maxX = Math.max(x1, x2) - labelWidth;
-    const minY = Math.min(y1, y2);
-    const maxY = Math.max(y1, y2);
-
-    const matchingIds: string[] = [];
-
-    for (const note of notes) {
-      const rowIndex = pitchToRowIndex(note.pitch);
-      if (rowIndex === -1) continue;
-
-      const noteTop = rowIndex * rowHeight;
-      const noteBottom = noteTop + rowHeight;
-      const noteLeft = note.time * pixelsPerBeat;
-      const noteRight = noteLeft + note.duration * pixelsPerBeat;
-
-      if (maxX >= noteLeft && minX <= noteRight && maxY >= noteTop && minY <= noteBottom) {
-        matchingIds.push(note.id);
-      }
-    }
-
-    return matchingIds;
-  }, [notes, pitchToRowIndex, rowHeight, pixelsPerBeat, labelWidth]);
-
-  // Handle global pointer move/up
-  useEffect(() => {
-    if (dragState.type === 'none') return;
-
-    const handleMove = (e: PointerEvent) => {
-      if (dragState.type === 'drawing' && drawingNote) {
-        const deltaX = e.clientX - dragState.startX;
-        const deltaDuration = deltaX / pixelsPerBeat;
-        const baseDuration = snapEnabled ? quantize : 0.25;
-        let newDuration = snapValue(baseDuration + deltaDuration);
-        newDuration = Math.max(snapSize, Math.min(totalBeats - drawingNote.time, newDuration));
-
-        if (newDuration !== drawingNote.duration) {
-          setDrawingNote(prev => prev ? { ...prev, duration: newDuration } : null);
-        }
-      } else if (dragState.type === 'moving' && dragState.originalTimes && dragState.originalPitches) {
-        const deltaX = e.clientX - dragState.startX;
-        const deltaBeats = deltaX / pixelsPerBeat;
-        const snappedDelta = snapValue(deltaBeats);
-
-        const deltaY = e.clientY - dragState.startY;
-        const rowDelta = Math.round(deltaY / rowHeight);
-
-        onNotesChange(notes.map(n => {
-          const originalTime = dragState.originalTimes!.get(n.id);
-          const originalPitch = dragState.originalPitches!.get(n.id);
-          if (originalTime !== undefined && originalPitch !== undefined) {
-            const origRowIndex = rows.findIndex(r => r.pitch === originalPitch);
-            const newRowIndex = Math.max(0, Math.min(rows.length - 1, origRowIndex + rowDelta));
-            const newPitch = rows[newRowIndex].pitch;
-            const newTime = Math.max(0, Math.min(totalBeats - n.duration, originalTime + snappedDelta));
-            return { ...n, time: newTime, pitch: newPitch };
-          }
-          return n;
-        }));
-      } else if (dragState.type === 'resizing' && dragState.originalDurations) {
-        const deltaX = e.clientX - dragState.startX;
-        const deltaBeats = deltaX / pixelsPerBeat;
-        const snappedDelta = snapValue(deltaBeats);
-
-        onNotesChange(notes.map(n => {
-          const originalDuration = dragState.originalDurations!.get(n.id);
-          if (originalDuration !== undefined) {
-            const newDuration = Math.max(snapSize, originalDuration + snappedDelta);
-            return { ...n, duration: newDuration };
-          }
-          return n;
-        }));
-      } else if (dragState.type === 'marquee' && gridRef.current) {
-        const rect = gridRef.current.getBoundingClientRect();
-        const currentX = e.clientX - rect.left + labelWidth;
-        const currentY = e.clientY - rect.top;
-        setDragState(prev => ({ ...prev, currentX, currentY }));
-      }
-    };
-
-    const handleUp = () => {
-      if (dragState.type === 'drawing' && drawingNote) {
-        onNotesChange([...notes, drawingNote]);
-        setDrawingNote(null);
-      } else if (dragState.type === 'marquee') {
-        const ids = getNotesInMarquee(dragState.startX, dragState.startY, dragState.currentX, dragState.currentY);
-        if (ids.length > 0) {
-          setSelectedNoteIds(prev => new Set([...prev, ...ids]));
-        }
-      }
-
-      setDragState(DRAG_NONE);
-      setCursor('crosshair');
-    };
-
-    window.addEventListener('pointermove', handleMove);
-    window.addEventListener('pointerup', handleUp);
-
-    return () => {
-      window.removeEventListener('pointermove', handleMove);
-      window.removeEventListener('pointerup', handleUp);
-    };
-  }, [dragState, drawingNote, pixelsPerBeat, snapValue, snapSize, snapEnabled, totalBeats, rowHeight, rows, notes, onNotesChange, getNotesInMarquee, setCursor]);
+    startWindowDrag();
+  }, [labelWidth, rowHeight, rows, pixelsPerBeat, snapValue, snapEnabled, snapSize, totalBeats, setCursor, startWindowDrag]);
 
   // Keyboard handler
   useEffect(() => {
@@ -588,6 +624,11 @@ export function MidiEditor({
 
   // Click on background deselects (if not dragging)
   const handleContainerClick = useCallback((e: React.MouseEvent) => {
+    // Skip deselect if a drag (marquee, move, etc.) just finished — the click is a side-effect of the drag
+    if (didDragRef.current) {
+      didDragRef.current = false;
+      return;
+    }
     // Only deselect if the click target is the grid background itself
     if (e.target === gridRef.current && !e.shiftKey && dragStateRef.current.type === 'none') {
       setSelectedNoteIds(new Set());

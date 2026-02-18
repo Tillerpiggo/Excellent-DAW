@@ -27,6 +27,8 @@ import { ImageDisplay } from './visual/ImageDisplay';
 import { VideoSampler } from './visual/VideoSampler';
 import { VideoKaleidoscope } from './visual/VideoKaleidoscope';
 import { ShapeFlight } from './visual/ShapeFlight';
+import { CylinderFlight } from './visual/CylinderFlight';
+import { ParticleBurst } from './visual/ParticleBurst';
 
 // Flat registry for quick lookup by ID
 export const INSTRUMENTS: Record<string, Instrument> = {
@@ -54,6 +56,8 @@ export const INSTRUMENTS: Record<string, Instrument> = {
   videoSampler: VideoSampler,
   videoKaleidoscope: VideoKaleidoscope,
   shapeFlight: ShapeFlight,
+  cylinderFlight: CylinderFlight,
+  particleBurst: ParticleBurst,
 };
 
 // Get instrument by ID
@@ -97,7 +101,7 @@ export function getInstrumentFolderTree(): InstrumentFolder {
       },
       {
         name: 'Visual',
-        instruments: ['silkSymmetry', 'hexagonDots', 'fractalTunnel', 'circleGrid', 'neonPolar', 'hopfFibration', 'icosahedronBurst', 'metronomeBalls', 'dotField', 'stars', 'textDisplay', 'sun', 'imageDisplay', 'videoSampler', 'videoKaleidoscope', 'shapeFlight'],
+        instruments: ['silkSymmetry', 'hexagonDots', 'fractalTunnel', 'circleGrid', 'neonPolar', 'hopfFibration', 'icosahedronBurst', 'metronomeBalls', 'dotField', 'stars', 'textDisplay', 'sun', 'imageDisplay', 'videoSampler', 'videoKaleidoscope', 'shapeFlight', 'cylinderFlight', 'particleBurst'],
       },
     ],
   };
