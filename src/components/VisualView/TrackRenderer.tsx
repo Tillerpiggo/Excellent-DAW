@@ -163,6 +163,41 @@ export function TrackRenderer({
     return null;
   }
 
+  // Split transform plugins into pre-clone and post-clone groups based on
+  // their position relative to clone plugins in the user's plugin order.
+  // Transforms before the first clone affect the base shape; transforms after
+  // the last clone affect the entire cloned output.
+  const { preClonePlugins, postClonePlugins } = useMemo(() => {
+    const firstCloneIdx = plugins.findIndex((inst) => {
+      const p = getPlugin(inst.pluginId);
+      return p?.category === 'clone';
+    });
+    const lastCloneIdx = (() => {
+      for (let i = plugins.length - 1; i >= 0; i--) {
+        const p = getPlugin(plugins[i].pluginId);
+        if (p?.category === 'clone') return i;
+      }
+      return -1;
+    })();
+
+    if (firstCloneIdx === -1) {
+      // No clone plugins — all transforms are "pre-clone"
+      return { preClonePlugins: plugins, postClonePlugins: [] as PluginInstance[] };
+    }
+
+    const pre = plugins.filter((inst, idx) => {
+      const p = getPlugin(inst.pluginId);
+      return p?.category === 'transform' && idx < firstCloneIdx;
+    });
+    const post = plugins.filter((inst, idx) => {
+      const p = getPlugin(inst.pluginId);
+      return p?.category === 'transform' && idx > lastCloneIdx;
+    });
+    return { preClonePlugins: pre, postClonePlugins: post };
+  }, [plugins]);
+
+  const hasPostCloneTransforms = postClonePlugins.length > 0;
+
   // Build the base content element (instrument only, no clone wrapper)
   const buildBaseContentElement = () => {
     let element: React.ReactNode;
@@ -185,9 +220,9 @@ export function TrackRenderer({
       return null;
     }
 
-    // Wrap with TransformWrapper if we have transform plugins
-    if (hasTransformPlugins) {
-      element = <TransformWrapper trackId={trackId} plugins={plugins}>{element}</TransformWrapper>;
+    // Wrap with pre-clone TransformWrapper (transforms before first clone plugin)
+    if (preClonePlugins.length > 0) {
+      element = <TransformWrapper trackId={trackId} plugins={preClonePlugins}>{element}</TransformWrapper>;
     }
 
     return element;
@@ -201,6 +236,11 @@ export function TrackRenderer({
     // Wrap with CloneWrapper if we have clone plugins (and no shaders)
     if (hasClonePlugins) {
       element = <CloneWrapper trackId={trackId} plugins={plugins}>{element}</CloneWrapper>;
+    }
+
+    // Wrap with post-clone TransformWrapper (transforms after last clone plugin)
+    if (hasPostCloneTransforms) {
+      element = <TransformWrapper trackId={trackId} plugins={postClonePlugins}>{element}</TransformWrapper>;
     }
 
     return element;

@@ -266,6 +266,7 @@ export function MidiEditor({
   // Start tracking a drag via window-level listeners.
   // All state is read from refs so closures never go stale.
   const startWindowDrag = useCallback(() => {
+    document.body.style.userSelect = 'none';
     const handleMove = (e: PointerEvent) => {
       const ds = dragStateRef.current;
       if (ds.type === 'drawing') {
@@ -338,6 +339,7 @@ export function MidiEditor({
       setDragState(DRAG_NONE);
       setCursor('crosshair');
       didDragRef.current = true;
+      document.body.style.userSelect = '';
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };

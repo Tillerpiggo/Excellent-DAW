@@ -8,6 +8,7 @@ import {
   TreeItemIndex,
   DraggingPosition,
   TreeItem,
+  InteractionMode,
 } from 'react-complex-tree';
 import 'react-complex-tree/lib/style-modern.css';
 import { Track } from '@/core/types';
@@ -178,6 +179,7 @@ export function TrackTree({ treeId }: TrackTreeProps) {
     <UncontrolledTreeEnvironment
       key={treeKey}
       dataProvider={dataProvider}
+      defaultInteractionMode={InteractionMode.ClickArrowToExpand}
       getItemTitle={(item) => item.data?.name || ''}
       viewState={{
         [treeId]: {

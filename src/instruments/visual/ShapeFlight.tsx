@@ -134,6 +134,17 @@ interface PooledLineLoop {
 }
 
 const _tmpColor = new THREE.Color();
+const _pulseColor = new THREE.Color();
+
+// Pitch routing:
+// 12-23: shake triggers
+// 24-35: color pulse triggers
+// 36+:   shape spawners
+const SHAKE_PITCH_MIN = 12;
+const SHAKE_PITCH_MAX = 23;
+const PULSE_PITCH_MIN = 24;
+const PULSE_PITCH_MAX = 35;
+const SHAPE_PITCH_MIN = 36;
 
 function ShapeFlightVisual({ trackId }: Props) {
   const groupRef = useRef<THREE.Group>(null);
@@ -143,6 +154,9 @@ function ShapeFlightVisual({ trackId }: Props) {
   // changes are continuous (only changes the rate, never jumps).
   const accRotationRef = useRef(0);
   const lastBeatRef = useRef(-1);
+  // Accumulated hue offset — pulse events permanently jump this forward
+  const accHueOffsetRef = useRef(0);
+  const lastPulseCountRef = useRef(0);
 
   // Cleanup on unmount
   useEffect(() => () => {
@@ -206,6 +220,12 @@ function ShapeFlightVisual({ trackId }: Props) {
     const spawnRateDefault = (par.spawnRate as number)  ?? 8;
     const scaleDefault  = (par.scale as number)         ?? 1;
     const fadeOutZ      = (par.fadeOutZ as number)       ?? 10;
+    const pulseSpeed    = (par.pulseSpeed as number)     ?? 200;
+    const pulseDuration = (par.pulseDuration as number)  ?? 0.4;
+    const pulseHue      = (par.pulseHue as number)       ?? 0.1;
+    const shakeAmount   = (par.shakeAmount as number)    ?? 0.5;
+    const shakeDecaySpd = (par.shakeDecay as number)     ?? 20;
+    const shakeScale    = (par.shakeScale as number)     ?? 0.5;
 
     const currentBeat = useUIStore.getState().currentBeat;
     const bpm = useProjectStore.getState().project.bpm;
@@ -224,6 +244,63 @@ function ShapeFlightVisual({ trackId }: Props) {
     }
     lastBeatRef.current = currentBeat;
 
+    // --- Collect effect events (pulse + shake) ---
+    // We scan events once to separate shape events from effect triggers.
+    // Effect events only matter if they started recently (within a time window).
+    const pulseWindow = pulseDuration + farZ / pulseSpeed; // max time a pulse can still be visible
+    interface PulseEvent { startSec: number; velocity: number; pitch: number; }
+    interface ShakeEvent { startSec: number; velocity: number; }
+    const activePulses: PulseEvent[] = [];
+    const activeShakes: ShakeEvent[] = [];
+    let pulseTotal = 0; // total pulse events that have started <= currentBeat
+
+    for (let i = 0; i < events.length; i++) {
+      const ev = events[i];
+      if (ev.pitch < SHAKE_PITCH_MIN || ev.pitch >= SHAPE_PITCH_MIN) continue;
+
+      const timeSinceBeats = currentBeat - ev.startTimeInBeats;
+      const timeSinceSec = timeSinceBeats * secPerBeat;
+      if (timeSinceSec < 0) continue; // hasn't started yet
+
+      if (ev.pitch <= SHAKE_PITCH_MAX) {
+        // Shake trigger
+        if (timeSinceSec < 0.5) { // shakes are always short-lived
+          activeShakes.push({ startSec: timeSinceSec, velocity: ev.velocity });
+        }
+      } else if (ev.pitch <= PULSE_PITCH_MAX) {
+        pulseTotal++;
+        // Color pulse trigger
+        if (timeSinceSec < pulseWindow) {
+          activePulses.push({ startSec: timeSinceSec, velocity: ev.velocity, pitch: ev.pitch });
+        }
+      }
+    }
+
+    // Permanently jump accumulated hue offset for each new pulse event
+    const prevPulseCount = lastPulseCountRef.current;
+    if (pulseTotal > prevPulseCount) {
+      accHueOffsetRef.current += (pulseTotal - prevPulseCount) * pulseHue;
+    } else if (pulseTotal < prevPulseCount) {
+      // Seek/rewind: recount
+      accHueOffsetRef.current = pulseTotal * pulseHue;
+    }
+    lastPulseCountRef.current = pulseTotal;
+
+    // --- Shake: apply jitter to the whole group + scale bump ---
+    let shakeX = 0, shakeY = 0;
+    let shakeScaleBump = 0;
+    for (let si = 0; si < activeShakes.length; si++) {
+      const s = activeShakes[si];
+      const decay = Math.exp(-s.startSec * shakeDecaySpd);
+      const intensity = (s.velocity / 127) * shakeAmount * decay;
+      // High-frequency oscillation with two incommensurate frequencies for organic feel
+      shakeX += Math.sin(s.startSec * 80 + si * 1.7) * intensity;
+      shakeY += Math.cos(s.startSec * 97 + si * 2.3) * intensity;
+      // Scale bump: sudden increase that decays quickly
+      shakeScaleBump += (s.velocity / 127) * shakeScale * decay;
+    }
+    group.position.set(shakeX, shakeY, 0);
+
     // Mark all pool entries as inactive
     for (const p of poolRef.current) {
       p.active = false;
@@ -233,8 +310,12 @@ function ShapeFlightVisual({ trackId }: Props) {
     // For each MIDI note, spawn copies at regular intervals during its duration.
     // Each copy has a fixed rotation offset, creating apparent rotation as they fly by.
     // The dissolve point (z ~ 0) is synced to the note onset.
+    let shapeIdx = 0; // running index for shape events only (for hue/spread)
     for (let ei = 0; ei < events.length; ei++) {
       const ev = events[ei];
+
+      // Skip effect pitches
+      if (ev.pitch < SHAPE_PITCH_MIN) continue;
 
       // Derive shape from pitch
       const petals = Math.min(Math.max(ev.pitch - 45, 3), 20);
@@ -254,13 +335,13 @@ function ShapeFlightVisual({ trackId }: Props) {
       const noteEnd = ev.startTimeInBeats + ev.duration;
       const numCopies = Math.floor(ev.duration * noteSpawnRate);
 
-      // Color for this note: hue from pitch
-      const hue = (baseHue + ei * hueStep) % 1;
+      // Color for this note: hue from pitch + accumulated pulse offset
+      const hue = (baseHue + shapeIdx * hueStep + accHueOffsetRef.current) % 1;
       _tmpColor.setHSL(hue, saturation, lightness);
 
       // Spread: deterministic per-event
-      const spreadX = spread > 0 ? (Math.sin(ei * 7.31 + 0.5) * spread) : 0;
-      const spreadY = spread > 0 ? (Math.cos(ei * 13.17 + 0.3) * spread) : 0;
+      const spreadX = spread > 0 ? (Math.sin(shapeIdx * 7.31 + 0.5) * spread) : 0;
+      const spreadY = spread > 0 ? (Math.cos(shapeIdx * 13.17 + 0.3) * spread) : 0;
 
       const geo = getShapeGeometry(shapeMode, petals, r, d);
 
@@ -285,11 +366,37 @@ function ShapeFlightVisual({ trackId }: Props) {
         const copyScale = engine.getParamAtBeat(trackId, 'scale', copyBeat, scaleDefault);
         const approachProgress = 1 - Math.max(0, -z) / farZ; // 0 at far, 1 at z=0
         const baseScale = shapeSize * copyScale;
-        const finalScale = baseScale + approachProgress * baseScale * 2;
+        const finalScale = (baseScale + approachProgress * baseScale * 2) * (1 + shakeScaleBump);
         pooled.lineLoop.scale.setScalar(finalScale);
 
         // Rotation: accumulated base (continuous under automation) + per-copy spacing
         pooled.lineLoop.rotation.z = accRotationRef.current + ci * copySpacing;
+
+        // --- Color pulse: propagating wavefront from z=0 outward ---
+        let pulseBlend = 0;
+        for (let pi = 0; pi < activePulses.length; pi++) {
+          const pulse = activePulses[pi];
+          const distFromCamera = Math.max(0, -z);
+          const travelTime = distFromCamera / pulseSpeed;
+          const timeSinceArrival = pulse.startSec - travelTime;
+          if (timeSinceArrival >= 0 && timeSinceArrival < pulseDuration) {
+            const norm = timeSinceArrival / pulseDuration;
+            const envelope = Math.exp(-norm * 3);
+            // Pitch controls brightness: lower pitches (24) = dim, higher (35) = full
+            const pitchNorm = (pulse.pitch - PULSE_PITCH_MIN) / (PULSE_PITCH_MAX - PULSE_PITCH_MIN);
+            const pitchIntensity = 0.15 + pitchNorm * 0.85; // range [0.15 .. 1.0]
+            // Fade with distance: full intensity at camera, dies off toward far end
+            const distanceFade = 1 - distFromCamera / farZ;
+            const intensity = envelope * distanceFade * pitchIntensity * (pulse.velocity / 127);
+            pulseBlend = Math.min(1, pulseBlend + intensity);
+          }
+        }
+
+        // Glow: push lightness to white and HDR-multiply for searing bloom
+        const glowLightness = lightness + pulseBlend * (1 - lightness);
+        const glowBoost = 1 + pulseBlend * 25;
+        _tmpColor.setHSL(hue, saturation * (1 - pulseBlend * 0.7), glowLightness);
+        _tmpColor.multiplyScalar(glowBoost);
 
         // Color
         pooled.material.color.copy(_tmpColor);
@@ -301,6 +408,7 @@ function ShapeFlightVisual({ trackId }: Props) {
           pooled.material.opacity = 1;
         }
       }
+      shapeIdx++;
     }
   });
 
@@ -316,6 +424,13 @@ export const ShapeFlight: Instrument = {
   hasAudio: false,
   hasVisual: true,
   editorType: 'generic',
+
+  noteRange: { min: 12, max: 84 },
+  rangeLabels: [
+    { startPitch: 12, endPitch: 23, label: 'Shake' },
+    { startPitch: 24, endPitch: 35, label: 'Pulse' },
+    { startPitch: 36, endPitch: 84, label: 'Shapes' },
+  ],
 
   defaultSettings: {
     speed: 12,
@@ -333,6 +448,12 @@ export const ShapeFlight: Instrument = {
     lightness: 0.85,
     rBase: 0.25,
     dBase: 0.7,
+    pulseSpeed: 200,
+    pulseDuration: 0.4,
+    pulseHue: 0.25,
+    shakeAmount: 0.5,
+    shakeDecay: 20,
+    shakeScale: 0.5,
   },
 
   settingsSchema: {
@@ -351,6 +472,12 @@ export const ShapeFlight: Instrument = {
     lightness:     { type: 'number', label: 'Lightness',          min: 0.1,  max: 1,    step: 0.05,  default: 0.85 },
     rBase:         { type: 'number', label: 'R Base',              min: 0.05, max: 0.5,  step: 0.01,  default: 0.25 },
     dBase:         { type: 'number', label: 'D Base',              min: 0.1,  max: 1.0,  step: 0.05,  default: 0.7 },
+    pulseSpeed:    { type: 'number', label: 'Pulse Speed',         min: 5,    max: 500,  step: 5,     default: 200 },
+    pulseDuration: { type: 'number', label: 'Pulse Duration',      min: 0.1,  max: 2,    step: 0.05,  default: 0.4 },
+    pulseHue:      { type: 'number', label: 'Pulse Hue Jump',        min: -0.5, max: 0.5,  step: 0.05,  default: 0.25 },
+    shakeAmount:   { type: 'number', label: 'Shake Amount',        min: 0.1,  max: 3,    step: 0.1,   default: 0.5 },
+    shakeDecay:    { type: 'number', label: 'Shake Decay',         min: 5,    max: 50,   step: 1,     default: 20 },
+    shakeScale:    { type: 'number', label: 'Shake Scale Bump',    min: 0,    max: 2,    step: 0.1,   default: 0.5 },
   },
 
   VisualComponent: ShapeFlightVisual,
