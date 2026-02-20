@@ -22,7 +22,7 @@ export function SegmentedControl({ activeTab, onChange }: SegmentedControlProps)
           onClick={() => onChange(tab.id)}
           className={`flex-1 px-2 py-1.5 text-sm font-medium rounded-md transition-all ${
             activeTab === tab.id
-              ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-sm'
+              ? 'bg-gradient-to-r from-accent-from to-accent-to text-white shadow-sm'
               : 'text-muted-foreground hover:text-foreground'
           }`}
         >

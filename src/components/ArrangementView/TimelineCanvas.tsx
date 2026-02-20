@@ -477,7 +477,7 @@ export function TimelineCanvas({
   // Grid background CSS
   const gridBackground = useMemo(() => {
     return {
-      backgroundImage: `repeating-linear-gradient(to right, rgba(255,255,255,0.1) 0px 1px, transparent 1px ${barWidth}px)`,
+      backgroundImage: `repeating-linear-gradient(to right, rgba(255,255,255,0.06) 0px 1px, transparent 1px ${barWidth}px)`,
       backgroundSize: `${barWidth}px 100%`,
     };
   }, [barWidth]);
@@ -1122,8 +1122,8 @@ export function TimelineCanvas({
           left: 0,
           width: timelineWidth,
           height: RULER_HEIGHT,
-          backgroundColor: '#1a1a1a',
-          borderBottom: '1px solid #333333',
+          backgroundColor: '#111111',
+          borderBottom: '1px solid rgba(255,255,255,0.08)',
           zIndex: 10,
           userSelect: 'none',
         }}
@@ -1135,7 +1135,7 @@ export function TimelineCanvas({
           left: 0,
           right: 0,
           height: 1,
-          backgroundColor: 'rgba(51,51,51,0.5)',
+          backgroundColor: 'rgba(255,255,255,0.04)',
         }} />
 
         {/* Bar numbers and tick marks */}
@@ -1149,7 +1149,7 @@ export function TimelineCanvas({
                 top: RULER_HEIGHT / 4,
                 transform: 'translateY(-50%)',
                 fontSize: 11,
-                color: '#9ca3af',
+                color: '#666666',
                 opacity: 0.9,
                 pointerEvents: 'none',
               }}
@@ -1163,7 +1163,7 @@ export function TimelineCanvas({
               top: 0,
               width: 1,
               height: RULER_HEIGHT,
-              backgroundColor: '#333333',
+              backgroundColor: 'rgba(255,255,255,0.08)',
               pointerEvents: 'none',
             }} />
             {/* Beat tick marks */}
@@ -1176,7 +1176,7 @@ export function TimelineCanvas({
                   bottom: 4,
                   width: 1,
                   height: 8,
-                  backgroundColor: '#444444',
+                  backgroundColor: 'rgba(255,255,255,0.06)',
                   pointerEvents: 'none',
                 }}
               />
@@ -1224,7 +1224,7 @@ export function TimelineCanvas({
           left: 0,
           width: timelineWidth,
           height: contentHeight,
-          backgroundColor: '#1a1a1a',
+          backgroundColor: '#0e0e0e',
           ...gridBackground,
         }}
         onPointerDown={handleBackgroundPointerDown}

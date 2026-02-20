@@ -133,7 +133,7 @@ export function Header() {
       {/* Center Section - Transport */}
       <div className="flex items-center gap-6">
         {/* Transport Control - Stop/Rewind + Play */}
-        <div className="flex rounded-lg bg-muted/50 p-1 my-1">
+        <div className="flex rounded-lg bg-white/[0.04] p-1 my-1">
           {/* Stop / Rewind Button */}
           <button
             onClick={() => {
@@ -166,7 +166,7 @@ export function Header() {
             }}
             className={`w-12 h-12 rounded-r-md flex items-center justify-center text-lg transition-all active:scale-95 ${
               isPlaying
-                ? 'bg-gradient-to-r from-accent-from to-accent-to text-white shadow-sm'
+                ? 'bg-gradient-to-r from-accent-from to-accent-to text-white glow-accent'
                 : 'bg-surface hover:bg-muted text-foreground active:bg-muted/80'
             }`}
             aria-label="Play"
