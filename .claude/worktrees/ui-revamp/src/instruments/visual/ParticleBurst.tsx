@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useMemo, useEffect, useState } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { getVisualPlaybackEngine } from '@/core/visualPlayback';
 import { hexToHsl } from '@/core/colorPalette';
@@ -225,68 +225,59 @@ function buildParticles(count: number): Particle[] {
 // ── Single burst instance (InstancedMesh) ───────────────────────────────────
 
 interface BurstInstanceProps {
-  birthTime: number;
-  clockRef: React.MutableRefObject<number>;
-  trackId: string;
+  age: number;
   preset: ColorPreset;
   count: number;
+  pointSize: number;
+  burstRadius: number;
+  dissolveSpread: number;
+  fadePower: number;
+  burstPower: number;
+  burstCurve: EaseCurve;
+  burstLifetime: number;
+  cylinderRadius: number; // 0 = disabled
+  burstType: BurstType;
+  coneAngle: number;      // half-angle in radians for cone/jet
+  spiralTwists: number;   // number of spiral rotations
+  polarPetals: number;    // petal count for polar rose
 }
 
-function BurstInstance({ birthTime, clockRef, trackId, preset, count }: BurstInstanceProps) {
+function BurstInstance({ age, preset, count, pointSize, burstRadius, dissolveSpread, fadePower, burstPower, burstCurve, burstLifetime, cylinderRadius, burstType, coneAngle, spiralTwists, polarPetals }: BurstInstanceProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const colorArr = useMemo(() => new Float32Array(count * 3), [count]);
   const tempColor = useMemo(() => new THREE.Color(), []);
   const particles = useMemo(() => buildParticles(count), [count]);
-  const engineRef = useRef(getVisualPlaybackEngine());
+  const { camera } = useThree();
 
-  useFrame(({ camera }) => {
-    const mesh = meshRef.current;
-    if (!mesh) return;
+  const t = Math.min(age / burstLifetime, 1);
+  const expand = applyEase(burstCurve, t, burstPower);
+  const alpha = Math.max(0, Math.pow(1 - t, fadePower));
 
-    // Read params fresh from engine each frame (handles automation)
-    const vs = engineRef.current.getTrackState(trackId);
-    const par = vs?.params ?? {};
-    const pointSize      = (par.pointSize as number)      ?? 0.035;
-    const burstRadius    = (par.burstRadius as number)    ?? 4;
-    const dissolveSpread = (par.dissolveSpread as number) ?? 5;
-    const fadePower      = (par.fadePower as number)      ?? 0.6;
-    const burstPower     = (par.burstPower as number)     ?? 2;
-    const burstCurve     = (par.burstCurve as EaseCurve)  ?? 'log';
-    const burstLifetime  = (par.burstLifetime as number)  ?? 4;
-    const cylinderRadius = (par.cylinderRadius as number) ?? 0;
-    const burstType      = (par.burstType as BurstType)   ?? 'sphere';
-    const coneAngle      = (par.coneAngle as number)      ?? 0.8;
-    const spiralTwists   = (par.spiralTwists as number)   ?? 3;
-    const polarPetals    = (par.polarPetals as number)    ?? 5;
+  if (alpha < 0.005) return null;
 
-    const age = clockRef.current - birthTime;
-    const t = Math.min(age / burstLifetime, 1);
-    const expand = applyEase(burstCurve, t, burstPower);
-    const alpha = Math.max(0, Math.pow(1 - t, fadePower));
+  // Compute camera forward direction for cone/jet modes and cylinder clipping.
+  const camDir = _tmpVec3A;
+  const particlePos = _tmpVec3B;
+  camera.getWorldDirection(camDir); // normalized forward vector
 
-    if (alpha < 0.005) {
-      mesh.visible = false;
-      return;
-    }
-    mesh.visible = true;
+  // Build a local frame aligned to camera direction for directed bursts.
+  // camDir points INTO the screen, so particles going toward camera use -camDir.
+  const toCamera = _tmpVec3C.copy(camDir).negate(); // toward camera
+  // Pick an arbitrary up that isn't parallel to toCamera
+  const arbUp = Math.abs(toCamera.y) < 0.99 ? _tmpVec3D.set(0, 1, 0) : _tmpVec3D.set(1, 0, 0);
+  const right = _tmpVec3E.crossVectors(toCamera, arbUp).normalize();
+  const up = _tmpVec3F.crossVectors(right, toCamera).normalize();
 
-    // Compute camera forward direction for cone/jet modes and cylinder clipping.
-    const camDir = _tmpVec3A;
-    const particlePos = _tmpVec3B;
-    camera.getWorldDirection(camDir);
-
-    const toCamera = _tmpVec3C.copy(camDir).negate();
-    const arbUp = Math.abs(toCamera.y) < 0.99 ? _tmpVec3D.set(0, 1, 0) : _tmpVec3D.set(1, 0, 0);
-    const right = _tmpVec3E.crossVectors(toCamera, arbUp).normalize();
-    const up = _tmpVec3F.crossVectors(right, toCamera).normalize();
-
+  const mesh = meshRef.current;
+  if (mesh) {
     for (let i = 0; i < count; i++) {
       const pt = particles[i];
 
       let x: number, y: number, z: number;
 
       if (burstType === 'sphere') {
+        // Default: uniform sphere expansion
         const totalRadius = burstRadius * pt.r + expand * dissolveSpread * pt.dissolveMul;
         const rad = totalRadius * expand;
         const jAmt = expand * dissolveSpread * 0.3 * pt.dissolveMul;
@@ -295,22 +286,28 @@ function BurstInstance({ birthTime, clockRef, trackId, preset, count }: BurstIns
         z = (pt.nz + pt.jz * jAmt) * rad;
 
       } else if (burstType === 'cone') {
+        // Cone toward camera: particles distributed within a cone
+        // phi limited to coneAngle, biased toward edges for a hollow-cone look
         const conePhi = Math.pow(pt.iNorm, 0.6) * coneAngle;
         const coneTheta = pt.theta;
         const rad = (burstRadius * pt.r + expand * dissolveSpread * pt.dissolveMul) * expand;
+        // Local cone coordinates: forward axis = toCamera
         const sinP = Math.sin(conePhi);
         const cosP = Math.cos(conePhi);
         const lx = sinP * Math.cos(coneTheta) * rad;
         const ly = sinP * Math.sin(coneTheta) * rad;
         const lz = cosP * rad;
+        // Transform to world via camera frame
         x = right.x * lx + up.x * ly + toCamera.x * lz;
         y = right.y * lx + up.y * ly + toCamera.y * lz;
         z = right.z * lx + up.z * ly + toCamera.z * lz;
 
       } else if (burstType === 'jet') {
-        const jetAngle = coneAngle * 0.3;
+        // Tight directional jet: very narrow cone with speed variation
+        const jetAngle = coneAngle * 0.3; // much tighter than cone
         const jetPhi = Math.sqrt(pt.iNorm) * jetAngle;
         const jetTheta = pt.theta;
+        // Particles stretch along the jet axis with random depth
         const depthVariation = 0.5 + pt.r * 1.5;
         const rad = (burstRadius + expand * dissolveSpread * pt.dissolveMul) * expand * depthVariation;
         const sinP = Math.sin(jetPhi);
@@ -323,8 +320,10 @@ function BurstInstance({ birthTime, clockRef, trackId, preset, count }: BurstIns
         z = right.z * lx + up.z * ly + toCamera.z * lz;
 
       } else if (burstType === 'spiralOut') {
+        // Spiral outward: particles trace expanding helical arms toward camera
         const armAngle = pt.theta + expand * spiralTwists * Math.PI * 2;
         const radialDist = pt.iNorm * burstRadius * expand;
+        // Forward progress proportional to radial distance
         const forwardDist = (burstRadius * pt.r + expand * dissolveSpread * pt.dissolveMul) * expand;
         const lx = Math.cos(armAngle) * radialDist;
         const ly = Math.sin(armAngle) * radialDist;
@@ -334,10 +333,13 @@ function BurstInstance({ birthTime, clockRef, trackId, preset, count }: BurstIns
         z = right.z * lx + up.z * ly + toCamera.z * lz;
 
       } else if (burstType === 'polarRose') {
+        // Polar rose: r = cos(k*theta) creates petal-shaped burst pattern toward camera
         const roseTheta = pt.theta;
         const roseR = Math.abs(Math.cos(polarPetals * roseTheta));
+        // Modulate with expansion and particle depth
         const rad = roseR * burstRadius * expand * (0.4 + pt.r * 0.6);
         const forwardDist = (burstRadius * 0.5 + expand * dissolveSpread * pt.dissolveMul * 0.5) * expand;
+        // Add some spread in the phi direction for 3D volume
         const phiSpread = (pt.phi - Math.PI * 0.5) * 0.4;
         const lx = Math.cos(roseTheta) * rad * Math.cos(phiSpread);
         const ly = Math.sin(roseTheta) * rad * Math.cos(phiSpread);
@@ -347,8 +349,10 @@ function BurstInstance({ birthTime, clockRef, trackId, preset, count }: BurstIns
         z = right.z * lx + up.z * ly + toCamera.z * lz;
 
       } else if (burstType === 'ring') {
+        // Expanding ring toward camera: particles form a torus cross-section
         const ringTheta = pt.theta;
         const majorR = burstRadius * expand;
+        // Minor radius gives the ring thickness
         const minorR = burstRadius * 0.25 * expand * pt.r;
         const minorAngle = pt.phi;
         const ringX = (majorR + minorR * Math.cos(minorAngle)) * Math.cos(ringTheta);
@@ -359,11 +363,13 @@ function BurstInstance({ birthTime, clockRef, trackId, preset, count }: BurstIns
         z = right.z * ringX + up.z * ringY + toCamera.z * ringZ;
 
       } else {
-        const helixArm = i % 2 === 0 ? 0 : Math.PI;
+        // doubleHelix: two intertwined spirals projecting toward camera
+        const helixArm = i % 2 === 0 ? 0 : Math.PI; // two arms offset by 180°
         const helixT = pt.iNorm;
         const helixAngle = helixArm + helixT * spiralTwists * Math.PI * 2;
         const helixRadius = burstRadius * 0.6 * expand * (0.5 + 0.5 * Math.sin(helixT * Math.PI));
         const forwardDist = helixT * burstRadius * expand * 2;
+        // Add jitter for organic feel
         const jAmt = expand * 0.2 * pt.dissolveMul;
         const lx = Math.cos(helixAngle) * helixRadius + pt.jx * jAmt;
         const ly = Math.sin(helixAngle) * helixRadius + pt.jy * jAmt;
@@ -373,19 +379,22 @@ function BurstInstance({ birthTime, clockRef, trackId, preset, count }: BurstIns
         z = right.z * lx + up.z * ly + toCamera.z * lz;
       }
 
-      // Cylinder clipping
+      // Cylinder clipping: distance from the camera-axis line through origin
       let cylAlpha = 1;
       if (cylinderRadius > 0) {
         particlePos.set(x, y, z);
+        // Project particle onto camera direction, subtract to get perpendicular component
         const dot = particlePos.dot(camDir);
+        // Perpendicular distance² = |P|² - (P·D)²
         const perpDistSq = particlePos.lengthSq() - dot * dot;
         const perpDist = Math.sqrt(Math.max(0, perpDistSq));
+        // Rapid fade in a thin edge band (10% of radius)
         const edgeStart = cylinderRadius * 0.9;
         if (perpDist > cylinderRadius) {
           cylAlpha = 0;
         } else if (perpDist > edgeStart) {
           cylAlpha = 1 - (perpDist - edgeStart) / (cylinderRadius - edgeStart);
-          cylAlpha *= cylAlpha;
+          cylAlpha *= cylAlpha; // quadratic falloff for smooth edge
         }
       }
 
@@ -396,6 +405,7 @@ function BurstInstance({ birthTime, clockRef, trackId, preset, count }: BurstIns
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
 
+      // Color from preset gradient — map particle's latitude (ny) to [0,1]
       const colorT = pt.ny * 0.5 + 0.5;
       const col = samplePreset(preset, colorT);
       tempColor.setHSL(col.h, col.s, col.l * finalAlpha);
@@ -409,7 +419,7 @@ function BurstInstance({ birthTime, clockRef, trackId, preset, count }: BurstIns
       colorAttr.array.set(colorArr);
       colorAttr.needsUpdate = true;
     }
-  });
+  }
 
   return (
     <instancedMesh ref={meshRef} args={[undefined, undefined, count]} frustumCulled={false}>
@@ -441,7 +451,6 @@ interface BurstEntry {
   id: number;
   birthTime: number;
   presetIndex: number;
-  palettePreset: ColorPreset | null; // snapshot of palette at burst creation time
 }
 
 interface Props {
@@ -454,8 +463,6 @@ function ParticleBurstVisual({ trackId }: Props) {
   const burstsRef = useRef<BurstEntry[]>([]);
   const idCounter = useRef(0);
   const clockRef = useRef(0);
-  // Cache palette preset — only rebuild when palette hex values change
-  const cachedPaletteRef = useRef<{ key: string; preset: ColorPreset } | null>(null);
 
   useEffect(() => () => {
     burstsRef.current = [];
@@ -471,37 +478,9 @@ function ParticleBurstVisual({ trackId }: Props) {
     const par = vs.params;
     const burstLifetime = (par.burstLifetime as number) ?? 4;
 
-    // Snapshot current palette (if any) for new bursts — cached
-    let currentPalettePreset: ColorPreset | null = null;
-    const palette = vs.activePalette;
-    if (palette) {
-      const key = `${palette.background}${palette.secondary}${palette.primary}${palette.accent}${palette.highlight}`;
-      if (cachedPaletteRef.current?.key === key) {
-        currentPalettePreset = cachedPaletteRef.current.preset;
-      } else {
-        const bg = hexToHsl(palette.background);
-        const sec = hexToHsl(palette.secondary);
-        const pri = hexToHsl(palette.primary);
-        const acc = hexToHsl(palette.accent);
-        const hi = hexToHsl(palette.highlight);
-        currentPalettePreset = {
-          name: 'Palette',
-          stops: [
-            { t: 0,    h: bg.h,  s: bg.s,  l: bg.l },
-            { t: 0.25, h: sec.h, s: sec.s, l: sec.l },
-            { t: 0.5,  h: pri.h, s: pri.s, l: pri.l },
-            { t: 0.75, h: acc.h, s: acc.s, l: acc.l },
-            { t: 1,    h: hi.h,  s: hi.s,  l: hi.l },
-          ],
-        };
-        cachedPaletteRef.current = { key, preset: currentPalettePreset };
-      }
-    }
-
     // Detect new note-ons — each pitch maps to a color preset
-    const prevCounts = prevCountsRef.current;
     for (const [pitch, noteCount] of vs.pitchNoteOnCounts) {
-      const prev = prevCounts.get(pitch) ?? 0;
+      const prev = prevCountsRef.current.get(pitch) ?? 0;
       const newHits = noteCount - prev;
       if (newHits > 0) {
         const presetIndex = Math.max(0, Math.min(pitch - PITCH_MIN, COLOR_PRESETS.length - 1));
@@ -510,16 +489,11 @@ function ParticleBurstVisual({ trackId }: Props) {
             id: idCounter.current++,
             birthTime: now,
             presetIndex,
-            palettePreset: currentPalettePreset,
           });
         }
       }
     }
-    // Reuse Map: clear and repopulate instead of allocating new
-    prevCounts.clear();
-    for (const [pitch, noteCount] of vs.pitchNoteOnCounts) {
-      prevCounts.set(pitch, noteCount);
-    }
+    prevCountsRef.current = new Map(vs.pitchNoteOnCounts);
 
     burstsRef.current = burstsRef.current.filter(b => (now - b.birthTime) < burstLifetime);
   });
@@ -535,7 +509,7 @@ function ParticleBurstVisual({ trackId }: Props) {
   );
 }
 
-// Only re-renders when burst list membership changes (not every frame)
+// Separate component that re-renders each frame via useFrame + setState
 function BurstRenderer({
   trackId, burstsRef, clockRef,
 }: {
@@ -544,32 +518,80 @@ function BurstRenderer({
   clockRef: React.MutableRefObject<number>;
 }) {
   const engineRef = useRef(getVisualPlaybackEngine());
-  const [activeBursts, setActiveBursts] = useState<BurstEntry[]>([]);
-  const lastIdsRef = useRef('');
+  const [renderBursts, setRenderBursts] = useState<{ id: number; age: number; presetIndex: number }[]>([]);
 
   useFrame(() => {
+    const now = clockRef.current;
+    const vs = engineRef.current.getTrackState(trackId);
+    const burstLifetime = (vs?.params?.burstLifetime as number) ?? 4;
     const bursts = burstsRef.current;
-    // Only trigger React re-render when burst IDs change (add/remove)
-    const ids = bursts.map(b => b.id).join(',');
-    if (ids !== lastIdsRef.current) {
-      lastIdsRef.current = ids;
-      setActiveBursts([...bursts]);
+    const rendered: { id: number; age: number; presetIndex: number }[] = [];
+    for (const b of bursts) {
+      const age = now - b.birthTime;
+      if (age < burstLifetime) {
+        rendered.push({ id: b.id, age, presetIndex: b.presetIndex });
+      }
     }
+    setRenderBursts(rendered);
   });
 
   const vs = engineRef.current.getTrackState(trackId);
-  const count = ((vs?.params?.count as number) ?? 3000);
+  const par = vs?.params ?? {};
+  const count          = (par.count as number)          ?? 3000;
+  const pointSize      = (par.pointSize as number)      ?? 0.035;
+  const burstRadius    = (par.burstRadius as number)    ?? 4;
+  const dissolveSpread = (par.dissolveSpread as number) ?? 5;
+  const fadePower      = (par.fadePower as number)      ?? 0.6;
+  const burstPower     = (par.burstPower as number)     ?? 2;
+  const burstCurve     = (par.burstCurve as EaseCurve)  ?? 'log';
+  const burstLifetime  = (par.burstLifetime as number)  ?? 4;
+  const cylinderRadius = (par.cylinderRadius as number) ?? 0;
+  const burstType      = (par.burstType as BurstType)   ?? 'sphere';
+  const coneAngle      = (par.coneAngle as number)      ?? 0.8;
+  const spiralTwists   = (par.spiralTwists as number)   ?? 3;
+  const polarPetals    = (par.polarPetals as number)    ?? 5;
+
+  // When a color palette is active, build a gradient from all 5 palette colors
+  const palettePreset = useMemo((): ColorPreset | null => {
+    const palette = vs?.activePalette;
+    if (!palette) return null;
+    const bg = hexToHsl(palette.background);
+    const sec = hexToHsl(palette.secondary);
+    const pri = hexToHsl(palette.primary);
+    const acc = hexToHsl(palette.accent);
+    const hi = hexToHsl(palette.highlight);
+    return {
+      name: 'Palette',
+      stops: [
+        { t: 0,    h: bg.h,  s: bg.s,  l: bg.l },
+        { t: 0.25, h: sec.h, s: sec.s, l: sec.l },
+        { t: 0.5,  h: pri.h, s: pri.s, l: pri.l },
+        { t: 0.75, h: acc.h, s: acc.s, l: acc.l },
+        { t: 1,    h: hi.h,  s: hi.s,  l: hi.l },
+      ],
+    };
+  }, [vs?.activePalette]);
 
   return (
     <>
-      {activeBursts.map(b => (
+      {renderBursts.map(b => (
         <BurstInstance
           key={b.id}
-          birthTime={b.birthTime}
-          clockRef={clockRef}
-          trackId={trackId}
-          preset={b.palettePreset ?? COLOR_PRESETS[b.presetIndex]}
+          age={b.age}
+          preset={palettePreset ?? COLOR_PRESETS[b.presetIndex]}
           count={count}
+          pointSize={pointSize}
+          burstRadius={burstRadius}
+          dissolveSpread={dissolveSpread}
+          fadePower={fadePower}
+          burstPower={burstPower}
+          burstCurve={burstCurve}
+          burstLifetime={burstLifetime}
+          cylinderRadius={cylinderRadius}
+          burstType={burstType}
+          coneAngle={coneAngle}
+          spiralTwists={spiralTwists}
+          polarPetals={polarPetals}
         />
       ))}
     </>

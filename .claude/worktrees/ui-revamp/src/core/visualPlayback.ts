@@ -446,13 +446,6 @@ export class VisualPlaybackEngine {
     return prev.value + t * (next.value - prev.value);
   }
 
-  /** Get an automation lane for a track+param (cache-friendly: call once, reuse). */
-  getAutomationLane(trackId: string, paramKey: string): AutomationLane | null {
-    const trackEvents = this.perTrackEvents.find(e => e.trackId === trackId);
-    if (!trackEvents) return null;
-    return trackEvents.automationLanes.find(l => !l.pluginInstanceId && l.paramKey === paramKey) ?? null;
-  }
-
   getTrackEvents(trackId: string): PerTrackEvents['events'] | null {
     const te = this.perTrackEvents.find(e => e.trackId === trackId);
     return te ? te.events : null;
@@ -465,40 +458,6 @@ export class VisualPlaybackEngine {
   getAllStates(): Map<string, VisualInstrumentState> {
     return this.trackStates;
   }
-}
-
-/** Interpolate a pre-fetched automation lane at a given beat (no .find() lookups). */
-export function interpolateLane(lane: AutomationLane | null, beat: number, defaultValue: number): number {
-  if (!lane) return defaultValue;
-  const kf = lane.keyframes;
-  if (kf.length === 0) return defaultValue;
-
-  let aLo = 0, aHi = kf.length;
-  while (aLo < aHi) {
-    const mid = (aLo + aHi) >>> 1;
-    if (kf[mid].beatTime <= beat) aLo = mid + 1;
-    else aHi = mid;
-  }
-  if (aLo === 0) return defaultValue;
-
-  const mode = lane.interpolation ?? (lane.interpolate ? 'linear' : 'step');
-  if (mode === 'step' || aLo >= kf.length) {
-    return kf[aLo - 1].value;
-  }
-
-  const prev = kf[aLo - 1];
-  const next = kf[aLo];
-  const tLinear = (beat - prev.beatTime) / (next.beatTime - prev.beatTime);
-  let t: number;
-  switch (mode) {
-    case 'ease-in':      t = tLinear * tLinear; break;
-    case 'ease-out':     t = 1 - (1 - tLinear) * (1 - tLinear); break;
-    case 'ease-in-out':  t = tLinear < 0.5 ? 2 * tLinear * tLinear : 1 - 2 * (1 - tLinear) * (1 - tLinear); break;
-    case 'exponential':  t = tLinear * tLinear * tLinear; break;
-    case 'smooth-step':  t = tLinear * tLinear * (3 - 2 * tLinear); break;
-    default:             t = tLinear;
-  }
-  return prev.value + t * (next.value - prev.value);
 }
 
 /**
