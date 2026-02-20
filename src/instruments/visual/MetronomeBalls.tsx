@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { getVisualPlaybackEngine } from '@/core/visualPlayback';
 import { useProjectStore } from '@/stores/projectStore';
 import { Instrument } from '../types';
+import { virtualClock } from '@/core/virtualClock';
 import {
   ManagedLineSet,
   ManagedDotSet,
@@ -1057,7 +1058,7 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
             }
           }
         }
-        if (lastSpiralStepTime.current === 0) lastSpiralStepTime.current = performance.now();
+        if (lastSpiralStepTime.current === 0) lastSpiralStepTime.current = virtualClock.now();
         inkDirty = true;
       } else if (pitch === PITCH_CRAZY_INK) {
         for (let i = 0; i < delta; i++) {
@@ -1070,10 +1071,10 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
         inkDirty = true;
       } else if (pitch === PITCH_SCALE_POP) {
         scalePopStep.current = 0;
-        scalePopTickTime.current = performance.now();
+        scalePopTickTime.current = virtualClock.now();
       } else if (pitch === PITCH_LINE_WEIGHT) {
         lineWeightTicks.current = LINE_WEIGHT_HOLD_TICKS;
-        lineWeightTickTime.current = performance.now();
+        lineWeightTickTime.current = virtualClock.now();
         lineWeightDirty = true;
       } else if (pitch === PITCH_INVERT_LINES) {
         for (let i = 0; i < delta; i++) invertedLines.current = !invertedLines.current;
@@ -1099,7 +1100,7 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
         }
       }
       const anyActive = snareActive.current.some(a => a);
-      if (anyActive && snareEvolveTime.current === 0) snareEvolveTime.current = performance.now();
+      if (anyActive && snareEvolveTime.current === 0) snareEvolveTime.current = virtualClock.now();
       if (!anyActive) snareEvolveTime.current = 0;
       if (snareChanged) snareDirty = true;
     }
@@ -1128,7 +1129,7 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
 
     // === Spiral dot advancement ===
     if (spiralDots.current.length > 0) {
-      const now = performance.now();
+      const now = virtualClock.now();
       const thirtySecondMs = (60000 / bpm) / 8;
       const elapsed = now - lastSpiralStepTime.current;
       const steps = Math.floor(elapsed / thirtySecondMs);
@@ -1145,7 +1146,7 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
 
     // === Continuous ink fade ===
     if (inkBlobs.current.length > 0 || crazyInkBlobs.current.length > 0) {
-      const now = performance.now();
+      const now = virtualClock.now();
       const eighthMs = (60000 / bpm) / 2;
       if (lastInkFadeTime.current === 0) lastInkFadeTime.current = now;
       const elapsed = now - lastInkFadeTime.current;
@@ -1162,7 +1163,7 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
 
     // === Snare evolution ===
     if (snareEvolveTime.current > 0) {
-      const now = performance.now();
+      const now = virtualClock.now();
       const thirtySecondMs = (60000 / bpm) / 8;
       const elapsed = now - snareEvolveTime.current;
       const ticks = Math.floor(elapsed / thirtySecondMs);
@@ -1179,7 +1180,7 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
 
     // === Foreground fade tick (twice per measure) ===
     {
-      const now = performance.now();
+      const now = virtualClock.now();
       const halfBarMs = (60000 / bpm) * (beatsPerBar / FG_FADE_TICKS_PER_BAR);
       if (lastFgFadeTick.current === 0) lastFgFadeTick.current = now;
       const elapsed = now - lastFgFadeTick.current;
@@ -1192,7 +1193,7 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
 
     // === Scale pop & line weight tick ===
     {
-      const now = performance.now();
+      const now = virtualClock.now();
       const sixteenthMs = (60000 / bpm) / 4;
       if (scalePopStep.current >= 0 && scalePopStep.current < SCALE_POP_STEPS.length - 1) {
         const elapsed = now - scalePopTickTime.current;
@@ -1297,7 +1298,7 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
     refs.sharedUniforms.uWaveSpeed.value = WAVE_SPEED;
     refs.sharedUniforms.uWarpAmp.value = warpAmpSmooth.current;
     refs.sharedUniforms.uWarpFold.value = warpFoldSmooth.current;
-    refs.sharedUniforms.uTime.value = performance.now() * 0.001;
+    refs.sharedUniforms.uTime.value = virtualClock.now() * 0.001;
 
     // Scale pop
     if (scalePopStep.current >= 0) {

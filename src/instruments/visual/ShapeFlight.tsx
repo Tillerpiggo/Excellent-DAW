@@ -9,6 +9,7 @@ import { useProjectStore } from '@/stores/projectStore';
 import { Instrument } from '../types';
 import { createDisplacementUniforms, type DisplacementUniforms } from '@/lib/three/displacementShader';
 import { hexToHsl } from '@/core/colorPalette';
+import { virtualClock } from '@/core/virtualClock';
 
 interface Props {
   trackId: string;
@@ -453,7 +454,7 @@ function ShapeFlightVisual({ trackId }: Props) {
     du.uWaveSpeed.value = WAVE_SPEED;
     du.uWarpAmp.value = warpAmpSmooth.current;
     du.uWarpFold.value = warpFoldSmooth.current;
-    du.uTime.value = performance.now() * 0.001;
+    du.uTime.value = virtualClock.now() * 0.001;
 
     // Mark all pool entries as inactive
     for (const p of poolRef.current) {

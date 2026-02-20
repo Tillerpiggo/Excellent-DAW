@@ -4,7 +4,9 @@ import { useRef, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { getVisualPlaybackEngine } from '@/core/visualPlayback';
+import { hexToHsl } from '@/core/colorPalette';
 import { Instrument } from '../types';
+import { virtualClock } from '@/core/virtualClock';
 
 // Golden angle for sunflower distribution
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
@@ -371,8 +373,8 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
 
     const n = f.count;
     const R = f.radius;
-    const t = performance.now() * 0.001 * speed;
-    const now = performance.now();
+    const t = virtualClock.now() * 0.001 * speed;
+    const now = virtualClock.now();
 
     // --- MIDI triggers ---
     const prev = prevCounts.current;
@@ -522,16 +524,47 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
     const pixelSize = dotSize * dpr;
     const scheme = colorModeRef.current % COLOR_SCHEMES.length;
 
-    // Scheme-specific base parameters (used for pulses/ripple highlights)
-    // 0: Crimson Sunrise — magenta → coral → golden amber
-    // 1: Ocean Depths — deep teal → turquoise → seafoam/gold
-    // 2: Aurora Borealis — indigo → violet → electric cyan
-    const schemeH = scheme === 0 ? 0.0 : scheme === 1 ? 0.48 : 0.75;
-    const schemeS = scheme === 0 ? 0.9 : scheme === 1 ? 0.75 : 0.85;
-    const schemeL = scheme === 0 ? 0.45 : scheme === 1 ? 0.45 : 0.4;
+    // Check for active color palette override
+    const activePalette = state.activePalette;
+    const hasPalette = activePalette !== null && activePalette !== undefined;
 
-    // Ripple highlight: contrasting warm/cool accent from opposite end of gradient
-    const rippleH = scheme === 0 ? 0.1 : scheme === 1 ? 0.15 : 0.52;
+    // Build palette gradient stops when palette is active
+    type GradStop = { t: number; h: number; s: number; l: number };
+    let paletteStops: GradStop[] | null = null;
+    if (hasPalette) {
+      const pri = hexToHsl(activePalette.primary);
+      const sec = hexToHsl(activePalette.secondary);
+      const acc = hexToHsl(activePalette.accent);
+      const hlt = hexToHsl(activePalette.highlight);
+      paletteStops = [
+        { t: 0,    h: pri.h, s: pri.s, l: pri.l },
+        { t: 0.33, h: sec.h, s: sec.s, l: sec.l },
+        { t: 0.66, h: acc.h, s: acc.s, l: acc.l },
+        { t: 1,    h: hlt.h, s: hlt.s, l: hlt.l },
+      ];
+    }
+
+    // Scheme-specific base parameters (used for pulses/ripple highlights)
+    let schemeH: number, schemeS: number, schemeL: number;
+    if (hasPalette && paletteStops) {
+      // Use primary color from palette for pulse/ripple base
+      schemeH = paletteStops[0].h;
+      schemeS = paletteStops[0].s;
+      schemeL = paletteStops[0].l;
+    } else {
+      schemeH = scheme === 0 ? 0.0 : scheme === 1 ? 0.48 : 0.75;
+      schemeS = scheme === 0 ? 0.9 : scheme === 1 ? 0.75 : 0.85;
+      schemeL = scheme === 0 ? 0.45 : scheme === 1 ? 0.45 : 0.4;
+    }
+
+    // Ripple highlight: contrasting accent color
+    let rippleH: number;
+    if (hasPalette && paletteStops) {
+      // Use accent color for ripple highlight
+      rippleH = paletteStops[2].h;
+    } else {
+      rippleH = scheme === 0 ? 0.1 : scheme === 1 ? 0.15 : 0.52;
+    }
     const rippleColor = rippleColorRef.current.setHSL(
       rippleH,
       Math.min(1, schemeS + 0.1),
@@ -720,7 +753,7 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
       // Size — kick swell + ripple band + pulse flash
       sz[i] = pixelSize * (1 + kickScale * 0.8 + rippleInfluence * 0.8 + pulseIntensity * 1.2);
 
-      // Color — compute base color from scheme, then blend toward ripple highlight
+      // Color — compute base color from scheme (or palette), then blend toward ripple highlight
       let baseR: number, baseG: number, baseB: number;
       const normD = d / R;
       const dispFrac = Math.min(1, totalDisp / (R * 0.1));
@@ -730,23 +763,45 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
       const gradT = normD * 0.6 + angleNorm * 0.4; // blend of radius and angle
       const organic = Math.sin(a * 3.0 + normD * 8.0) * Math.sin(a * 5.0 - normD * 4.0) * 0.5 + 0.5;
 
-      if (scheme === 0) {
+      if (hasPalette && paletteStops) {
+        // Palette-driven gradient: interpolate across primary → secondary → accent → highlight
+        const pt = Math.min(1, Math.max(0, gradT + organic * 0.1));
+        // Find surrounding stops
+        let lo = 0;
+        for (let si = 0; si < paletteStops.length - 1; si++) {
+          if (pt >= paletteStops[si].t) lo = si;
+        }
+        const hi = Math.min(lo + 1, paletteStops.length - 1);
+        const seg = paletteStops[hi].t - paletteStops[lo].t;
+        const frac = seg > 0 ? (pt - paletteStops[lo].t) / seg : 0;
+        // Shortest-path hue interpolation (hue is circular 0-1)
+        let dh = paletteStops[hi].h - paletteStops[lo].h;
+        if (dh > 0.5) dh -= 1;
+        else if (dh < -0.5) dh += 1;
+        const h = (paletteStops[lo].h + dh * frac + 1) % 1;
+        const s = paletteStops[lo].s + (paletteStops[hi].s - paletteStops[lo].s) * frac;
+        const l = paletteStops[lo].l + (paletteStops[hi].l - paletteStops[lo].l) * frac;
+        // Deepen: boost saturation, darken lightness to match the rich look of hardcoded schemes
+        const deepS = Math.min(1, Math.max(0.6, s * 1.2 + 0.1 + dispFrac * 0.05));
+        const deepL = Math.min(0.55, l * 0.7 + 0.08 + dispFrac * 0.08);
+        sc.setHSL(h, deepS, deepL);
+      } else if (scheme === 0) {
         // Crimson Sunrise: hot pink center → fiery red → coral → golden yellow edges
-        const h = (0.92 + gradT * 0.2 + organic * 0.05) % 1; // pink (0.92) → red → orange (0.08) → yellow (0.12)
+        const h = (0.92 + gradT * 0.2 + organic * 0.05) % 1;
         const s = 1.0 - gradT * 0.1 + organic * 0.05 + dispFrac * 0.1;
         const l = 0.38 + gradT * 0.22 + organic * 0.12 + dispFrac * 0.12;
         sc.setHSL(h, Math.min(1, Math.max(0.6, s)), Math.min(0.82, l));
       } else if (scheme === 1) {
         // Ocean Depths: deep blue center → teal → emerald green → warm gold edges
-        const h = (0.58 - gradT * 0.35 - organic * 0.05 + 1) % 1; // blue (0.58) → teal (0.48) → green (0.35) → gold (0.12)
+        const h = (0.58 - gradT * 0.35 - organic * 0.05 + 1) % 1;
         const s = 0.85 - gradT * 0.1 + organic * 0.1 + dispFrac * 0.1;
         const l = 0.32 + gradT * 0.25 + organic * 0.1 + dispFrac * 0.12;
         sc.setHSL(h, Math.min(1, Math.max(0.45, s)), Math.min(0.82, l));
       } else {
         // Aurora Borealis: deep indigo center → violet → magenta → electric cyan/green edges
         const hBase = gradT < 0.5
-          ? 0.72 + gradT * 0.36  // indigo (0.72) → magenta (0.9)
-          : 0.9 - (gradT - 0.5) * 0.7; // magenta (0.9) → cyan (0.55) → green edge
+          ? 0.72 + gradT * 0.36
+          : 0.9 - (gradT - 0.5) * 0.7;
         const h = (hBase + organic * 0.06) % 1;
         const s = 0.85 + gradT * 0.1 + organic * 0.05 + dispFrac * 0.05;
         const l = 0.34 + gradT * 0.24 + organic * 0.12 + dispFrac * 0.15;

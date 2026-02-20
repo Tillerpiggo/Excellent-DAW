@@ -451,6 +451,7 @@ interface BurstEntry {
   id: number;
   birthTime: number;
   presetIndex: number;
+  palettePreset: ColorPreset | null; // snapshot of palette at burst creation time
 }
 
 interface Props {
@@ -478,6 +479,27 @@ function ParticleBurstVisual({ trackId }: Props) {
     const par = vs.params;
     const burstLifetime = (par.burstLifetime as number) ?? 4;
 
+    // Snapshot current palette (if any) for new bursts
+    let currentPalettePreset: ColorPreset | null = null;
+    const palette = vs.activePalette;
+    if (palette) {
+      const bg = hexToHsl(palette.background);
+      const sec = hexToHsl(palette.secondary);
+      const pri = hexToHsl(palette.primary);
+      const acc = hexToHsl(palette.accent);
+      const hi = hexToHsl(palette.highlight);
+      currentPalettePreset = {
+        name: 'Palette',
+        stops: [
+          { t: 0,    h: bg.h,  s: bg.s,  l: bg.l },
+          { t: 0.25, h: sec.h, s: sec.s, l: sec.l },
+          { t: 0.5,  h: pri.h, s: pri.s, l: pri.l },
+          { t: 0.75, h: acc.h, s: acc.s, l: acc.l },
+          { t: 1,    h: hi.h,  s: hi.s,  l: hi.l },
+        ],
+      };
+    }
+
     // Detect new note-ons — each pitch maps to a color preset
     for (const [pitch, noteCount] of vs.pitchNoteOnCounts) {
       const prev = prevCountsRef.current.get(pitch) ?? 0;
@@ -489,6 +511,7 @@ function ParticleBurstVisual({ trackId }: Props) {
             id: idCounter.current++,
             birthTime: now,
             presetIndex,
+            palettePreset: currentPalettePreset,
           });
         }
       }
@@ -518,18 +541,18 @@ function BurstRenderer({
   clockRef: React.MutableRefObject<number>;
 }) {
   const engineRef = useRef(getVisualPlaybackEngine());
-  const [renderBursts, setRenderBursts] = useState<{ id: number; age: number; presetIndex: number }[]>([]);
+  const [renderBursts, setRenderBursts] = useState<{ id: number; age: number; presetIndex: number; palettePreset: ColorPreset | null }[]>([]);
 
   useFrame(() => {
     const now = clockRef.current;
     const vs = engineRef.current.getTrackState(trackId);
     const burstLifetime = (vs?.params?.burstLifetime as number) ?? 4;
     const bursts = burstsRef.current;
-    const rendered: { id: number; age: number; presetIndex: number }[] = [];
+    const rendered: { id: number; age: number; presetIndex: number; palettePreset: ColorPreset | null }[] = [];
     for (const b of bursts) {
       const age = now - b.birthTime;
       if (age < burstLifetime) {
-        rendered.push({ id: b.id, age, presetIndex: b.presetIndex });
+        rendered.push({ id: b.id, age, presetIndex: b.presetIndex, palettePreset: b.palettePreset });
       }
     }
     setRenderBursts(rendered);
@@ -551,34 +574,13 @@ function BurstRenderer({
   const spiralTwists   = (par.spiralTwists as number)   ?? 3;
   const polarPetals    = (par.polarPetals as number)    ?? 5;
 
-  // When a color palette is active, build a gradient from all 5 palette colors
-  const palettePreset = useMemo((): ColorPreset | null => {
-    const palette = vs?.activePalette;
-    if (!palette) return null;
-    const bg = hexToHsl(palette.background);
-    const sec = hexToHsl(palette.secondary);
-    const pri = hexToHsl(palette.primary);
-    const acc = hexToHsl(palette.accent);
-    const hi = hexToHsl(palette.highlight);
-    return {
-      name: 'Palette',
-      stops: [
-        { t: 0,    h: bg.h,  s: bg.s,  l: bg.l },
-        { t: 0.25, h: sec.h, s: sec.s, l: sec.l },
-        { t: 0.5,  h: pri.h, s: pri.s, l: pri.l },
-        { t: 0.75, h: acc.h, s: acc.s, l: acc.l },
-        { t: 1,    h: hi.h,  s: hi.s,  l: hi.l },
-      ],
-    };
-  }, [vs?.activePalette]);
-
   return (
     <>
       {renderBursts.map(b => (
         <BurstInstance
           key={b.id}
           age={b.age}
-          preset={palettePreset ?? COLOR_PRESETS[b.presetIndex]}
+          preset={b.palettePreset ?? COLOR_PRESETS[b.presetIndex]}
           count={count}
           pointSize={pointSize}
           burstRadius={burstRadius}

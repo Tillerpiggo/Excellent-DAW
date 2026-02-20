@@ -5,6 +5,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { getVisualPlaybackEngine } from '@/core/visualPlayback';
 import { Instrument } from '../types';
+import { virtualClock } from '@/core/virtualClock';
 
 // MIDI pitch mappings
 const PITCH_FLASH = 48;
@@ -390,7 +391,7 @@ function SunVisual({ trackId }: { trackId: string }) {
     const z = (tState.params.z as number) ?? DEFAULTS.z;
 
     // MIDI flash on beat
-    const now = performance.now();
+    const now = virtualClock.now();
     const prev = prevCounts.current;
     for (const [pitch, cnt] of tState.pitchNoteOnCounts) {
       const prevVal = prev.get(pitch) ?? 0;

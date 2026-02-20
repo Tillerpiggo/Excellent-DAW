@@ -66,6 +66,11 @@ interface UIState {
   // Visual fullscreen
   visualFullscreen: boolean;
 
+  // Export
+  isExporting: boolean;
+  exportProgress: number; // 0-1
+  showExportModal: boolean;
+
   // View state
   currentView: 'home' | 'editor';
 
@@ -113,6 +118,11 @@ interface UIState {
 
   // Visual fullscreen
   setVisualFullscreen: (v: boolean) => void;
+
+  // Export
+  setIsExporting: (v: boolean) => void;
+  setExportProgress: (v: number) => void;
+  setShowExportModal: (v: boolean) => void;
 
   // View actions
   setCurrentView: (view: 'home' | 'editor') => void;
@@ -166,6 +176,11 @@ export const useUIStore = create<UIState>((set) => ({
 
   // Visual fullscreen
   visualFullscreen: false,
+
+  // Export
+  isExporting: false,
+  exportProgress: 0,
+  showExportModal: false,
 
   // View state
   currentView: 'home',
@@ -394,6 +409,18 @@ export const useUIStore = create<UIState>((set) => ({
 
   setVisualFullscreen: (v) => {
     set({ visualFullscreen: v });
+  },
+
+  setIsExporting: (v) => {
+    set({ isExporting: v });
+  },
+
+  setExportProgress: (v) => {
+    set({ exportProgress: v });
+  },
+
+  setShowExportModal: (v) => {
+    set({ showExportModal: v });
   },
 
   setCurrentView: (view) => {

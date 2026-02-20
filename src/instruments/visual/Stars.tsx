@@ -5,6 +5,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { getVisualPlaybackEngine } from '@/core/visualPlayback';
 import { Instrument } from '../types';
+import { virtualClock } from '@/core/virtualClock';
 
 // --- Constants ---
 const MAX_STARS = 3000;
@@ -310,7 +311,7 @@ function StarsVisual({ trackId }: { trackId: string }) {
     if (!geom || !mat) return;
 
     const n = starCount;
-    const now = performance.now();
+    const now = virtualClock.now();
 
     // --- MIDI triggers (note-on toggles) ---
     const prev = prevCounts.current;

@@ -5,6 +5,7 @@ import { usePlayback } from '@/hooks/usePlayback';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { UndoRedoButtons } from './UndoRedoButtons';
+import { ExportModal } from './ExportModal';
 
 export function Header() {
   const { isPlaying, play, pause, seekTo, setBpm, setPlaybackSpeed } = usePlayback();
@@ -21,6 +22,7 @@ export function Header() {
   const showLibrary = useUIStore((s) => s.showLibrary);
   const showInspector = useUIStore((s) => s.showInspector);
   const setCurrentView = useUIStore((s) => s.setCurrentView);
+  const setShowExportModal = useUIStore((s) => s.setShowExportModal);
 
   // Imperative beat display refs (avoids 60fps re-renders)
   const barDisplayRef = useRef<HTMLSpanElement>(null);
@@ -270,6 +272,12 @@ export function Header() {
       {/* Right Section */}
       <div className="flex items-center gap-4">
         <button
+          onClick={() => setShowExportModal(true)}
+          className="px-3 py-1.5 rounded-lg text-sm bg-muted hover:bg-muted/80 text-muted-foreground transition-colors"
+        >
+          Export
+        </button>
+        <button
           onClick={() => toggleInspector()}
           className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
             showInspector
@@ -280,6 +288,8 @@ export function Header() {
           Inspector
         </button>
       </div>
+
+      <ExportModal />
     </header>
   );
 }
