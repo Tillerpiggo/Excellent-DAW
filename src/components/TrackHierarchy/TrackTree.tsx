@@ -20,9 +20,10 @@ import { TrackRowRenderer } from './TrackRowRenderer';
 
 interface TrackTreeProps {
   treeId: string;
+  rootIds?: string[];
 }
 
-export function TrackTree({ treeId }: TrackTreeProps) {
+export function TrackTree({ treeId, rootIds }: TrackTreeProps) {
   const project = useProjectStore((state) => state.project);
   const { moveTrack, duplicateTrack } = useProjectStore();
   const collapsedTrackIds = useUIStore((s) => s.collapsedTrackIds);
@@ -43,19 +44,20 @@ export function TrackTree({ treeId }: TrackTreeProps) {
   }, []);
 
   // Convert project tracks to tree items
-  const treeItems = useMemo(() => tracksToTreeItems(project), [project]);
+  const treeItems = useMemo(() => tracksToTreeItems(project, rootIds), [project, rootIds]);
 
   // Key that changes when track structure changes, forcing tree remount.
   // StaticTreeDataProvider has private data that can't be updated externally,
   // so we remount the entire tree when tracks are added/removed/reordered.
+  const effectiveRootIds = rootIds ?? project.rootTracks;
   const treeKey = useMemo(() => {
-    const rootStr = project.rootTracks.join(',');
+    const rootStr = effectiveRootIds.join(',');
     const childStr = Object.entries(project.tracks)
       .map(([id, t]) => `${id}:${t.childIds.join('.')}:${t.name}`)
       .sort()
       .join('|');
     return `${rootStr}||${childStr}`;
-  }, [project.tracks, project.rootTracks]);
+  }, [project.tracks, effectiveRootIds]);
 
   // Create data provider (memoized per treeKey)
   const dataProvider = useMemo(() => {

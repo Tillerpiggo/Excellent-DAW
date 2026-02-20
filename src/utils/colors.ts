@@ -31,6 +31,7 @@ export const TRACK_TYPE_COLORS: Record<TrackTypeId, string> = {
   rhythm: '#F9A826',     // Orange
   rest: '#9ca3af',       // Gray
   swing: '#f472b6',      // Pink (groove feel)
+  scene: '#7c3aed',      // Purple (scene compositor)
 };
 
 // Instrument colors - derived from INSTRUMENTS registry

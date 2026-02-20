@@ -167,7 +167,7 @@ export function MidiEditor({
   quantizeRef.current = quantize;
 
   // Canvas dimensions
-  const labelWidth = 64;
+  const labelWidth = 88;
   const canvasWidth = totalBeats * pixelsPerBeat + labelWidth + 20;
   const canvasHeight = rows.length * rowHeight;
 
@@ -778,13 +778,24 @@ export function MidiEditor({
                 alignItems: 'center',
                 justifyContent: 'flex-end',
                 paddingRight: 8,
-                fontSize: 11,
-                color: '#666666',
-                whiteSpace: 'nowrap',
                 borderBottom: '1px solid rgba(255,255,255,0.05)',
+                overflow: 'hidden',
               }}
             >
-              {row.label}
+              <span
+                title={row.label}
+                style={{
+                  fontSize: 13,
+                  color: '#666666',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  direction: 'rtl',
+                  minWidth: 0,
+                }}
+              >
+                {row.label}
+              </span>
             </div>
           ))}
           {/* Range label annotations */}
@@ -803,15 +814,20 @@ export function MidiEditor({
               }}
             >
               <span
+                title={rl.label}
                 style={{
                   position: 'absolute',
                   top: 4,
                   left: 6,
-                  fontSize: 9,
+                  right: 4,
+                  fontSize: 11,
                   fontWeight: 600,
                   color: 'rgba(255,255,255,0.3)',
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
                 }}
               >
                 {rl.label}

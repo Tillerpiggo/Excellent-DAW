@@ -1,0 +1,52 @@
+import { Instrument } from '../types';
+
+export const CircleWipeMask: Instrument = {
+  id: 'circleWipeMask',
+  name: 'Circle Wipe Mask',
+  description: 'Circular reveal/hide mask expanding from a center point',
+  icon: '⊙',
+  color: '#a855f7',
+  hasAudio: false,
+  hasVisual: false,
+  editorType: 'generic',
+  defaultSettings: {
+    radius: 0.5,
+    centerX: 0.5,
+    centerY: 0.5,
+    feather: 0.02,
+  },
+  settingsSchema: {
+    radius: {
+      type: 'number',
+      label: 'Radius',
+      min: 0,
+      max: 1.5,
+      step: 0.01,
+      default: 0.5,
+    },
+    centerX: {
+      type: 'number',
+      label: 'Center X',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0.5,
+    },
+    centerY: {
+      type: 'number',
+      label: 'Center Y',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0.5,
+    },
+    feather: {
+      type: 'number',
+      label: 'Feather',
+      min: 0,
+      max: 0.5,
+      step: 0.005,
+      default: 0.02,
+    },
+  },
+};

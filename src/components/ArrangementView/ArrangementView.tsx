@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useCallback, useEffect, useState } from 'react';
+import { useRef, useCallback, useEffect, useState, useMemo } from 'react';
 import { TimelineCanvas } from './TimelineCanvas';
 import { TrackTree } from '../TrackHierarchy/TrackTree';
 import { TimelineToolbar } from './TimelineToolbar';
@@ -16,7 +16,8 @@ export function ArrangementView() {
   // tracks subscription still needed for flattenTracks - this is a known remaining bottleneck
   const tracks = useProjectStore((state) => state.project.tracks);
   const rootTracks = useProjectStore((state) => state.project.rootTracks);
-  const { addTrack } = useProjectStore();
+  const rootScenes = useProjectStore((state) => state.project.rootScenes);
+  const { addTrack, addScene } = useProjectStore();
   const collapsedTrackIds = useUIStore((s) => s.collapsedTrackIds);
   const pixelsPerBeat = useUIStore((s) => s.pixelsPerBeat);
   const trackHeightScale = useUIStore((s) => s.trackHeightScale);
@@ -26,11 +27,24 @@ export function ArrangementView() {
   const setScrollTop = useUIStore((s) => s.setScrollTop);
   const setPixelsPerBeat = useUIStore((s) => s.setPixelsPerBeat);
   const setTrackHeightScale = useUIStore((s) => s.setTrackHeightScale);
+  const scenesCollapsed = useUIStore((s) => s.scenesCollapsed);
+  const toggleScenesCollapsed = useUIStore((s) => s.toggleScenesCollapsed);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewportSize, setViewportSize] = useState({ width: 800, height: 600 });
   // Create minimal project-like object for flattenTracks
   const flatTracks = flattenTracks({ tracks, rootTracks } as Parameters<typeof flattenTracks>[0], collapsedTrackIds);
+
+  // Scene tracks (for the scene bar)
+  const sceneFlatTracks = useMemo(() => {
+    if (rootScenes.length === 0) return [];
+    return flattenTracks(
+      { tracks, rootTracks: rootScenes } as Parameters<typeof flattenTracks>[0],
+      collapsedTrackIds
+    );
+  }, [tracks, rootScenes, collapsedTrackIds]);
+
+  const hasScenes = rootScenes.length > 0;
 
   const totalBeats = totalBars * beatsPerBar;
   const timelineWidth = totalBeats * pixelsPerBeat;
@@ -126,25 +140,65 @@ export function ArrangementView() {
           className="grid timeline-content"
           style={{
             gridTemplateColumns: `${trackLabelWidth}px 1fr`,
-            gridTemplateRows: '1fr',
             width: timelineWidth + trackLabelWidth,
             minHeight: '100%',
           }}
         >
           {/* Track Labels - sticky left, z-30 to stay above timeline blocks and handles */}
           <div className="sticky left-0 z-30 bg-surface border-r border-border">
+            {/* Scene bar section (collapsible) */}
+            {hasScenes && (
+              <>
+                <div
+                  className="sticky top-0 z-40 bg-surface border-b border-border cursor-pointer select-none"
+                  onClick={toggleScenesCollapsed}
+                >
+                  <div className="h-12 px-3 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm text-muted-foreground">{scenesCollapsed ? '▸' : '▾'}</span>
+                      <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                        Scenes
+                      </h2>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); addScene(); }}
+                      className="px-2 py-1 text-xs rounded bg-gradient-to-r from-accent-from/20 to-accent-to/20 text-accent-from hover:from-accent-from/30 hover:to-accent-to/30 transition-colors"
+                    >
+                      + Scene
+                    </button>
+                  </div>
+                </div>
+                {!scenesCollapsed && (
+                  <div className="track-tree-reset border-b border-border">
+                    <TrackTree treeId="scene-tracks" rootIds={rootScenes} />
+                  </div>
+                )}
+              </>
+            )}
+
             {/* Corner header - part of track labels column */}
-            <div className="sticky top-0 z-40 bg-surface border-b border-border">
+            <div className="sticky top-0 z-40 bg-surface border-b border-border" style={{ top: hasScenes ? undefined : 0 }}>
               <div className="h-12 px-3 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                   Tracks
                 </h2>
-                <button
-                  onClick={() => addTrack()}
-                  className="px-2 py-1 text-xs rounded bg-gradient-to-r from-accent-from/20 to-accent-to/20 text-accent-from hover:from-accent-from/30 hover:to-accent-to/30 transition-colors"
-                >
-                  + Add
-                </button>
+                <div className="flex items-center gap-1.5">
+                  {!hasScenes && (
+                    <button
+                      onClick={() => addScene()}
+                      className="px-2 py-1 text-xs rounded bg-surface-hover text-muted-foreground hover:text-foreground transition-colors"
+                      title="Add a scene for split-screen / mask compositing"
+                    >
+                      + Scene
+                    </button>
+                  )}
+                  <button
+                    onClick={() => addTrack()}
+                    className="px-2 py-1 text-xs rounded bg-gradient-to-r from-accent-from/20 to-accent-to/20 text-accent-from hover:from-accent-from/30 hover:to-accent-to/30 transition-colors"
+                  >
+                    + Track
+                  </button>
+                </div>
               </div>
             </div>
             <div className="track-tree-reset">
@@ -153,16 +207,36 @@ export function ArrangementView() {
           </div>
 
           {/* Timeline Content */}
-          <TimelineCanvas
-            flatTracks={flatTracks}
-            pixelsPerBeat={pixelsPerBeat}
-            beatsPerBar={beatsPerBar}
-            totalBars={totalBars}
-            bpm={bpm}
-            viewportWidth={viewportSize.width}
-            viewportHeight={viewportSize.height}
-            scrollContainerRef={containerRef}
-          />
+          <div>
+            {/* Scene timeline (when expanded) */}
+            {hasScenes && !scenesCollapsed && sceneFlatTracks.length > 0 && (
+              <div className="border-b border-border">
+                <TimelineCanvas
+                  flatTracks={sceneFlatTracks}
+                  pixelsPerBeat={pixelsPerBeat}
+                  beatsPerBar={beatsPerBar}
+                  totalBars={totalBars}
+                  bpm={bpm}
+                  viewportWidth={viewportSize.width}
+                  viewportHeight={viewportSize.height}
+                  scrollContainerRef={containerRef}
+                  compact
+                />
+              </div>
+            )}
+
+            {/* Main tracks timeline */}
+            <TimelineCanvas
+              flatTracks={flatTracks}
+              pixelsPerBeat={pixelsPerBeat}
+              beatsPerBar={beatsPerBar}
+              totalBars={totalBars}
+              bpm={bpm}
+              viewportWidth={viewportSize.width}
+              viewportHeight={viewportSize.height}
+              scrollContainerRef={containerRef}
+            />
+          </div>
         </div>
       </div>
 

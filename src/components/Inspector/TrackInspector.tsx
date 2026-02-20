@@ -5,7 +5,7 @@ import { Track, TrackTypeId } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { TRACK_TYPES } from '@/core/trackTypes';
-import { INSTRUMENTS, getInstrument, getInstrumentOptions, getAllInstruments } from '@/instruments';
+import { INSTRUMENTS, getInstrument, getInstrumentOptions, getAllInstruments, getMaskInstruments } from '@/instruments';
 import { PluginInspector } from './PluginInspector';
 import { FontPicker } from './FontPicker';
 import { SettingsSchema } from '@/instruments/types';
@@ -62,6 +62,8 @@ export function TrackInspector({ track }: TrackInspectorProps) {
   const tracks = useProjectStore((s) => s.project.tracks);
   const selectTrack = useUIStore((s) => s.selectTrack);
 
+  const rootScenes = useProjectStore((s) => s.project.rootScenes);
+  const { assignTrackToScene, addMaskToScene } = useProjectStore();
   const isVideoSampler = track.instrumentId === 'videoSampler';
 
   // Filter singleton instruments already in use on other tracks
@@ -252,6 +254,50 @@ export function TrackInspector({ track }: TrackInspectorProps) {
             />
           </div>
 
+          {/* Scene settings (scene tracks only) */}
+          {track.typeId === 'scene' && (
+            <>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Add Mask</label>
+                <select
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      addMaskToScene(track.id, e.target.value);
+                    }
+                  }}
+                  className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
+                >
+                  <option value="">Select mask...</option>
+                  {getMaskInstruments().map((mask) => (
+                    <option key={mask.id} value={mask.id}>
+                      {mask.icon} {mask.name}
+                    </option>
+                  ))}
+                </select>
+                {track.childIds.length > 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {track.childIds.length} mask{track.childIds.length !== 1 ? 's' : ''} applied (multiply)
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={track.sceneOpaque ?? false}
+                    onChange={(e) => updateTrack(track.id, { sceneOpaque: e.target.checked })}
+                    className="rounded border-border bg-background accent-accent-from"
+                  />
+                  <span className="text-sm text-foreground">Opaque background</span>
+                </label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  When enabled, empty areas in this scene block content behind it
+                </p>
+              </div>
+            </>
+          )}
+
           {/* Track Type */}
           <div>
             <label className="block text-xs text-muted-foreground mb-1">Track Type</label>
@@ -296,14 +342,37 @@ export function TrackInspector({ track }: TrackInspectorProps) {
             </div>
           )}
 
+          {/* Scene Assignment (only for visual tracks when scenes exist) */}
+          {!track.automationConfig && hasVisualInstrument && rootScenes.length > 0 && (
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Scene</label>
+              <select
+                value={track.sceneId || ''}
+                onChange={(e) => assignTrackToScene(track.id, e.target.value || undefined)}
+                className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
+              >
+                <option value="">Main (default)</option>
+                {rootScenes.map((sceneId) => {
+                  const sceneTrack = tracks[sceneId];
+                  return (
+                    <option key={sceneId} value={sceneId}>
+                      {sceneTrack?.name || sceneId}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
+
           {/* Instrument Settings - Dynamic based on settingsSchema (hidden for automation tracks) */}
-          {!track.automationConfig && effectiveInstrument?.settingsSchema && (
+          {/* Use own instrument if it has a schema (e.g. masks), otherwise fall back to inherited */}
+          {!track.automationConfig && (instrument?.settingsSchema || effectiveInstrument?.settingsSchema) && (
             <div className="space-y-3 pl-3 border-l-2 border-accent-from/30">
               <label className="block text-xs text-muted-foreground">
-                Settings{isInherited && ' (inherited instrument)'}
+                Settings{!instrument?.settingsSchema && isInherited && ' (inherited instrument)'}
               </label>
 
-              {Object.entries(effectiveInstrument.settingsSchema).map(([key, field]) => (
+              {Object.entries((instrument?.settingsSchema || effectiveInstrument?.settingsSchema)!).map(([key, field]) => (
                 <div key={key}>
                   {field.type === 'number' && (
                     <>

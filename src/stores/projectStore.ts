@@ -46,6 +46,12 @@ interface ProjectState {
   resetProject: () => void;
   loadProject: (project: Project) => void;
 
+  // Scene operations
+  addScene: (name?: string) => string;
+  deleteScene: (sceneId: string) => void;
+  addMaskToScene: (sceneId: string, maskInstrumentId: string) => string;
+  assignTrackToScene: (trackId: string, sceneId: string | undefined) => void;
+
   // Multi-project operations
   createNewProject: () => string;
   switchProject: (id: string) => void;
@@ -62,6 +68,7 @@ function createDefaultProject(): Project {
     totalBars: 8,
     beatsPerBar: 4,
     rootTracks: [],
+    rootScenes: [],
     tracks: {},
   };
 }
@@ -813,6 +820,103 @@ export const useProjectStore = create<ProjectState>()(
       });
     },
 
+    // Scene operations
+    addScene: (name?: string) => {
+      const trackId = generateId();
+
+      set((state) => {
+        const track: Track = {
+          id: trackId,
+          name: name || 'Scene',
+          typeId: 'scene',
+          muted: false,
+          solo: false,
+          collapsed: false,
+          blocks: [],
+          childIds: [],
+        };
+
+        state.project.tracks[trackId] = track;
+        state.project.rootScenes.push(trackId);
+      });
+
+      return trackId;
+    },
+
+    deleteScene: (sceneId: string) => {
+      set((state) => {
+        const scene = state.project.tracks[sceneId];
+        if (!scene) return;
+
+        // Recursively delete children (mask tracks)
+        const deleteRecursive = (id: string) => {
+          const t = state.project.tracks[id];
+          if (!t) return;
+          for (const childId of t.childIds) {
+            deleteRecursive(childId);
+          }
+          delete state.project.tracks[id];
+        };
+
+        // Unset sceneId on any tracks assigned to this scene
+        for (const track of Object.values(state.project.tracks)) {
+          if (track.sceneId === sceneId) {
+            track.sceneId = undefined;
+          }
+        }
+
+        // Remove from rootScenes
+        state.project.rootScenes = state.project.rootScenes.filter(id => id !== sceneId);
+
+        deleteRecursive(sceneId);
+      });
+    },
+
+    addMaskToScene: (sceneId: string, maskInstrumentId: string) => {
+      const { getInstrument } = require('@/instruments');
+      const trackId = generateId();
+
+      set((state) => {
+        const scene = state.project.tracks[sceneId];
+        if (!scene) return;
+
+        const instrument = getInstrument(maskInstrumentId);
+        const track: Track = {
+          id: trackId,
+          name: instrument?.name || 'Mask',
+          typeId: 'base',
+          instrumentId: maskInstrumentId,
+          instrumentSettings: instrument?.defaultSettings ? { ...instrument.defaultSettings } : undefined,
+          muted: false,
+          solo: false,
+          collapsed: false,
+          blocks: [{
+            id: generateId(),
+            startBar: 0,
+            durationBars: state.project.totalBars,
+            loop: true,
+            streams: [{ events: [] }],
+          }],
+          childIds: [],
+          parentId: sceneId,
+        };
+
+        state.project.tracks[trackId] = track;
+        scene.childIds.push(trackId);
+      });
+
+      return trackId;
+    },
+
+    assignTrackToScene: (trackId: string, sceneId: string | undefined) => {
+      set((state) => {
+        const track = state.project.tracks[trackId];
+        if (track) {
+          track.sceneId = sceneId;
+        }
+      });
+    },
+
     setBpm: (bpm: number) => {
       set((state) => {
         state.project.bpm = Math.max(20, Math.min(300, bpm));
@@ -832,6 +936,10 @@ export const useProjectStore = create<ProjectState>()(
     },
 
     loadProject: (project: Project) => {
+      // Migration: default rootScenes to [] if missing (schema v1 → v2)
+      if (!project.rootScenes) {
+        project.rootScenes = [];
+      }
       set((state) => {
         state.project = project;
       });

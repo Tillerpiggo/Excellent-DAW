@@ -1,0 +1,52 @@
+import { Instrument } from '../types';
+
+export const SlantedBarsMask: Instrument = {
+  id: 'slantedBarsMask',
+  name: 'Slanted Bars Mask',
+  description: 'Creates repeating diagonal bar patterns for venetian blind effects',
+  icon: '▦',
+  color: '#8b5cf6',
+  hasAudio: false,
+  hasVisual: false,
+  editorType: 'generic',
+  defaultSettings: {
+    count: 5,
+    angle: 45,
+    thickness: 0.5,
+    offset: 0,
+  },
+  settingsSchema: {
+    count: {
+      type: 'number',
+      label: 'Count',
+      min: 1,
+      max: 50,
+      step: 1,
+      default: 5,
+    },
+    angle: {
+      type: 'number',
+      label: 'Angle',
+      min: 0,
+      max: 360,
+      step: 1,
+      default: 45,
+    },
+    thickness: {
+      type: 'number',
+      label: 'Thickness',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0.5,
+    },
+    offset: {
+      type: 'number',
+      label: 'Offset',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0,
+    },
+  },
+};

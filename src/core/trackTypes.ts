@@ -499,6 +499,15 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
       };
     },
   },
+
+  // Scene - container for grouping visual tracks with masks
+  scene: {
+    id: 'scene',
+    name: 'Scene',
+    description: 'Groups visual tracks into a compositing layer with mask support',
+    category: 'source',
+    combine: (_parent, self) => self,
+  },
 };
 
 export function getTrackType(id: string): TrackTypeDefinition {

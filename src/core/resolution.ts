@@ -208,6 +208,17 @@ function buildTrackOutputs(
     });
   }
 
+  // Scene tracks need a resolved entry so blackout regions from mute children are tracked
+  if (results.length === 0 && track.typeId === 'scene' && blackoutRegions?.length) {
+    results.push({
+      trackId: track.id,
+      instrumentId: undefined,
+      instrumentSettings: undefined,
+      output: combinedOutput,
+      blackoutRegions,
+    });
+  }
+
   return results;
 }
 
@@ -386,6 +397,16 @@ export function resolveProject(project: Project): ResolvedTrack[] {
   for (const track of rootTracks) {
     if (isTrackSkipped(track, anyRootSoloed)) continue;
 
+    const resolved = resolveTrack(track, project, baseContext);
+    results.push(...resolved);
+  }
+
+  // Also resolve scene tracks (and their mask children)
+  const sceneTracks = (project.rootScenes ?? [])
+    .map(id => project.tracks[id])
+    .filter((t): t is Track => !!t);
+
+  for (const track of sceneTracks) {
     const resolved = resolveTrack(track, project, baseContext);
     results.push(...resolved);
   }

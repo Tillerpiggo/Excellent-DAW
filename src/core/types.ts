@@ -1,6 +1,6 @@
 // Core Types for Pattern Composer
 
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 export interface PreviewTrackData {
   color: string;
@@ -81,7 +81,8 @@ export type TrackTypeId =
   | 'harmonyMap'
   | 'rhythm'
   | 'rest'
-  | 'swing';
+  | 'swing'
+  | 'scene';
 
 // Legacy type for backwards compatibility during migration
 // New code should use string instrumentId directly
@@ -139,6 +140,8 @@ export interface Track {
   childIds: string[];
   parentId?: string;
   patternCategory?: PatternCategory;
+  sceneId?: string; // ID of the scene this track is assigned to
+  sceneOpaque?: boolean; // For scene tracks: opaque background behind scene content
 }
 
 export interface Project {
@@ -148,6 +151,7 @@ export interface Project {
   totalBars: number;
   beatsPerBar: number;
   rootTracks: string[]; // IDs of top-level tracks
+  rootScenes: string[]; // IDs of top-level scene tracks
   tracks: Record<string, Track>;
 }
 

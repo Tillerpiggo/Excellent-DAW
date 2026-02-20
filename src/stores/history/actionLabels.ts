@@ -78,6 +78,20 @@ const labelRules: LabelRule[] = [
     getLabel: (patch) => patch.value ? 'Enable loop' : 'Disable loop',
   },
 
+  // Scene operations
+  {
+    pathPattern: /^project\.rootScenes$/,
+    getLabel: (patch) => {
+      if (patch.op === 'add') return 'Add scene';
+      if (patch.op === 'remove') return 'Remove scene';
+      return 'Reorder scenes';
+    },
+  },
+  {
+    pathPattern: /^project\.tracks\.([^.]+)\.sceneId$/,
+    getLabel: () => 'Assign track to scene',
+  },
+
   // Project settings
   {
     pathPattern: /^project\.bpm$/,

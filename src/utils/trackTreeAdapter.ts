@@ -10,12 +10,12 @@ export type TrackTreeItem = TreeItem<Track>;
  * Convert flat track dictionary to react-complex-tree's format.
  * RCT expects a Record<string, TreeItem> where each item has a `children` array of IDs.
  */
-export function tracksToTreeItems(project: Project): Record<string, TrackTreeItem> {
+export function tracksToTreeItems(project: Project, rootIds?: string[]): Record<string, TrackTreeItem> {
   const items: Record<string, TrackTreeItem> = {
     root: {
       index: 'root',
       isFolder: true,
-      children: project.rootTracks,
+      children: rootIds ?? project.rootTracks,
       data: null as unknown as Track,
       canMove: false,
       canRename: false,

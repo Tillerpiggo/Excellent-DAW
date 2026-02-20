@@ -24,6 +24,7 @@ interface TimelineCanvasProps {
   viewportWidth: number;
   viewportHeight: number;
   scrollContainerRef: RefObject<HTMLDivElement | null>;
+  compact?: boolean; // If true, no minimum height — fits exactly to track count
 }
 
 // Helper to find track ID for a given block ID
@@ -402,6 +403,7 @@ export function TimelineCanvas({
   viewportWidth,
   viewportHeight,
   scrollContainerRef,
+  compact,
 }: TimelineCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
@@ -441,7 +443,9 @@ export function TimelineCanvas({
   const trackHeight = Math.round(64 * trackHeightScale);
   const barWidth = beatsPerBar * pixelsPerBeat;
   const timelineWidth = totalBars * barWidth;
-  const contentHeight = Math.max(flatTracks.length * trackHeight, 400);
+  const contentHeight = compact
+    ? flatTracks.length * trackHeight
+    : Math.max(flatTracks.length * trackHeight, 400);
   const totalHeight = RULER_HEIGHT + contentHeight;
 
   // Scrubbing state
@@ -1107,7 +1111,7 @@ export function TimelineCanvas({
     <div
       ref={containerRef}
       className="timeline-content relative"
-      style={{ width: timelineWidth, minHeight: '100%', height: totalHeight }}
+      style={{ width: timelineWidth, minHeight: compact ? undefined : '100%', height: totalHeight }}
       onDragEnter={handleFileDragEnter}
       onDragLeave={handleFileDragLeave}
       onDragOver={handleFileDragOver}

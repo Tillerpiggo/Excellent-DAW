@@ -63,6 +63,9 @@ interface UIState {
   chordPickerOpen: boolean;
   chordPickerTargetIndex: number | null;
 
+  // Scenes
+  scenesCollapsed: boolean;
+
   // Visual fullscreen
   visualFullscreen: boolean;
 
@@ -115,6 +118,9 @@ interface UIState {
   toggleLibrary: () => void;
   openChordPicker: (index: number) => void;
   closeChordPicker: () => void;
+
+  // Scenes
+  toggleScenesCollapsed: () => void;
 
   // Visual fullscreen
   setVisualFullscreen: (v: boolean) => void;
@@ -173,6 +179,9 @@ export const useUIStore = create<UIState>((set) => ({
   // Chord picker state
   chordPickerOpen: false,
   chordPickerTargetIndex: null,
+
+  // Scenes
+  scenesCollapsed: true,
 
   // Visual fullscreen
   visualFullscreen: false,
@@ -405,6 +414,10 @@ export const useUIStore = create<UIState>((set) => ({
 
   closeChordPicker: () => {
     set({ chordPickerOpen: false, chordPickerTargetIndex: null });
+  },
+
+  toggleScenesCollapsed: () => {
+    set((state) => ({ scenesCollapsed: !state.scenesCollapsed }));
   },
 
   setVisualFullscreen: (v) => {

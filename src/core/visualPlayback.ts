@@ -6,7 +6,7 @@ import { Project } from './types';
 import { Event } from './types';
 import { VisualInstrumentState } from './visualTypes';
 import { resolveProject, ResolvedTrack, BlackoutRegion, AutomationLane } from './resolution';
-import { getInstrument } from '@/instruments';
+import { getInstrument, isMaskInstrument } from '@/instruments';
 import {
   ColorPaletteDef,
   DEFAULT_PALETTES,
@@ -59,6 +59,10 @@ export class VisualPlaybackEngine {
   private lastLoPerTrack: Map<string, number> = new Map();
   // Palette child map: parentTrackId → paletteChildTrackId
   private paletteChildMap: Map<string, string> = new Map();
+  // Mask child map: sceneTrackId → maskChildTrackIds
+  private maskChildMap: Map<string, string[]> = new Map();
+  // Scene router child map: parentTrackId → sceneRouterChildTrackId
+  private sceneRouterMap: Map<string, string> = new Map();
   // Crossfade state per parent track
   private palettePrevPitch: Map<string, number> = new Map();
   private palettePrevDef: Map<string, ColorPaletteDef> = new Map();
@@ -71,11 +75,21 @@ export class VisualPlaybackEngine {
     const resolvedTracks = resolveProject(project);
     this.perTrackEvents = [];
 
-    // Build palette child map by scanning project tracks
+    // Build palette child map and mask child map by scanning project tracks
     this.paletteChildMap.clear();
+    this.maskChildMap.clear();
+    this.sceneRouterMap.clear();
     for (const track of Object.values(project.tracks)) {
       if (track.instrumentId === 'colorPalette' && track.parentId) {
         this.paletteChildMap.set(track.parentId, track.id);
+      }
+      if (isMaskInstrument(track.instrumentId) && track.parentId) {
+        const existing = this.maskChildMap.get(track.parentId) ?? [];
+        existing.push(track.id);
+        this.maskChildMap.set(track.parentId, existing);
+      }
+      if (track.instrumentId === 'sceneRouter' && track.parentId) {
+        this.sceneRouterMap.set(track.parentId, track.id);
       }
     }
 
@@ -86,8 +100,11 @@ export class VisualPlaybackEngine {
       const instrument = resolved.instrumentId ? getInstrument(resolved.instrumentId) : undefined;
       const hasVisual = instrument?.hasVisual;
       const isColorPalette = resolved.instrumentId === 'colorPalette';
-      const hasAutomationOnly = !hasVisual && !isColorPalette && resolved.automationLanes && resolved.automationLanes.length > 0;
-      if (!hasVisual && !isColorPalette && !hasAutomationOnly) continue;
+      const isMask = isMaskInstrument(resolved.instrumentId);
+      const isSceneRouter = resolved.instrumentId === 'sceneRouter';
+      const hasAutomationOnly = !hasVisual && !isColorPalette && !isMask && !isSceneRouter && resolved.automationLanes && resolved.automationLanes.length > 0;
+      const hasBlackoutRegions = (resolved.blackoutRegions?.length ?? 0) > 0;
+      if (!hasVisual && !isColorPalette && !isMask && !isSceneRouter && !hasAutomationOnly && !hasBlackoutRegions) continue;
 
       const state = createVisualInstrumentState(resolved.instrumentId ?? '', resolved.instrumentSettings);
       newStates.set(resolved.trackId, state);
@@ -376,6 +393,61 @@ export class VisualPlaybackEngine {
         }
       }
     }
+  }
+
+  /**
+   * Returns mask instrument states for a given scene track.
+   * Each entry has the instrumentId and current params (with automation applied).
+   */
+  getMaskStatesForScene(sceneTrackId: string): { instrumentId: string; params: Record<string, unknown>; activeNotes: Map<number, Event> }[] {
+    const maskIds = this.maskChildMap.get(sceneTrackId);
+    if (!maskIds) return [];
+
+    return maskIds.map(maskTrackId => {
+      const state = this.trackStates.get(maskTrackId);
+      const trackEvents = this.perTrackEvents.find(e => e.trackId === maskTrackId);
+      return {
+        instrumentId: trackEvents?.instrumentId ?? '',
+        params: state?.params ?? {},
+        activeNotes: state?.activeNotes ?? new Map(),
+      };
+    }).filter(m => m.instrumentId);
+  }
+
+  /**
+   * Returns whether a scene track is currently blacked out (muted by a mute child).
+   */
+  isSceneBlackedOut(sceneTrackId: string): boolean {
+    const state = this.trackStates.get(sceneTrackId);
+    return state?.blackedOut ?? false;
+  }
+
+  /**
+   * Returns dynamic scene index for a track based on its SceneRouter child.
+   * Uses the most recent note-on (latch behavior) — the scene stays until a new note triggers.
+   * Returns undefined if no SceneRouter or no notes have triggered yet (use static sceneId).
+   * Pitch 0 = Main (unassigned), 1+ = scene index in rootScenes.
+   */
+  getDynamicSceneIndex(trackId: string): number | undefined {
+    const routerTrackId = this.sceneRouterMap.get(trackId);
+    if (!routerTrackId) return undefined;
+
+    const trackEvents = this.perTrackEvents.find(e => e.trackId === routerTrackId);
+    if (!trackEvents || trackEvents.events.length === 0) return undefined;
+
+    const beat = this.lastComputedBeat;
+    const events = trackEvents.events;
+
+    // Binary search: find last event with startTimeInBeats <= beat
+    let lo = 0, hi = events.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (events[mid].startTimeInBeats <= beat) lo = mid + 1;
+      else hi = mid;
+    }
+
+    if (lo === 0) return undefined; // no note has triggered yet
+    return events[lo - 1].pitch;
   }
 
   /**

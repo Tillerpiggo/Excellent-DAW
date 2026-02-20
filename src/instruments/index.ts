@@ -32,6 +32,15 @@ import { ParticleBurst } from './visual/ParticleBurst';
 import { CameraControl } from './visual/CameraControl';
 import { ColorPaletteInstrument } from './visual/ColorPalette';
 
+// Mask instruments
+import { SplitMask } from './masks/SplitMask';
+import { SlantedBarsMask } from './masks/SlantedBarsMask';
+import { CircleWipeMask } from './masks/CircleWipeMask';
+import { RadialMask } from './masks/RadialMask';
+import { GradientMask } from './masks/GradientMask';
+import { StripMask } from './masks/StripMask';
+import { SceneRouter } from './utility/SceneRouter';
+
 // Flat registry for quick lookup by ID
 export const INSTRUMENTS: Record<string, Instrument> = {
   // Audio
@@ -62,6 +71,14 @@ export const INSTRUMENTS: Record<string, Instrument> = {
   particleBurst: ParticleBurst,
   cameraControl: CameraControl,
   colorPalette: ColorPaletteInstrument,
+  // Masks
+  splitMask: SplitMask,
+  slantedBarsMask: SlantedBarsMask,
+  circleWipeMask: CircleWipeMask,
+  radialMask: RadialMask,
+  gradientMask: GradientMask,
+  stripMask: StripMask,
+  sceneRouter: SceneRouter,
 };
 
 // Get instrument by ID
@@ -83,6 +100,19 @@ export function getAudioInstruments(): Instrument[] {
 // Get visual instruments only
 export function getVisualInstruments(): Instrument[] {
   return Object.values(INSTRUMENTS).filter(i => i.hasVisual);
+}
+
+// Mask instrument IDs
+const MASK_INSTRUMENT_IDS = new Set(['splitMask', 'slantedBarsMask', 'circleWipeMask', 'radialMask', 'gradientMask', 'stripMask']);
+
+// Check if an instrument ID is a mask
+export function isMaskInstrument(id: string | undefined): boolean {
+  return id ? MASK_INSTRUMENT_IDS.has(id) : false;
+}
+
+// Get all mask instruments
+export function getMaskInstruments(): Instrument[] {
+  return Array.from(MASK_INSTRUMENT_IDS).map(id => INSTRUMENTS[id]).filter(Boolean);
 }
 
 // Folder structure for Library UI (separate from instrument identity)
@@ -108,8 +138,12 @@ export function getInstrumentFolderTree(): InstrumentFolder {
         instruments: ['silkSymmetry', 'hexagonDots', 'fractalTunnel', 'circleGrid', 'neonPolar', 'hopfFibration', 'icosahedronBurst', 'metronomeBalls', 'dotField', 'stars', 'textDisplay', 'sun', 'imageDisplay', 'videoSampler', 'videoKaleidoscope', 'shapeFlight', 'cylinderFlight', 'particleBurst', 'cameraControl'],
       },
       {
+        name: 'Masks',
+        instruments: ['splitMask', 'slantedBarsMask', 'circleWipeMask', 'radialMask', 'gradientMask', 'stripMask'],
+      },
+      {
         name: 'Utility',
-        instruments: ['colorPalette'],
+        instruments: ['colorPalette', 'sceneRouter'],
       },
     ],
   };

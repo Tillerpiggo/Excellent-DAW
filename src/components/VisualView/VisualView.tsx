@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import { VisualScene } from './VisualScene';
+import { SceneCompositor } from './SceneCompositor';
 import { ExportController } from '../ExportController';
 import { getInstrument } from '@/instruments';
 
@@ -12,17 +13,21 @@ export interface VisualTrackInfo {
   instrumentId: string;
   isGroup?: boolean;
   childIds?: string[];
+  sceneId?: string;
 }
 
 interface VisualViewProps {
   tracks: VisualTrackInfo[];
+  rootScenes?: string[];
 }
 
-export function VisualView({ tracks }: VisualViewProps) {
+export function VisualView({ tracks, rootScenes = [] }: VisualViewProps) {
   const shouldDisableBloom = useMemo(
     () => tracks.some((t) => getInstrument(t.instrumentId)?.disableBloom),
     [tracks],
   );
+
+  const hasScenes = rootScenes.length > 0;
 
   return (
     <div className="w-full h-full bg-black/90">
@@ -34,7 +39,13 @@ export function VisualView({ tracks }: VisualViewProps) {
         <color attach="background" args={['#0a0a0f']} />
         <fog attach="fog" args={['#0a0a0f', 10, 30]} />
         <ExportController />
-        <VisualScene tracks={tracks} />
+
+        {hasScenes ? (
+          <SceneCompositor allTracks={tracks} rootScenes={rootScenes} />
+        ) : (
+          <VisualScene tracks={tracks} />
+        )}
+
         {!shouldDisableBloom && (
           <EffectComposer multisampling={0}>
             <Bloom

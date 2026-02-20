@@ -10,6 +10,7 @@ import { Track } from '@/core/types';
 export function VisualViewPanel() {
   const tracks = useProjectStore((s) => s.project.tracks);
   const rootTracks = useProjectStore((s) => s.project.rootTracks);
+  const rootScenes = useProjectStore((s) => s.project.rootScenes);
 
   // Sync visual engine with project changes
   useVisualSync();
@@ -57,6 +58,7 @@ export function VisualViewPanel() {
             instrumentId: track.instrumentId || '__group__',
             isGroup: true,
             childIds: track.childIds,
+            sceneId: track.sceneId,
           });
           // Mark all descendants as processed (they'll be rendered by the group)
           const markProcessed = (ids: string[]) => {
@@ -74,6 +76,7 @@ export function VisualViewPanel() {
           result.push({
             id: trackId,
             instrumentId: track.instrumentId!,
+            sceneId: track.sceneId,
           });
           // Also process children (e.g. nested visual instruments under a visual track with modifiers)
           if (isGroup) {
@@ -91,6 +94,11 @@ export function VisualViewPanel() {
     return result;
   }, [tracks, rootTracks]);
 
+  // Collect scene track IDs for passing to VisualView
+  const sceneTrackIds = useMemo(() => {
+    return rootScenes.filter(id => tracks[id]);
+  }, [rootScenes, tracks]);
+
   if (visualTracks.length === 0) {
     return (
       <div className="h-full flex items-center justify-center text-muted">
@@ -101,7 +109,7 @@ export function VisualViewPanel() {
 
   return (
     <div className="h-full flex flex-col">
-      <VisualView tracks={visualTracks} />
+      <VisualView tracks={visualTracks} rootScenes={sceneTrackIds} />
     </div>
   );
 }
