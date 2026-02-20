@@ -181,18 +181,18 @@ export function MidiEditor({
     const sizes: string[] = [];
 
     // Bar lines (strongest)
-    images.push(`repeating-linear-gradient(to right, rgba(255,255,255,0.15) 0px 1px, transparent 1px ${barWidthPx}px)`);
+    images.push(`repeating-linear-gradient(to right, rgba(255,255,255,0.12) 0px 1px, transparent 1px ${barWidthPx}px)`);
     sizes.push(`${barWidthPx}px 100%`);
 
     // Beat lines (medium) - only if different from bar lines
     if (beatWidthPx !== barWidthPx) {
-      images.push(`repeating-linear-gradient(to right, rgba(255,255,255,0.08) 0px 1px, transparent 1px ${beatWidthPx}px)`);
+      images.push(`repeating-linear-gradient(to right, rgba(255,255,255,0.06) 0px 1px, transparent 1px ${beatWidthPx}px)`);
       sizes.push(`${beatWidthPx}px 100%`);
     }
 
     // Subdivision lines (faint) - only if different from beat lines
     if (subdivWidthPx !== beatWidthPx) {
-      images.push(`repeating-linear-gradient(to right, rgba(255,255,255,0.03) 0px 1px, transparent 1px ${subdivWidthPx}px)`);
+      images.push(`repeating-linear-gradient(to right, rgba(255,255,255,0.025) 0px 1px, transparent 1px ${subdivWidthPx}px)`);
       sizes.push(`${subdivWidthPx}px 100%`);
     }
 
@@ -680,12 +680,12 @@ export function MidiEditor({
           display: 'flex',
           width: canvasWidth,
           height: rulerHeight,
-          backgroundColor: '#1e1e1e',
-          borderBottom: '1px solid rgba(255,255,255,0.1)',
+          backgroundColor: '#111111',
+          borderBottom: '1px solid rgba(255,255,255,0.08)',
         }}
       >
         {/* Ruler label spacer */}
-        <div style={{ width: labelWidth, flexShrink: 0, backgroundColor: '#242424' }} />
+        <div style={{ width: labelWidth, flexShrink: 0, backgroundColor: '#141414' }} />
         {/* Ruler track */}
         <div
           style={{
@@ -710,7 +710,7 @@ export function MidiEditor({
                 alignItems: 'center',
                 paddingLeft: 4,
                 fontSize: 10,
-                color: '#666',
+                color: '#555555',
                 fontFamily: 'monospace',
               }}
             >
@@ -760,7 +760,7 @@ export function MidiEditor({
             width: labelWidth,
             height: canvasHeight,
             flexShrink: 0,
-            backgroundColor: '#242424',
+            backgroundColor: '#141414',
             position: 'relative',
             zIndex: 2,
             cursor: 'default',
@@ -779,7 +779,7 @@ export function MidiEditor({
                 justifyContent: 'flex-end',
                 paddingRight: 8,
                 fontSize: 11,
-                color: '#888',
+                color: '#666666',
                 whiteSpace: 'nowrap',
                 borderBottom: '1px solid rgba(255,255,255,0.05)',
               }}
@@ -827,7 +827,7 @@ export function MidiEditor({
             flex: 1,
             height: canvasHeight,
             position: 'relative',
-            backgroundColor: '#1a1a1a',
+            backgroundColor: '#0e0e0e',
             ...gridBackground,
           }}
           onPointerDown={handleBackgroundPointerDown}

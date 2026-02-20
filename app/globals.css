@@ -1,33 +1,38 @@
 @import "tailwindcss";
 
 :root {
-  /* DAW Color Palette */
-  --background: #1a1a2e;
-  --foreground: #e2e8f0;
-  --surface: #25253a;
-  --muted: #374151;
-  --muted-foreground: #9ca3af;
-  --border: #3f3f5a;
-  --accent: #818cf8;
-  --accent-from: #60a5fa;
-  --accent-to: #fb7185;
+  /* DAW Color Palette - Dark Neutral + Vivid Color Bleed */
+  --background: #0e0e0e;
+  --foreground: #e8e8e8;
+  --surface: #161616;
+  --surface-elevated: #1c1c1c;
+  --muted: #2a2a2a;
+  --muted-foreground: #777777;
+  --border: rgba(255,255,255,0.08);
+  --border-strong: rgba(255,255,255,0.14);
+  --accent: #5b9fff;
+  --accent-from: #5b9fff;
+  --accent-to: #b07cff;
   --accent-gradient: linear-gradient(to right, var(--accent-from), var(--accent-to));
+  --glow-accent: rgba(91, 159, 255, 0.3);
 
-  /* Category colors */
-  --drums: #AA96DA;
-  --chords: #FF6B6B;
+  /* Category colors (brightened for neutral bg) */
+  --drums: #C4A8FF;
+  --chords: #FF7B7B;
   --bass: #FFE66D;
-  --arp: #4ECDC4;
-  --modifier: #95E1D3;
+  --arp: #5EDDD4;
+  --modifier: #A5F1E3;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-accent: var(--accent);
   --color-accent-from: var(--accent-from);
   --color-accent-to: var(--accent-to);
@@ -62,12 +67,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: rgba(255,255,255,0.1);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--muted);
+  background: rgba(255,255,255,0.18);
 }
 
 /* Hide scrollbar utility */
@@ -101,7 +106,7 @@ input[type="range"] {
 }
 
 input[type="range"]::-webkit-slider-track {
-  background: var(--muted);
+  background: rgba(255, 255, 255, 0.12);
   height: 4px;
   border-radius: 2px;
 }
@@ -122,7 +127,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 input[type="range"]::-moz-range-track {
-  background: var(--muted);
+  background: rgba(255, 255, 255, 0.12);
   height: 4px;
   border-radius: 2px;
 }
@@ -147,6 +152,11 @@ button, input, select {
 
 [draggable="true"]:active {
   cursor: grabbing;
+}
+
+/* Accent glow */
+.glow-accent {
+  box-shadow: 0 0 20px var(--glow-accent), 0 0 40px rgba(77, 142, 255, 0.1);
 }
 
 /* react-complex-tree overrides for track tree alignment */

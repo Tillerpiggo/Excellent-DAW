@@ -61,8 +61,8 @@ export function DAWView() {
           </aside>
         </Panel>
 
-        <Separator className="w-1.5 bg-border hover:bg-accent-from/50 transition-colors cursor-col-resize flex flex-col items-center justify-center group">
-          <div className="h-12 w-1 rounded-full bg-muted group-hover:bg-accent-from/70 transition-colors" />
+        <Separator className="w-1.5 bg-white/[0.06] hover:bg-accent-from/50 transition-colors cursor-col-resize flex flex-col items-center justify-center group">
+          <div className="h-12 w-0.5 rounded-full bg-white/10 group-hover:bg-accent-from/70 transition-colors" />
         </Separator>
 
         {/* Main Content Area */}
@@ -75,8 +75,8 @@ export function DAWView() {
               </Panel>
 
               {/* Bottom Panel - Block Editor / Visual View */}
-              <Separator className="h-2 bg-border hover:bg-accent-from/50 transition-colors cursor-row-resize flex items-center justify-center group">
-                <div className="w-12 h-1 rounded-full bg-muted group-hover:bg-accent-from/70 transition-colors" />
+              <Separator className="h-1.5 bg-white/[0.06] hover:bg-accent-from/50 transition-colors cursor-row-resize flex items-center justify-center group">
+                <div className="w-12 h-0.5 rounded-full bg-white/10 group-hover:bg-accent-from/70 transition-colors" />
               </Separator>
               <Panel defaultSize={40} minSize={15} collapsible collapsedSize={0} id="editor-panel-v2">
                 <BlockEditor />
@@ -85,8 +85,8 @@ export function DAWView() {
           </main>
         </Panel>
 
-        <Separator className="w-1.5 bg-border hover:bg-accent-from/50 transition-colors cursor-col-resize flex flex-col items-center justify-center group">
-          <div className="h-12 w-1 rounded-full bg-muted group-hover:bg-accent-from/70 transition-colors" />
+        <Separator className="w-1.5 bg-white/[0.06] hover:bg-accent-from/50 transition-colors cursor-col-resize flex flex-col items-center justify-center group">
+          <div className="h-12 w-0.5 rounded-full bg-white/10 group-hover:bg-accent-from/70 transition-colors" />
         </Separator>
 
         {/* Inspector - Right Sidebar */}

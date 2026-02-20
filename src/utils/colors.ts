@@ -3,11 +3,11 @@ import { INSTRUMENTS, getInstrument } from '@/instruments';
 
 // Category colors (kid-friendly but not childish)
 export const CATEGORY_COLORS: Record<PatternCategory, string> = {
-  drums: '#AA96DA',    // Purple
-  chords: '#FF6B6B',   // Coral
+  drums: '#C4A8FF',    // Purple (brightened)
+  chords: '#FF7B7B',   // Coral (brightened)
   bass: '#FFE66D',     // Yellow
-  arp: '#4ECDC4',      // Teal
-  modifier: '#95E1D3', // Mint
+  arp: '#5EDDD4',      // Teal (brightened)
+  modifier: '#A5F1E3', // Mint (brightened)
   rhythm: '#F9A826',   // Orange
   suppress: '#64748b', // Slate
   mute: '#991b1b',     // Deep red (instrument blackout)
@@ -58,7 +58,16 @@ export function getTextColor(backgroundColor: string): string {
   const g = parseInt(hex.substr(2, 2), 16);
   const b = parseInt(hex.substr(4, 2), 16);
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.5 ? '#1a1a2e' : '#ffffff';
+  return luminance > 0.5 ? '#0e0e0e' : '#ffffff';
+}
+
+// Generate a glow box-shadow for a given color
+export function glowShadow(color: string, intensity: number = 0.3): string {
+  const hex = color.replace('#', '');
+  const r = parseInt(hex.substr(0, 2), 16);
+  const g = parseInt(hex.substr(2, 2), 16);
+  const b = parseInt(hex.substr(4, 2), 16);
+  return `0 0 ${Math.round(20 * intensity)}px rgba(${r}, ${g}, ${b}, ${intensity}), 0 0 ${Math.round(40 * intensity)}px rgba(${r}, ${g}, ${b}, ${intensity * 0.4})`;
 }
 
 // Get a semi-transparent version of a color

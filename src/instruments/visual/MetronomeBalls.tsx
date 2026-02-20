@@ -1330,7 +1330,7 @@ export const MetronomeBalls: Instrument = {
   name: 'Metronome Balls',
   description: 'Generative line-drawing patterns driven by drum MIDI input — three panels with a rotating background flower',
   icon: '◉',
-  color: '#1a2744',
+  color: '#4a6fa5',
   hasAudio: false,
   hasVisual: true,
   disableBloom: true,
