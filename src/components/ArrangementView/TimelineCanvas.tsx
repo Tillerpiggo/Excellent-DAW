@@ -1230,9 +1230,13 @@ export function TimelineCanvas({
         onPointerDown={handleBackgroundPointerDown}
       >
         {/* Blocks */}
-        {flatTracks.map((node, trackIndex) =>
-          node.track.blocks.map((block) => {
+        {(() => {
+          const anySolo = flatTracks.some((n) => n.track.solo);
+          return flatTracks.map((node, trackIndex) =>
+            node.track.blocks.map((block) => {
             const track = node.track;
+            const isSoloed = track.solo;
+            const isGrayedOut = anySolo && !isSoloed;
             const handleWidthPx = 12;
             const blockLeft = block.startBar * barWidth;
             const fullBlockWidth = block.durationBars * barWidth;
@@ -1244,7 +1248,8 @@ export function TimelineCanvas({
             const baseColor = (track.instrumentId
               ? INSTRUMENT_COLORS[track.instrumentId]
               : TRACK_TYPE_COLORS[track.typeId]) || '#64748b';
-            const handleColor = darken(baseColor, 40);
+            const blockBgColor = isGrayedOut ? '#2a2a2a' : baseColor;
+            const handleColor = isGrayedOut ? '#1e1e1e' : darken(baseColor, 40);
             const selectionColor = tintWhite(baseColor, 0.85);
             const selectedHandleColor = tintWhite(baseColor, 0.5);
             const isSelected = selectedBlockIds.has(block.id);
@@ -1286,7 +1291,7 @@ export function TimelineCanvas({
                     const isLast = i === loopCount - 1;
                     if (isLast) iterWidthPx = Math.min(iterWidthPx, contentAreaWidth - iterLeftPx);
                     if (iterWidthPx <= 4) iterWidthPx = 4;
-                    const iterColor = isFirst ? baseColor : darken(baseColor, 20);
+                    const iterColor = isGrayedOut ? (isFirst ? '#2a2a2a' : '#222222') : (isFirst ? baseColor : darken(baseColor, 20));
 
                     return (
                       <div
@@ -1311,7 +1316,7 @@ export function TimelineCanvas({
                       top: 0,
                       width: Math.max(4, contentAreaWidth),
                       height: blockHeight,
-                      backgroundColor: baseColor,
+                      backgroundColor: blockBgColor,
                       borderRadius: '6px 0 0 6px',
                     }}
                   />
@@ -1385,8 +1390,8 @@ export function TimelineCanvas({
                     top: 10,
                     transform: 'translateY(-50%)',
                     fontSize: 11,
-                    color: isSelected ? getSelectionTextColor(baseColor) : 'white',
-                    opacity: isSelected ? 1 : 0.9,
+                    color: isSelected ? getSelectionTextColor(baseColor) : isGrayedOut ? baseColor : 'white',
+                    opacity: isSelected ? 1 : isGrayedOut ? 0.85 : 0.9,
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
@@ -1407,7 +1412,7 @@ export function TimelineCanvas({
                       top: 10,
                       transform: 'translateY(-50%)',
                       fontSize: 10,
-                      color: isSelected ? getSelectionTextColor(baseColor) : 'white',
+                      color: isSelected ? getSelectionTextColor(baseColor) : isGrayedOut ? baseColor : 'white',
                       opacity: 0.7,
                       pointerEvents: 'none',
                       zIndex: 3,
@@ -1437,6 +1442,24 @@ export function TimelineCanvas({
                     selectionColor={selectionColor}
                     beatsPerBar={beatsPerBar}
                     pixelsPerBeat={pixelsPerBeat}
+                  />
+                )}
+
+                {/* Solo border */}
+                {isSoloed && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      top: 0,
+                      width: blockWidth,
+                      height: blockHeight,
+                      borderRadius: 6,
+                      border: '2px solid #facc15',
+                      boxShadow: '0 0 6px rgba(250, 204, 21, 0.5)',
+                      pointerEvents: 'none',
+                      zIndex: 5,
+                    }}
                   />
                 )}
 
@@ -1503,8 +1526,9 @@ export function TimelineCanvas({
                 />
               </div>
             );
-          })
-        )}
+            })
+          );
+        })()}
 
         {/* Playhead */}
         <div

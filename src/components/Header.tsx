@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { Download } from 'lucide-react';
 import { usePlayback } from '@/hooks/usePlayback';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -273,8 +274,9 @@ export function Header() {
       <div className="flex items-center gap-4">
         <button
           onClick={() => setShowExportModal(true)}
-          className="px-3 py-1.5 rounded-lg text-sm bg-muted hover:bg-muted/80 text-muted-foreground transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-blue-500 hover:bg-blue-400 text-white font-medium transition-all duration-200 hover:scale-105 hover:shadow-[0_0_12px_rgba(59,130,246,0.7)]"
         >
+          <Download size={14} strokeWidth={2.5} />
           Export
         </button>
         <button
