@@ -9,6 +9,7 @@ export const RadialSymmetryPlugin: VisualPlugin = {
 
   defaultSettings: {
     folds: 4,
+    radius: 0,
     rotation: 0,
     includeOriginal: true,
     spin: 0,
@@ -22,6 +23,14 @@ export const RadialSymmetryPlugin: VisualPlugin = {
       max: 16,
       step: 1,
       default: 4,
+    },
+    radius: {
+      type: 'number',
+      label: 'Radius',
+      min: 0,
+      max: 10,
+      step: 0.1,
+      default: 0,
     },
     rotation: {
       type: 'number',
@@ -60,21 +69,29 @@ export const RadialSymmetryPlugin: VisualPlugin = {
       ): THREE.Matrix4 => {
         const matrix = new THREE.Matrix4();
         const folds = (settings.folds as number) ?? 4;
+        const radius = (settings.radius as number) ?? 0;
         const rotation = (settings.rotation as number) ?? 0;
         const includeOriginal = (settings.includeOriginal as boolean) ?? true;
         const spin = (settings.spin as number) ?? 0;
 
-        // If including original, index 0 is identity
-        if (includeOriginal && index === 0) {
-          return matrix.identity();
-        }
-
+        // If including original, index 0 is identity (but still offset by radius)
         const effectiveIndex = includeOriginal ? index : index + 1;
         const angleStep = (Math.PI * 2) / folds;
         const angle = effectiveIndex * angleStep + rotation + time * spin * Math.PI * 2;
 
-        // Rotate around Z axis
+        if (includeOriginal && index === 0) {
+          if (radius === 0) return matrix.identity();
+          // Offset along the angle direction
+          matrix.makeTranslation(Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
+          return matrix;
+        }
+
+        // Rotate around Z axis, then offset outward by radius
         matrix.makeRotationZ(angle);
+        if (radius !== 0) {
+          const offset = new THREE.Matrix4().makeTranslation(Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
+          matrix.premultiply(offset);
+        }
 
         return matrix;
       },

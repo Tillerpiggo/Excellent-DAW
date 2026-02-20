@@ -17,6 +17,7 @@ export const TilePlugin: VisualPlugin = {
     centerGrid: true,
     rotateToCamera: false,
     staggerOffset: 0,
+    spacingMult: 1,
   },
 
   settingsSchema: {
@@ -83,6 +84,14 @@ export const TilePlugin: VisualPlugin = {
       step: 0.1,
       default: 0,
     },
+    spacingMult: {
+      type: 'number',
+      label: 'Spacing Multiplier',
+      min: 0.1,
+      max: 5,
+      step: 0.1,
+      default: 1,
+    },
   },
 
   getClones: (settings: Record<string, unknown>) => {
@@ -105,11 +114,12 @@ export const TilePlugin: VisualPlugin = {
         const scale = (settings.scale as number) ?? 0.5;
         const centerGrid = (settings.centerGrid as boolean) ?? true;
         const staggerOffset = (settings.staggerOffset as number) ?? 0;
+        const spacingMult = (settings.spacingMult as number) ?? 1;
 
         // Spacing is relative to tile size (scale)
         // A spacing of 1 means tiles are touching, 2 means one tile-width gap
-        const spacingX = scale * spacingMultX * 2; // *2 because scale is radius-like
-        const spacingY = scale * spacingMultY * 2;
+        const spacingX = scale * spacingMultX * spacingMult * 2; // *2 because scale is radius-like
+        const spacingY = scale * spacingMultY * spacingMult * 2;
 
         // Calculate grid position
         const col = index % tilesX;

@@ -409,5 +409,9 @@ export const SilkSymmetry: Instrument = {
     lissB: { type: 'number', label: 'Lissajous B', min: 1, max: 8, step: 0.5, default: 4 },
   },
 
+  colorRoleMapping: [
+    { role: 'primary', param: 'baseHue', type: 'hsl-hue' },
+  ],
+
   VisualComponent: SilkSymmetryVisual,
 };

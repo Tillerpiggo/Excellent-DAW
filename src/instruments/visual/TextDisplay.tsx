@@ -5,6 +5,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { getVisualPlaybackEngine } from '@/core/visualPlayback';
 import { Instrument } from '../types';
+import { loadFont, isFontReady } from '@/utils/fonts';
 
 const PITCH_NEXT_WORD = 48;
 const PITCH_HEIGHT_MIN = 60;  // C4
@@ -31,6 +32,7 @@ const DEFAULTS = {
   text: 'Hello World',
   fontSize: 1,
   fontFamily: 'Impact',
+  fontVariant: '900 normal',
   strokeWidth: 0.05,
   delayTaps: 3,
   delayTime: 0.3,
@@ -94,8 +96,12 @@ function createTextCanvas(
   strokeWidth: number,
   fontFamily: string = DEFAULTS.fontFamily,
   color: string = DEFAULTS.color,
+  fontVariant: string = DEFAULTS.fontVariant,
 ): HTMLCanvasElement {
-  const key = `${word}|${canvasSize}|${strokeWidth}|${fontFamily}|${color}`;
+  // Include font-ready status in cache key so fallback-rendered canvases
+  // get replaced once the real font finishes loading
+  const fontReady = isFontReady(fontFamily, fontVariant);
+  const key = `${word}|${canvasSize}|${strokeWidth}|${fontFamily}|${color}|${fontVariant}|${fontReady}`;
   const cached = canvasCache.get(key);
   if (cached) return cached;
 
@@ -108,8 +114,10 @@ function createTextCanvas(
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.scale(dpr, dpr);
 
+  // Parse variant string: "weight style" e.g. "900 normal", "700 italic"
+  const [weight, style] = fontVariant.split(' ');
   let fontSize = canvasSize * 0.35;
-  const fontStr = (size: number) => `900 ${size}px "${fontFamily}", "Arial Black", sans-serif`;
+  const fontStr = (size: number) => `${style === 'italic' ? 'italic ' : ''}${weight} ${size}px "${fontFamily}", "Arial Black", sans-serif`;
   ctx.font = fontStr(fontSize);
 
   // Shrink font if text is wider than canvas (with padding for stroke)
@@ -160,6 +168,8 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
   const lastStrokeRef = useRef(-1);
   const lastFontRef = useRef('');
   const lastColorRef = useRef('');
+  const lastVariantRef = useRef('');
+  const lastFontReadyRef = useRef(false);
   const noteOnTimeRef = useRef(-1); // clock time when current note started
   const currentYOffsetRef = useRef(0); // current height offset (-1 to 1)
   const targetYOffsetRef = useRef(0); // legato target
@@ -323,6 +333,8 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
     const text = (state.params.text as string) ?? DEFAULTS.text;
     const fontSize = (state.params.fontSize as number) ?? DEFAULTS.fontSize;
     const fontFamily = (state.params.fontFamily as string) ?? DEFAULTS.fontFamily;
+    const fontVariant = (state.params.fontVariant as string) ?? DEFAULTS.fontVariant;
+    loadFont(fontFamily);
     const strokeWidth = (state.params.strokeWidth as number) ?? DEFAULTS.strokeWidth;
     const delayTaps = (state.params.delayTaps as number) ?? DEFAULTS.delayTaps;
     const delayTime = (state.params.delayTime as number) ?? DEFAULTS.delayTime;
@@ -469,7 +481,7 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
         // Update texture if needed
         const wTex = wallTexturesRef.current[i];
         if (entry.word !== wallLastWordsRef.current[i]) {
-          const canvas = createTextCanvas(entry.word, 512, strokeWidth, fontFamily, color);
+          const canvas = createTextCanvas(entry.word, 512, strokeWidth, fontFamily, color, fontVariant);
           wTex.image = canvas;
           wTex.needsUpdate = true;
           wallLastWordsRef.current[i] = entry.word;
@@ -526,14 +538,25 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
       wallClearStartRef.current = -1;
 
       // Update main mesh texture
-      if (currentWord !== lastWordRef.current || strokeWidth !== lastStrokeRef.current || fontFamily !== lastFontRef.current || color !== lastColorRef.current) {
-        const canvas = createTextCanvas(currentWord, 512, strokeWidth, fontFamily, color);
+      const fontReady = isFontReady(fontFamily, fontVariant);
+      if (currentWord !== lastWordRef.current || strokeWidth !== lastStrokeRef.current || fontFamily !== lastFontRef.current || color !== lastColorRef.current || fontVariant !== lastVariantRef.current || fontReady !== lastFontReadyRef.current) {
+        const canvas = createTextCanvas(currentWord, 512, strokeWidth, fontFamily, color, fontVariant);
         textureRef.current.image = canvas;
         textureRef.current.needsUpdate = true;
         lastWordRef.current = currentWord;
         lastStrokeRef.current = strokeWidth;
         lastFontRef.current = fontFamily;
         lastColorRef.current = color;
+        lastVariantRef.current = fontVariant;
+        lastFontReadyRef.current = fontReady;
+
+        // When font just became ready, also invalidate echo/reverb/wall caches
+        // so they re-render with the correct font on next use
+        if (fontReady) {
+          echoLastWordsRef.current.fill('');
+          reverbLastWordsRef.current.fill('');
+          wallLastWordsRef.current.fill('');
+        }
       }
 
       // Main mesh visibility and opacity — only while note is held
@@ -585,7 +608,7 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
         // Update texture if word changed for this slot
         const tex = echoTexturesRef.current[tap];
         if (bestEntry.word !== echoLastWordsRef.current[tap]) {
-          const canvas = createTextCanvas(bestEntry.word, 512, strokeWidth, fontFamily, color);
+          const canvas = createTextCanvas(bestEntry.word, 512, strokeWidth, fontFamily, color, fontVariant);
           tex.image = canvas;
           tex.needsUpdate = true;
           echoLastWordsRef.current[tap] = bestEntry.word;
@@ -650,7 +673,7 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
         // Update texture if word changed
         const rTex = reverbTexturesRef.current[r];
         if (bestEntry.word !== reverbLastWordsRef.current[r]) {
-          const canvas = createTextCanvas(bestEntry.word, 512, strokeWidth, fontFamily, color);
+          const canvas = createTextCanvas(bestEntry.word, 512, strokeWidth, fontFamily, color, fontVariant);
           rTex.image = canvas;
           rTex.needsUpdate = true;
           reverbLastWordsRef.current[r] = bestEntry.word;
@@ -711,18 +734,12 @@ export const TextDisplay: Instrument = {
       default: DEFAULTS.fontSize,
     },
     fontFamily: {
-      type: 'select', label: 'Font Family',
+      type: 'font', label: 'Font Family',
       default: DEFAULTS.fontFamily,
-      options: [
-        { value: 'Impact', label: 'Impact' },
-        { value: 'Arial Black', label: 'Arial Black' },
-        { value: 'Georgia', label: 'Georgia' },
-        { value: 'Courier New', label: 'Courier New' },
-        { value: 'Times New Roman', label: 'Times New Roman' },
-        { value: 'Verdana', label: 'Verdana' },
-        { value: 'Comic Sans MS', label: 'Comic Sans MS' },
-        { value: 'Trebuchet MS', label: 'Trebuchet MS' },
-      ],
+    },
+    fontVariant: {
+      type: 'fontVariant', label: 'Font Style',
+      default: DEFAULTS.fontVariant,
     },
     strokeWidth: {
       type: 'number', label: 'Stroke Width', min: 0, max: 0.2, step: 0.01,

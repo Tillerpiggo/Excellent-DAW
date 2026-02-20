@@ -714,5 +714,11 @@ export const Stars: Instrument = {
     },
   },
 
+  colorRoleMapping: [
+    { role: 'background', param: 'bgColor',    type: 'hex' },
+    { role: 'primary',    param: 'tint',        type: 'hsl-hue-deg' },
+    { role: 'secondary',  param: 'groundColor', type: 'hex' },
+  ],
+
   VisualComponent: StarsVisual,
 };

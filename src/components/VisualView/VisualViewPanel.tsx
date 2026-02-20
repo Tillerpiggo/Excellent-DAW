@@ -40,7 +40,7 @@ export function VisualViewPanel() {
 
       for (const trackId of trackIds) {
         const track = tracks[trackId];
-        if (!track || track.muted || processedIds.has(trackId)) continue;
+        if (!track || processedIds.has(trackId)) continue;
         if (anySoloed && !track.solo) continue;
 
         const hasPlugins = (track.visualPlugins?.length ?? 0) > 0;

@@ -1,13 +1,15 @@
 'use client';
 
-import { useState, useCallback, DragEvent } from 'react';
+import { useState, useCallback, useMemo, DragEvent } from 'react';
 import { Track, TrackTypeId } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { TRACK_TYPES } from '@/core/trackTypes';
-import { INSTRUMENTS, getInstrument, getInstrumentOptions } from '@/instruments';
+import { INSTRUMENTS, getInstrument, getInstrumentOptions, getAllInstruments } from '@/instruments';
 import { PluginInspector } from './PluginInspector';
+import { FontPicker } from './FontPicker';
 import { SettingsSchema } from '@/instruments/types';
+import { getAvailableVariants } from '@/utils/fonts';
 import { getPlugin } from '@/plugins';
 import { storeVideoFile } from '@/services/videoStorage';
 import { generateId } from '@/utils/id';
@@ -31,8 +33,8 @@ const TRACK_TYPE_OPTIONS: { id: TrackTypeId; label: string; category: string }[]
   { id: 'harmonyMap', label: 'Harmony Map', category: 'Mapper' },
 ];
 
-// Get instrument options for dropdown
-const INSTRUMENT_OPTIONS = getInstrumentOptions();
+// Get instrument options for dropdown (static base list)
+const ALL_INSTRUMENT_OPTIONS = getInstrumentOptions();
 
 // Find inherited instrument (with visual capability) by walking up the parent chain
 function getInheritedInstrument(
@@ -61,6 +63,19 @@ export function TrackInspector({ track }: TrackInspectorProps) {
   const selectTrack = useUIStore((s) => s.selectTrack);
 
   const isVideoSampler = track.instrumentId === 'videoSampler';
+
+  // Filter singleton instruments already in use on other tracks
+  const instrumentOptions = useMemo(() => {
+    const singletonIds = new Set(
+      getAllInstruments().filter((i) => i.singleton).map((i) => i.id),
+    );
+    const usedSingletons = new Set(
+      Object.values(tracks)
+        .filter((t) => t.id !== track.id && t.instrumentId && singletonIds.has(t.instrumentId))
+        .map((t) => t.instrumentId!),
+    );
+    return ALL_INSTRUMENT_OPTIONS.filter((opt) => !usedSingletons.has(opt.id));
+  }, [tracks, track.id]);
 
   const handleVideoDrop = useCallback(
     async (e: DragEvent) => {
@@ -264,7 +279,7 @@ export function TrackInspector({ track }: TrackInspectorProps) {
                 className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
               >
                 <option value="">None (modifier only)</option>
-                {INSTRUMENT_OPTIONS.map((opt) => (
+                {instrumentOptions.map((opt) => (
                   <option key={opt.id} value={opt.id}>
                     {opt.label}
                   </option>
@@ -350,6 +365,44 @@ export function TrackInspector({ track }: TrackInspectorProps) {
                       </select>
                     </>
                   )}
+
+                  {field.type === 'font' && (
+                    <>
+                      <label className="block text-xs text-muted-foreground mb-1">
+                        {field.label}
+                      </label>
+                      <FontPicker
+                        value={(track.instrumentSettings?.[key] as string) ?? (field.default as string)}
+                        onChange={(v) => handleSettingChange(key, v)}
+                      />
+                    </>
+                  )}
+
+                  {field.type === 'fontVariant' && (() => {
+                    const currentFont = (track.instrumentSettings?.fontFamily as string) ?? 'Impact';
+                    const variants = getAvailableVariants(currentFont);
+                    const currentValue = (track.instrumentSettings?.[key] as string) ?? (field.default as string);
+                    const isValid = variants.some((v) => v.value === currentValue);
+                    // Show the closest valid value in the dropdown; the runtime
+                    // in TextDisplay already falls back via ?? on the default
+                    const effectiveValue = isValid ? currentValue : variants[0]?.value ?? currentValue;
+                    return variants.length > 1 ? (
+                      <>
+                        <label className="block text-xs text-muted-foreground mb-1">
+                          {field.label}
+                        </label>
+                        <select
+                          value={effectiveValue}
+                          onChange={(e) => handleSettingChange(key, e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
+                        >
+                          {variants.map((v) => (
+                            <option key={v.value} value={v.value}>{v.label}</option>
+                          ))}
+                        </select>
+                      </>
+                    ) : null;
+                  })()}
 
                   {field.type === 'color' && (
                     <>

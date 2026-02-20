@@ -4,11 +4,13 @@ import React, { useRef, useMemo, useEffect, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { getVisualPlaybackEngine } from '@/core/visualPlayback';
+import { hexToHsl } from '@/core/colorPalette';
 import { Instrument } from '../types';
 
 // ── Easing (from KickScene9) ────────────────────────────────────────────────
 
 type EaseCurve = 'log' | 'expo' | 'power' | 'circ' | 'sine';
+type BurstType = 'sphere' | 'cone' | 'jet' | 'spiralOut' | 'polarRose' | 'ring' | 'doubleHelix';
 
 function applyEase(curve: EaseCurve, t: number, power: number): number {
   switch (curve) {
@@ -186,6 +188,10 @@ interface Particle {
   r: number;
   jx: number; jy: number; jz: number;
   dissolveMul: number;
+  // Pre-computed per-particle values for burst modes
+  theta: number;  // azimuthal angle on sphere
+  phi: number;    // polar angle (0=top, PI=bottom)
+  iNorm: number;  // normalized index [0,1]
 }
 
 function buildParticles(count: number): Particle[] {
@@ -208,6 +214,9 @@ function buildParticles(count: number): Particle[] {
       jy: Math.sin(jPhi) * Math.sin(jTheta) * jStr,
       jz: Math.cos(jPhi) * jStr,
       dissolveMul: 0.6 + Math.random() * 0.8,
+      theta: theta % (Math.PI * 2),
+      phi: Math.acos(y),
+      iNorm: i / (count - 1),
     });
   }
   return out;
@@ -227,9 +236,13 @@ interface BurstInstanceProps {
   burstCurve: EaseCurve;
   burstLifetime: number;
   cylinderRadius: number; // 0 = disabled
+  burstType: BurstType;
+  coneAngle: number;      // half-angle in radians for cone/jet
+  spiralTwists: number;   // number of spiral rotations
+  polarPetals: number;    // petal count for polar rose
 }
 
-function BurstInstance({ age, preset, count, pointSize, burstRadius, dissolveSpread, fadePower, burstPower, burstCurve, burstLifetime, cylinderRadius }: BurstInstanceProps) {
+function BurstInstance({ age, preset, count, pointSize, burstRadius, dissolveSpread, fadePower, burstPower, burstCurve, burstLifetime, cylinderRadius, burstType, coneAngle, spiralTwists, polarPetals }: BurstInstanceProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const colorArr = useMemo(() => new Float32Array(count * 3), [count]);
@@ -243,23 +256,128 @@ function BurstInstance({ age, preset, count, pointSize, burstRadius, dissolveSpr
 
   if (alpha < 0.005) return null;
 
-  // Compute camera forward direction for cylinder clipping.
-  // The cylinder axis goes through the burst origin along the camera's view direction.
-  // We compute it once per frame, not per particle.
+  // Compute camera forward direction for cone/jet modes and cylinder clipping.
   const camDir = _tmpVec3A;
   const particlePos = _tmpVec3B;
   camera.getWorldDirection(camDir); // normalized forward vector
+
+  // Build a local frame aligned to camera direction for directed bursts.
+  // camDir points INTO the screen, so particles going toward camera use -camDir.
+  const toCamera = _tmpVec3C.copy(camDir).negate(); // toward camera
+  // Pick an arbitrary up that isn't parallel to toCamera
+  const arbUp = Math.abs(toCamera.y) < 0.99 ? _tmpVec3D.set(0, 1, 0) : _tmpVec3D.set(1, 0, 0);
+  const right = _tmpVec3E.crossVectors(toCamera, arbUp).normalize();
+  const up = _tmpVec3F.crossVectors(right, toCamera).normalize();
 
   const mesh = meshRef.current;
   if (mesh) {
     for (let i = 0; i < count; i++) {
       const pt = particles[i];
-      const totalRadius = burstRadius * pt.r + expand * dissolveSpread * pt.dissolveMul;
-      const rad = totalRadius * expand;
-      const jAmt = expand * dissolveSpread * 0.3 * pt.dissolveMul;
-      const x = (pt.nx + pt.jx * jAmt) * rad;
-      const y = (pt.ny + pt.jy * jAmt) * rad;
-      const z = (pt.nz + pt.jz * jAmt) * rad;
+
+      let x: number, y: number, z: number;
+
+      if (burstType === 'sphere') {
+        // Default: uniform sphere expansion
+        const totalRadius = burstRadius * pt.r + expand * dissolveSpread * pt.dissolveMul;
+        const rad = totalRadius * expand;
+        const jAmt = expand * dissolveSpread * 0.3 * pt.dissolveMul;
+        x = (pt.nx + pt.jx * jAmt) * rad;
+        y = (pt.ny + pt.jy * jAmt) * rad;
+        z = (pt.nz + pt.jz * jAmt) * rad;
+
+      } else if (burstType === 'cone') {
+        // Cone toward camera: particles distributed within a cone
+        // phi limited to coneAngle, biased toward edges for a hollow-cone look
+        const conePhi = Math.pow(pt.iNorm, 0.6) * coneAngle;
+        const coneTheta = pt.theta;
+        const rad = (burstRadius * pt.r + expand * dissolveSpread * pt.dissolveMul) * expand;
+        // Local cone coordinates: forward axis = toCamera
+        const sinP = Math.sin(conePhi);
+        const cosP = Math.cos(conePhi);
+        const lx = sinP * Math.cos(coneTheta) * rad;
+        const ly = sinP * Math.sin(coneTheta) * rad;
+        const lz = cosP * rad;
+        // Transform to world via camera frame
+        x = right.x * lx + up.x * ly + toCamera.x * lz;
+        y = right.y * lx + up.y * ly + toCamera.y * lz;
+        z = right.z * lx + up.z * ly + toCamera.z * lz;
+
+      } else if (burstType === 'jet') {
+        // Tight directional jet: very narrow cone with speed variation
+        const jetAngle = coneAngle * 0.3; // much tighter than cone
+        const jetPhi = Math.sqrt(pt.iNorm) * jetAngle;
+        const jetTheta = pt.theta;
+        // Particles stretch along the jet axis with random depth
+        const depthVariation = 0.5 + pt.r * 1.5;
+        const rad = (burstRadius + expand * dissolveSpread * pt.dissolveMul) * expand * depthVariation;
+        const sinP = Math.sin(jetPhi);
+        const cosP = Math.cos(jetPhi);
+        const lx = sinP * Math.cos(jetTheta) * rad;
+        const ly = sinP * Math.sin(jetTheta) * rad;
+        const lz = cosP * rad;
+        x = right.x * lx + up.x * ly + toCamera.x * lz;
+        y = right.y * lx + up.y * ly + toCamera.y * lz;
+        z = right.z * lx + up.z * ly + toCamera.z * lz;
+
+      } else if (burstType === 'spiralOut') {
+        // Spiral outward: particles trace expanding helical arms toward camera
+        const armAngle = pt.theta + expand * spiralTwists * Math.PI * 2;
+        const radialDist = pt.iNorm * burstRadius * expand;
+        // Forward progress proportional to radial distance
+        const forwardDist = (burstRadius * pt.r + expand * dissolveSpread * pt.dissolveMul) * expand;
+        const lx = Math.cos(armAngle) * radialDist;
+        const ly = Math.sin(armAngle) * radialDist;
+        const lz = forwardDist * (0.3 + pt.iNorm * 0.7);
+        x = right.x * lx + up.x * ly + toCamera.x * lz;
+        y = right.y * lx + up.y * ly + toCamera.y * lz;
+        z = right.z * lx + up.z * ly + toCamera.z * lz;
+
+      } else if (burstType === 'polarRose') {
+        // Polar rose: r = cos(k*theta) creates petal-shaped burst pattern toward camera
+        const roseTheta = pt.theta;
+        const roseR = Math.abs(Math.cos(polarPetals * roseTheta));
+        // Modulate with expansion and particle depth
+        const rad = roseR * burstRadius * expand * (0.4 + pt.r * 0.6);
+        const forwardDist = (burstRadius * 0.5 + expand * dissolveSpread * pt.dissolveMul * 0.5) * expand;
+        // Add some spread in the phi direction for 3D volume
+        const phiSpread = (pt.phi - Math.PI * 0.5) * 0.4;
+        const lx = Math.cos(roseTheta) * rad * Math.cos(phiSpread);
+        const ly = Math.sin(roseTheta) * rad * Math.cos(phiSpread);
+        const lz = forwardDist + Math.sin(phiSpread) * rad * 0.3;
+        x = right.x * lx + up.x * ly + toCamera.x * lz;
+        y = right.y * lx + up.y * ly + toCamera.y * lz;
+        z = right.z * lx + up.z * ly + toCamera.z * lz;
+
+      } else if (burstType === 'ring') {
+        // Expanding ring toward camera: particles form a torus cross-section
+        const ringTheta = pt.theta;
+        const majorR = burstRadius * expand;
+        // Minor radius gives the ring thickness
+        const minorR = burstRadius * 0.25 * expand * pt.r;
+        const minorAngle = pt.phi;
+        const ringX = (majorR + minorR * Math.cos(minorAngle)) * Math.cos(ringTheta);
+        const ringY = (majorR + minorR * Math.cos(minorAngle)) * Math.sin(ringTheta);
+        const ringZ = minorR * Math.sin(minorAngle) + expand * dissolveSpread * pt.dissolveMul * 0.3;
+        x = right.x * ringX + up.x * ringY + toCamera.x * ringZ;
+        y = right.y * ringX + up.y * ringY + toCamera.y * ringZ;
+        z = right.z * ringX + up.z * ringY + toCamera.z * ringZ;
+
+      } else {
+        // doubleHelix: two intertwined spirals projecting toward camera
+        const helixArm = i % 2 === 0 ? 0 : Math.PI; // two arms offset by 180°
+        const helixT = pt.iNorm;
+        const helixAngle = helixArm + helixT * spiralTwists * Math.PI * 2;
+        const helixRadius = burstRadius * 0.6 * expand * (0.5 + 0.5 * Math.sin(helixT * Math.PI));
+        const forwardDist = helixT * burstRadius * expand * 2;
+        // Add jitter for organic feel
+        const jAmt = expand * 0.2 * pt.dissolveMul;
+        const lx = Math.cos(helixAngle) * helixRadius + pt.jx * jAmt;
+        const ly = Math.sin(helixAngle) * helixRadius + pt.jy * jAmt;
+        const lz = forwardDist + pt.jz * jAmt;
+        x = right.x * lx + up.x * ly + toCamera.x * lz;
+        y = right.y * lx + up.y * ly + toCamera.y * lz;
+        z = right.z * lx + up.z * ly + toCamera.z * lz;
+      }
 
       // Cylinder clipping: distance from the camera-axis line through origin
       let cylAlpha = 1;
@@ -322,6 +440,10 @@ function BurstInstance({ age, preset, count, pointSize, burstRadius, dissolveSpr
 // Reusable temp vectors to avoid per-frame allocation
 const _tmpVec3A = new THREE.Vector3();
 const _tmpVec3B = new THREE.Vector3();
+const _tmpVec3C = new THREE.Vector3();
+const _tmpVec3D = new THREE.Vector3();
+const _tmpVec3E = new THREE.Vector3();
+const _tmpVec3F = new THREE.Vector3();
 
 // ── Main visual component ───────────────────────────────────────────────────
 
@@ -424,6 +546,31 @@ function BurstRenderer({
   const burstCurve     = (par.burstCurve as EaseCurve)  ?? 'log';
   const burstLifetime  = (par.burstLifetime as number)  ?? 4;
   const cylinderRadius = (par.cylinderRadius as number) ?? 0;
+  const burstType      = (par.burstType as BurstType)   ?? 'sphere';
+  const coneAngle      = (par.coneAngle as number)      ?? 0.8;
+  const spiralTwists   = (par.spiralTwists as number)   ?? 3;
+  const polarPetals    = (par.polarPetals as number)    ?? 5;
+
+  // When a color palette is active, build a gradient from all 5 palette colors
+  const palettePreset = useMemo((): ColorPreset | null => {
+    const palette = vs?.activePalette;
+    if (!palette) return null;
+    const bg = hexToHsl(palette.background);
+    const sec = hexToHsl(palette.secondary);
+    const pri = hexToHsl(palette.primary);
+    const acc = hexToHsl(palette.accent);
+    const hi = hexToHsl(palette.highlight);
+    return {
+      name: 'Palette',
+      stops: [
+        { t: 0,    h: bg.h,  s: bg.s,  l: bg.l },
+        { t: 0.25, h: sec.h, s: sec.s, l: sec.l },
+        { t: 0.5,  h: pri.h, s: pri.s, l: pri.l },
+        { t: 0.75, h: acc.h, s: acc.s, l: acc.l },
+        { t: 1,    h: hi.h,  s: hi.s,  l: hi.l },
+      ],
+    };
+  }, [vs?.activePalette]);
 
   return (
     <>
@@ -431,7 +578,7 @@ function BurstRenderer({
         <BurstInstance
           key={b.id}
           age={b.age}
-          preset={COLOR_PRESETS[b.presetIndex]}
+          preset={palettePreset ?? COLOR_PRESETS[b.presetIndex]}
           count={count}
           pointSize={pointSize}
           burstRadius={burstRadius}
@@ -441,6 +588,10 @@ function BurstRenderer({
           burstCurve={burstCurve}
           burstLifetime={burstLifetime}
           cylinderRadius={cylinderRadius}
+          burstType={burstType}
+          coneAngle={coneAngle}
+          spiralTwists={spiralTwists}
+          polarPetals={polarPetals}
         />
       ))}
     </>
@@ -479,9 +630,22 @@ export const ParticleBurst: Instrument = {
     burstCurve: 'log',
     burstLifetime: 4,
     cylinderRadius: 0,
+    burstType: 'sphere',
+    coneAngle: 0.8,
+    spiralTwists: 3,
+    polarPetals: 5,
   },
 
   settingsSchema: {
+    burstType:      { type: 'select', label: 'Burst Type',      options: [
+      { value: 'sphere',      label: 'Sphere' },
+      { value: 'cone',        label: 'Cone' },
+      { value: 'jet',         label: 'Jet' },
+      { value: 'spiralOut',   label: 'Spiral Out' },
+      { value: 'polarRose',   label: 'Polar Rose' },
+      { value: 'ring',        label: 'Ring' },
+      { value: 'doubleHelix', label: 'Double Helix' },
+    ], default: 'sphere' },
     count:          { type: 'number', label: 'Particles',       min: 500,  max: 8000, step: 500,   default: 3000 },
     pointSize:      { type: 'number', label: 'Dot Size',        min: 0.01, max: 0.1,  step: 0.005, default: 0.035 },
     burstRadius:    { type: 'number', label: 'Burst Radius',    min: 1,    max: 10,   step: 0.25,  default: 4 },
@@ -496,6 +660,9 @@ export const ParticleBurst: Instrument = {
       { value: 'sine',  label: 'Sine' },
     ], default: 'log' },
     burstLifetime:  { type: 'number', label: 'Lifetime (s)',    min: 1,    max: 8,    step: 0.25,  default: 4 },
+    coneAngle:      { type: 'number', label: 'Cone Angle',      min: 0.1,  max: 1.5,  step: 0.05,  default: 0.8 },
+    spiralTwists:   { type: 'number', label: 'Spiral Twists',   min: 1,    max: 10,   step: 0.5,   default: 3 },
+    polarPetals:    { type: 'number', label: 'Polar Petals',    min: 2,    max: 12,   step: 1,     default: 5 },
     cylinderRadius: { type: 'number', label: 'Cylinder Radius', min: 0,    max: 20,   step: 0.25,  default: 0 },
   },
 

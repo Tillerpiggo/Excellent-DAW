@@ -13,11 +13,16 @@ import { TransformWrapper } from './TransformWrapper';
 import { CloneWrapper } from './CloneWrapper';
 import { ShaderChain } from './ShaderChain';
 
-/** Wraps a child visual component, hiding it when its track is blacked out */
+/** Wraps a child visual component, hiding it when its track is muted or blacked out */
 function BlackoutGroup({ trackId, children }: { trackId: string; children: React.ReactNode }) {
   const groupRef = useRef<THREE.Group>(null);
+  const muted = useProjectStore((s) => s.project.tracks[trackId]?.muted ?? false);
   useFrame(() => {
     if (!groupRef.current) return;
+    if (muted) {
+      groupRef.current.visible = false;
+      return;
+    }
     const engine = getVisualPlaybackEngine();
     const state = engine.getTrackState(trackId);
     groupRef.current.visible = !(state?.blackedOut ?? false);
@@ -46,9 +51,14 @@ export function TrackRenderer({
   const { gl } = useThree();
   const rootGroupRef = useRef<THREE.Group>(null);
 
-  // Check blackout state each frame and hide the entire group when blacked out
+  // Check blackout and mute state each frame and hide the entire group
+  const trackMuted = useProjectStore((s) => s.project.tracks[trackId]?.muted ?? false);
   useFrame(() => {
     if (!rootGroupRef.current) return;
+    if (trackMuted) {
+      rootGroupRef.current.visible = false;
+      return;
+    }
     const engine = getVisualPlaybackEngine();
     const state = engine.getTrackState(trackId);
     rootGroupRef.current.visible = !(state?.blackedOut ?? false);
@@ -127,7 +137,7 @@ export function TrackRenderer({
 
       for (const id of ids) {
         const track = tracks[id];
-        if (!track || track.muted) continue;
+        if (!track) continue;
         if (anySoloed && !track.solo) continue;
 
         if (track.instrumentId) {

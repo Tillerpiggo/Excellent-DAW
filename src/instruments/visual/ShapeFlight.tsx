@@ -7,6 +7,8 @@ import { getVisualPlaybackEngine } from '@/core/visualPlayback';
 import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { Instrument } from '../types';
+import { createDisplacementUniforms, type DisplacementUniforms } from '@/lib/three/displacementShader';
+import { hexToHsl } from '@/core/colorPalette';
 
 interface Props {
   trackId: string;
@@ -112,6 +114,7 @@ function getSpirographGeometry(petals: number, r: number, d: number): THREE.Buff
 }
 
 type ShapeMode = 'spirograph' | 'polygon' | 'polar';
+type BurstMode = 'noisy' | 'linear' | 'spiralOut' | 'spiralIn';
 
 function getShapeGeometry(mode: ShapeMode, petals: number, r: number, d: number): THREE.BufferGeometry {
   switch (mode) {
@@ -135,16 +138,95 @@ interface PooledLineLoop {
 
 const _tmpColor = new THREE.Color();
 const _pulseColor = new THREE.Color();
+const _tangent = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+const _quat = new THREE.Quaternion();
+const _zAxis = new THREE.Vector3(0, 0, 1);
 
 // Pitch routing:
+// 0-5:   wave wobble (ink-on-water displacement)
+// 6-11:  warp wobble (N-fold polar displacement)
 // 12-23: shake triggers
 // 24-35: color pulse triggers
 // 36+:   shape spawners
+const WAVE_PITCH_MIN = 0;
+const WAVE_PITCH_MAX = 5;
+const WARP_PITCH_MIN = 6;
+const WARP_PITCH_MAX = 11;
 const SHAKE_PITCH_MIN = 12;
 const SHAKE_PITCH_MAX = 23;
 const PULSE_PITCH_MIN = 24;
 const PULSE_PITCH_MAX = 35;
 const SHAPE_PITCH_MIN = 36;
+const SHAPE_PITCH_MAX = 84;
+const GLOW_PITCH_MIN = 85;
+const GLOW_PITCH_MAX = 96;
+
+// Wobble defaults
+const WAVE_FREQ_MIN = 2.0;
+const WAVE_FREQ_MAX = 14.0;
+const WAVE_SPEED = 1.8;
+const WARP_FOLD_MIN = 3.0;
+const WARP_FOLD_MAX = 8.0;
+const EFFECT_LERP = 0.08;
+
+// GLSL displacement chunk injected into LineBasicMaterial
+const DISPLACEMENT_CHUNK = /* glsl */ `
+  // Ink-on-water: cross-axis sine displacement
+  if (uWaveAmp > 0.0001) {
+    transformed.x += sin(transformed.y * uWaveFreq + uTime * uWaveSpeed) * uWaveAmp;
+    transformed.y += sin(transformed.x * uWaveFreq * 1.3 + uTime * uWaveSpeed * 0.7) * uWaveAmp;
+  }
+
+  // Warp field: N-fold polar symmetry with multiple harmonics
+  if (uWarpAmp > 0.0001) {
+    float r = length(transformed.xy) + 0.001;
+    float theta = atan(transformed.y, transformed.x);
+    float cosT = transformed.x / r;
+    float sinT = transformed.y / r;
+    float N = uWarpFold;
+    float ts = uTime * 0.6;
+
+    float dr = sin(N * theta + ts * 1.3) * cos(r * 3.0 + ts);
+    dr += 0.5 * sin(r * N + ts * 0.7) * cos(N * theta - ts * 0.9);
+    dr += 0.35 * sin(2.0 * N * theta - ts * 1.1) * sin(r * 4.0 + ts * 1.5);
+
+    float dt = 0.4 * sin((N - 1.0) * theta + ts * 0.8) * cos(r * 2.0 + ts * 1.2);
+    dt += 0.25 * cos((N + 1.0) * theta - ts) * sin(r * 3.5 - ts * 0.6);
+
+    transformed.x += (dr * cosT - dt * sinT) * uWarpAmp;
+    transformed.y += (dr * sinT + dt * cosT) * uWarpAmp;
+  }
+`;
+
+/** Inject displacement uniforms + vertex code into a LineBasicMaterial */
+function injectDisplacement(mat: THREE.LineBasicMaterial, uniforms: DisplacementUniforms) {
+  mat.onBeforeCompile = (shader) => {
+    // Add shared uniforms by reference
+    shader.uniforms.uWaveAmp = uniforms.uWaveAmp;
+    shader.uniforms.uWaveFreq = uniforms.uWaveFreq;
+    shader.uniforms.uWaveSpeed = uniforms.uWaveSpeed;
+    shader.uniforms.uWarpAmp = uniforms.uWarpAmp;
+    shader.uniforms.uWarpFold = uniforms.uWarpFold;
+    shader.uniforms.uTime = uniforms.uTime;
+
+    // Inject uniform declarations
+    shader.vertexShader = `
+      uniform float uWaveAmp;
+      uniform float uWaveFreq;
+      uniform float uWaveSpeed;
+      uniform float uWarpAmp;
+      uniform float uWarpFold;
+      uniform float uTime;
+    ` + shader.vertexShader;
+
+    // Inject displacement after begin_vertex (where `transformed` is defined)
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      '#include <begin_vertex>\n' + DISPLACEMENT_CHUNK,
+    );
+  };
+}
 
 function ShapeFlightVisual({ trackId }: Props) {
   const groupRef = useRef<THREE.Group>(null);
@@ -157,6 +239,13 @@ function ShapeFlightVisual({ trackId }: Props) {
   // Accumulated hue offset — pulse events permanently jump this forward
   const accHueOffsetRef = useRef(0);
   const lastPulseCountRef = useRef(0);
+  // Displacement (wobble) uniforms — shared by reference across all pooled materials
+  const displUniformsRef = useRef<DisplacementUniforms>(createDisplacementUniforms());
+  // Smooth interpolation targets for wobble
+  const waveAmpSmooth = useRef(0);
+  const waveFreqSmooth = useRef(WAVE_FREQ_MIN);
+  const warpAmpSmooth = useRef(0);
+  const warpFoldSmooth = useRef(WARP_FOLD_MIN);
 
   // Cleanup on unmount
   useEffect(() => () => {
@@ -187,6 +276,7 @@ function ShapeFlightVisual({ trackId }: Props) {
     });
     material.blending = THREE.AdditiveBlending;
     material.fog = false;
+    injectDisplacement(material, displUniformsRef.current);
     const lineLoop = new THREE.LineLoop(new THREE.BufferGeometry(), material);
     group.add(lineLoop);
     const entry: PooledLineLoop = { lineLoop, material, active: true };
@@ -204,6 +294,7 @@ function ShapeFlightVisual({ trackId }: Props) {
     const events = engine.getTrackEvents(trackId);
     if (!events || events.length === 0) return;
 
+    const hasPalette = vs.activePalette !== null;
     const par = vs.params;
     const speed         = (par.speed as number)         ?? 12;
     const spread        = (par.spread as number)        ?? 0;
@@ -226,6 +317,17 @@ function ShapeFlightVisual({ trackId }: Props) {
     const shakeAmount   = (par.shakeAmount as number)    ?? 0.5;
     const shakeDecaySpd = (par.shakeDecay as number)     ?? 20;
     const shakeScale    = (par.shakeScale as number)     ?? 0.5;
+    const burstMode     = (par.burstMode as BurstMode)   ?? 'noisy';
+    const burstRadius   = (par.burstRadius as number)    ?? 3;
+    const burstTwists   = (par.burstTwists as number)    ?? 4;
+    const curveXDefault = (par.curveX as number)         ?? 0;
+    const curveYDefault = (par.curveY as number)         ?? 0;
+    const wobbleAmpScale = (par.wobbleAmp as number)     ?? 0.15;
+    const warpAmpScale   = (par.warpAmp as number)       ?? 0.25;
+    const glowAmount     = (par.glowAmount as number)    ?? 1;
+    const glowPulseAmt   = (par.glowPulseAmount as number) ?? 3;
+    const glowPulseDecay = (par.glowPulseDecay as number)  ?? 8;
+    const approachGrowth = (par.approachGrowth as number)  ?? 0;
 
     const currentBeat = useUIStore.getState().currentBeat;
     const bpm = useProjectStore.getState().project.bpm;
@@ -254,13 +356,42 @@ function ShapeFlightVisual({ trackId }: Props) {
     const activeShakes: ShakeEvent[] = [];
     let pulseTotal = 0; // total pulse events that have started <= currentBeat
 
+    // Wobble targets (best match from currently-held notes)
+    let waveTarget = 0;
+    let waveFreqTarget = waveFreqSmooth.current;
+    let warpTarget = 0;
+    let warpFoldTarget = warpFoldSmooth.current;
+
+    // Glow pulse: accumulate boost from recent glow onsets
+    let glowPulseBoost = 0;
+
     for (let i = 0; i < events.length; i++) {
       const ev = events[i];
-      if (ev.pitch < SHAKE_PITCH_MIN || ev.pitch >= SHAPE_PITCH_MIN) continue;
+      // Skip shape pitches (handled separately below)
+      if (ev.pitch >= SHAPE_PITCH_MIN && ev.pitch <= SHAPE_PITCH_MAX) continue;
 
       const timeSinceBeats = currentBeat - ev.startTimeInBeats;
       const timeSinceSec = timeSinceBeats * secPerBeat;
       if (timeSinceSec < 0) continue; // hasn't started yet
+
+      // Wobble: wave (0-5) and warp (6-11) — active while note is held
+      if (ev.pitch <= WARP_PITCH_MAX) {
+        const noteDurSec = ev.duration * secPerBeat;
+        if (timeSinceSec <= noteDurSec) {
+          if (ev.pitch <= WAVE_PITCH_MAX) {
+            const t = (ev.pitch - WAVE_PITCH_MIN) / Math.max(1, WAVE_PITCH_MAX - WAVE_PITCH_MIN);
+            waveFreqTarget = WAVE_FREQ_MIN + t * (WAVE_FREQ_MAX - WAVE_FREQ_MIN);
+            waveTarget = (ev.velocity / 127) * wobbleAmpScale;
+          } else {
+            const t = (ev.pitch - WARP_PITCH_MIN) / Math.max(1, WARP_PITCH_MAX - WARP_PITCH_MIN);
+            warpFoldTarget = WARP_FOLD_MIN + t * (WARP_FOLD_MAX - WARP_FOLD_MIN);
+            warpTarget = (ev.velocity / 127) * warpAmpScale;
+          }
+        }
+        continue;
+      }
+
+      if (ev.pitch < SHAKE_PITCH_MIN) continue;
 
       if (ev.pitch <= SHAKE_PITCH_MAX) {
         // Shake trigger
@@ -273,16 +404,25 @@ function ShapeFlightVisual({ trackId }: Props) {
         if (timeSinceSec < pulseWindow) {
           activePulses.push({ startSec: timeSinceSec, velocity: ev.velocity, pitch: ev.pitch });
         }
+      } else if (ev.pitch >= GLOW_PITCH_MIN && ev.pitch <= GLOW_PITCH_MAX) {
+        // Glow pulse: exponential decay envelope from onset
+        const glowDecay = Math.exp(-timeSinceSec * glowPulseDecay);
+        if (glowDecay > 0.005) {
+          glowPulseBoost += (ev.velocity / 127) * glowPulseAmt * glowDecay;
+        }
       }
     }
 
     // Permanently jump accumulated hue offset for each new pulse event
+    // Skip when a color palette is active — palette owns the hue
     const prevPulseCount = lastPulseCountRef.current;
-    if (pulseTotal > prevPulseCount) {
-      accHueOffsetRef.current += (pulseTotal - prevPulseCount) * pulseHue;
-    } else if (pulseTotal < prevPulseCount) {
-      // Seek/rewind: recount
-      accHueOffsetRef.current = pulseTotal * pulseHue;
+    if (!hasPalette) {
+      if (pulseTotal > prevPulseCount) {
+        accHueOffsetRef.current += (pulseTotal - prevPulseCount) * pulseHue;
+      } else if (pulseTotal < prevPulseCount) {
+        // Seek/rewind: recount
+        accHueOffsetRef.current = pulseTotal * pulseHue;
+      }
     }
     lastPulseCountRef.current = pulseTotal;
 
@@ -301,10 +441,41 @@ function ShapeFlightVisual({ trackId }: Props) {
     }
     group.position.set(shakeX, shakeY, 0);
 
+    // --- Wobble: smooth lerp and update displacement uniforms ---
+    waveAmpSmooth.current += (waveTarget - waveAmpSmooth.current) * EFFECT_LERP;
+    waveFreqSmooth.current += (waveFreqTarget - waveFreqSmooth.current) * EFFECT_LERP;
+    warpAmpSmooth.current += (warpTarget - warpAmpSmooth.current) * EFFECT_LERP;
+    warpFoldSmooth.current += (warpFoldTarget - warpFoldSmooth.current) * EFFECT_LERP;
+
+    const du = displUniformsRef.current;
+    du.uWaveAmp.value = waveAmpSmooth.current;
+    du.uWaveFreq.value = waveFreqSmooth.current;
+    du.uWaveSpeed.value = WAVE_SPEED;
+    du.uWarpAmp.value = warpAmpSmooth.current;
+    du.uWarpFold.value = warpFoldSmooth.current;
+    du.uTime.value = performance.now() * 0.001;
+
     // Mark all pool entries as inactive
     for (const p of poolRef.current) {
       p.active = false;
       p.lineLoop.visible = false;
+    }
+
+    // Build palette gradient stops when a color palette is active
+    // Use primary → secondary → accent → highlight for full palette coverage
+    const _paletteStops: { t: number; h: number; s: number; l: number }[] = [];
+    if (hasPalette && vs.activePalette) {
+      const p = vs.activePalette;
+      const pri = hexToHsl(p.primary);
+      const sec = hexToHsl(p.secondary);
+      const acc = hexToHsl(p.accent);
+      const hlt = hexToHsl(p.highlight);
+      _paletteStops.push(
+        { t: 0,    h: pri.h, s: pri.s, l: pri.l },
+        { t: 0.33, h: sec.h, s: sec.s, l: sec.l },
+        { t: 0.66, h: acc.h, s: acc.s, l: acc.l },
+        { t: 1,    h: hlt.h, s: hlt.s, l: hlt.l },
+      );
     }
 
     // For each MIDI note, spawn copies at regular intervals during its duration.
@@ -335,9 +506,35 @@ function ShapeFlightVisual({ trackId }: Props) {
       const noteEnd = ev.startTimeInBeats + ev.duration;
       const numCopies = Math.floor(ev.duration * noteSpawnRate);
 
-      // Color for this note: hue from pitch + accumulated pulse offset
-      const hue = (baseHue + shapeIdx * hueStep + accHueOffsetRef.current) % 1;
-      _tmpColor.setHSL(hue, saturation, lightness);
+      // Color for this note
+      let hue: number;
+      let sat: number;
+      let lit: number;
+      if (hasPalette) {
+        // Sample across the full palette gradient based on shape index
+        const paletteColors = _paletteStops;
+        const t = (shapeIdx * 0.35) % 1; // spread shapes across palette
+        // Find the two surrounding stops and lerp
+        let lo = 0;
+        for (let si = 0; si < paletteColors.length - 1; si++) {
+          if (t >= paletteColors[si].t) lo = si;
+        }
+        const hi = Math.min(lo + 1, paletteColors.length - 1);
+        const seg = paletteColors[hi].t - paletteColors[lo].t;
+        const frac = seg > 0 ? (t - paletteColors[lo].t) / seg : 0;
+        // Shortest-path hue interpolation (hue is circular 0-1)
+        let dh = paletteColors[hi].h - paletteColors[lo].h;
+        if (dh > 0.5) dh -= 1;
+        else if (dh < -0.5) dh += 1;
+        hue = (paletteColors[lo].h + dh * frac + 1) % 1;
+        sat = paletteColors[lo].s + (paletteColors[hi].s - paletteColors[lo].s) * frac;
+        lit = paletteColors[lo].l + (paletteColors[hi].l - paletteColors[lo].l) * frac;
+      } else {
+        hue = (baseHue + shapeIdx * hueStep + accHueOffsetRef.current) % 1;
+        sat = saturation;
+        lit = lightness;
+      }
+      _tmpColor.setHSL(hue, sat, lit);
 
       // Spread: deterministic per-event
       const spreadX = spread > 0 ? (Math.sin(shapeIdx * 7.31 + 0.5) * spread) : 0;
@@ -360,17 +557,80 @@ function ShapeFlightVisual({ trackId }: Props) {
         const pooled = acquireLineLoop(group);
         pooled.lineLoop.geometry = geo;
 
-        pooled.lineLoop.position.set(spreadX, spreadY, z);
+        // Approach progress: 0 at far end, 1 at camera (z=0)
+        const approachProgress = 1 - Math.max(0, -z) / farZ;
+
+        // --- Burst mode: compute x/y offset based on trajectory style ---
+        let bx = spreadX;
+        let by = spreadY;
+
+        // Deterministic angle per copy: golden-angle spacing for even distribution
+        const goldenAngle = 2.399963; // pi * (3 - sqrt(5))
+        const copyAngle = ci * goldenAngle + shapeIdx * 1.618;
+
+        if (burstMode === 'linear') {
+          // Radial burst: copies fan outward in straight lines from center
+          const radius = approachProgress * burstRadius;
+          bx = Math.cos(copyAngle) * radius;
+          by = Math.sin(copyAngle) * radius;
+        } else if (burstMode === 'spiralOut') {
+          // Conical helix outward: radius grows while angle winds with burstTwists
+          const radius = approachProgress * burstRadius;
+          const windAngle = copyAngle + approachProgress * burstTwists * Math.PI * 2;
+          // Add 3D spherical rose: modulate radius with sin for organic shape
+          const theta = approachProgress * Math.PI;
+          const roseR = radius * (0.5 + 0.5 * Math.sin(burstTwists * theta));
+          bx = roseR * Math.cos(windAngle);
+          by = roseR * Math.sin(windAngle);
+        } else if (burstMode === 'spiralIn') {
+          // Converging spiral: starts spread out, spirals inward toward camera
+          // Uses 3D spherical rose curve for a sick converging effect
+          const invProgress = 1 - approachProgress;
+          const phi = copyAngle + approachProgress * burstTwists * Math.PI * 2;
+          const theta = approachProgress * Math.PI * 0.8;
+          // Rose petals: r = cos(k*phi) gives k-petal pattern
+          const rosePetals = Math.max(2, Math.round(burstTwists));
+          const roseModulation = 0.6 + 0.4 * Math.cos(rosePetals * phi);
+          const radius = invProgress * burstRadius * roseModulation;
+          bx = radius * Math.sin(theta) * Math.cos(phi);
+          by = radius * Math.sin(theta) * Math.sin(phi);
+        }
+        // else 'noisy': use spreadX/spreadY as-is (default)
+
+        // --- Curved flight path ---
+        // Sample curveX/curveY at this copy's spawn beat so MIDI can automate them
+        const cvx = engine.getParamAtBeat(trackId, 'curveX', copyBeat, curveXDefault);
+        const cvy = engine.getParamAtBeat(trackId, 'curveY', copyBeat, curveYDefault);
+
+        // Quadratic ease: offset = curve * (1 - t)^2, where t = approachProgress
+        // At t=0 (far end) offset = full curve, at t=1 (camera) offset = 0
+        const invT = 1 - approachProgress;
+        const curveOffsetX = cvx * invT * invT;
+        const curveOffsetY = cvy * invT * invT;
+
+        pooled.lineLoop.position.set(bx + curveOffsetX, by + curveOffsetY, z);
 
         // Scale: sample scale param at this copy's spawn beat, then grow as it approaches
         const copyScale = engine.getParamAtBeat(trackId, 'scale', copyBeat, scaleDefault);
-        const approachProgress = 1 - Math.max(0, -z) / farZ; // 0 at far, 1 at z=0
         const baseScale = shapeSize * copyScale;
-        const finalScale = (baseScale + approachProgress * baseScale * 2) * (1 + shakeScaleBump);
+        const finalScale = baseScale * (1 + approachProgress * approachGrowth) * (1 + shakeScaleBump);
         pooled.lineLoop.scale.setScalar(finalScale);
 
-        // Rotation: accumulated base (continuous under automation) + per-copy spacing
-        pooled.lineLoop.rotation.z = accRotationRef.current + ci * copySpacing;
+        // Orient shape tangent to the curved path.
+        // Path derivatives: dx/dt = -2*cvx*(1-t), dy/dt = -2*cvy*(1-t), dz/dt = farZ
+        // (t increases as shape approaches camera, z goes from -farZ to 0)
+        if (cvx !== 0 || cvy !== 0) {
+          _tangent.set(-2 * cvx * invT, -2 * cvy * invT, farZ).normalize();
+          // Rotate shape so its local +z aligns with the tangent direction
+          _quat.setFromUnitVectors(_zAxis, _tangent);
+          pooled.lineLoop.quaternion.copy(_quat);
+          // Apply spin rotation on top (around the tangent axis = local z after reorientation)
+          pooled.lineLoop.rotateZ(accRotationRef.current + ci * copySpacing);
+        } else {
+          // No curve: use simple z rotation as before
+          pooled.lineLoop.quaternion.identity();
+          pooled.lineLoop.rotation.z = accRotationRef.current + ci * copySpacing;
+        }
 
         // --- Color pulse: propagating wavefront from z=0 outward ---
         let pulseBlend = 0;
@@ -393,19 +653,23 @@ function ShapeFlightVisual({ trackId }: Props) {
         }
 
         // Glow: push lightness to white and HDR-multiply for searing bloom
-        const glowLightness = lightness + pulseBlend * (1 - lightness);
-        const glowBoost = 1 + pulseBlend * 25;
-        _tmpColor.setHSL(hue, saturation * (1 - pulseBlend * 0.7), glowLightness);
+        // Decay glow with distance — full glow at camera, base brightness at far end
+        const shapeLit = hasPalette ? lit : lightness;
+        const shapeSat = hasPalette ? sat : saturation;
+        const glowLightness = shapeLit + pulseBlend * (1 - shapeLit);
+        const fullGlow = (1 + pulseBlend * 25) * (glowAmount + glowPulseBoost);
+        const glowBoost = 1 + (fullGlow - 1) * approachProgress;
+        _tmpColor.setHSL(hue, shapeSat * (1 - pulseBlend * 0.7), glowLightness);
         _tmpColor.multiplyScalar(glowBoost);
 
         // Color
         pooled.material.color.copy(_tmpColor);
 
-        // Opacity: full while approaching, fade after passing camera
+        // Opacity: fade in as shapes approach, fade out after passing camera
         if (z > 0) {
           pooled.material.opacity = Math.max(0, 1 - z / fadeOutZ);
         } else {
-          pooled.material.opacity = 1;
+          pooled.material.opacity = approachProgress;
         }
       }
       shapeIdx++;
@@ -425,11 +689,14 @@ export const ShapeFlight: Instrument = {
   hasVisual: true,
   editorType: 'generic',
 
-  noteRange: { min: 12, max: 84 },
+  noteRange: { min: 0, max: 96 },
   rangeLabels: [
+    { startPitch: 0, endPitch: 5, label: 'Wave' },
+    { startPitch: 6, endPitch: 11, label: 'Warp' },
     { startPitch: 12, endPitch: 23, label: 'Shake' },
     { startPitch: 24, endPitch: 35, label: 'Pulse' },
     { startPitch: 36, endPitch: 84, label: 'Shapes' },
+    { startPitch: 85, endPitch: 96, label: 'Glow' },
   ],
 
   defaultSettings: {
@@ -454,6 +721,17 @@ export const ShapeFlight: Instrument = {
     shakeAmount: 0.5,
     shakeDecay: 20,
     shakeScale: 0.5,
+    burstMode: 'noisy',
+    burstRadius: 3,
+    burstTwists: 4,
+    curveX: 0,
+    curveY: 0,
+    wobbleAmp: 0.15,
+    warpAmp: 0.25,
+    glowAmount: 1,
+    glowPulseAmount: 3,
+    glowPulseDecay: 8,
+    approachGrowth: 0,
   },
 
   settingsSchema: {
@@ -478,7 +756,24 @@ export const ShapeFlight: Instrument = {
     shakeAmount:   { type: 'number', label: 'Shake Amount',        min: 0.1,  max: 3,    step: 0.1,   default: 0.5 },
     shakeDecay:    { type: 'number', label: 'Shake Decay',         min: 5,    max: 50,   step: 1,     default: 20 },
     shakeScale:    { type: 'number', label: 'Shake Scale Bump',    min: 0,    max: 2,    step: 0.1,   default: 0.5 },
+    burstMode:     { type: 'select', label: 'Burst Mode', options: [{ value: 'noisy', label: 'Noisy (Random)' }, { value: 'linear', label: 'Linear Radial' }, { value: 'spiralOut', label: 'Spiral Out' }, { value: 'spiralIn', label: 'Spiral In' }], default: 'noisy' },
+    burstRadius:   { type: 'number', label: 'Burst Radius',        min: 0.5,  max: 10,   step: 0.5,   default: 3 },
+    burstTwists:   { type: 'number', label: 'Burst Twists',        min: 1,    max: 12,   step: 0.5,   default: 4 },
+    curveX:        { type: 'number', label: 'Path Curve X',        min: -20,  max: 20,   step: 0.5,   default: 0 },
+    curveY:        { type: 'number', label: 'Path Curve Y',        min: -20,  max: 20,   step: 0.5,   default: 0 },
+    wobbleAmp:     { type: 'number', label: 'Wave Wobble Amp',     min: 0.01, max: 1,    step: 0.01,  default: 0.15 },
+    warpAmp:       { type: 'number', label: 'Warp Wobble Amp',     min: 0.01, max: 1,    step: 0.01,  default: 0.25 },
+    glowAmount:    { type: 'number', label: 'Glow Amount',          min: 0.2,  max: 5,    step: 0.1,   default: 1 },
+    glowPulseAmount: { type: 'number', label: 'Glow Pulse Amount', min: 0.5,  max: 15,   step: 0.5,   default: 3 },
+    glowPulseDecay:  { type: 'number', label: 'Glow Pulse Decay',  min: 1,    max: 30,   step: 1,     default: 8 },
+    approachGrowth:  { type: 'number', label: 'Approach Growth',    min: 0,    max: 20,   step: 0.5,   default: 0 },
   },
+
+  colorRoleMapping: [
+    { role: 'primary', param: 'baseHue',    type: 'hsl-hue' },
+    { role: 'primary', param: 'saturation', type: 'hsl-sat' },
+    { role: 'primary', param: 'lightness',  type: 'hsl-light' },
+  ],
 
   VisualComponent: ShapeFlightVisual,
 };

@@ -68,15 +68,9 @@ export const LinearDuplicatePlugin: VisualPlugin = {
 
   getClones: (settings: Record<string, unknown>) => {
     const totalCopies = (settings.totalCopies as number) ?? 3;
-    const excludeCenter = (settings.excludeCenter as boolean) ?? false;
-
-    // With excludeCenter, we still produce totalCopies slots but the center one
-    // gets an identity transform at scale 0 (invisible). The CloneWrapper handles
-    // rendering all count items. We include an extra slot to replace the center.
-    const count = excludeCenter ? totalCopies + 1 : totalCopies;
 
     return {
-      count,
+      count: totalCopies,
       getTransform: (
         index: number,
         settings: Record<string, unknown>,
@@ -90,37 +84,18 @@ export const LinearDuplicatePlugin: VisualPlugin = {
 
         const matrix = new THREE.Matrix4();
 
-        // When excluding center, skip the center index by hiding it
-        // Layout: copies are centered around origin, evenly spaced
+        // Standard centering: total copies from -(total-1)/2 to (total-1)/2
         // E.g., 3 copies at spacing 1 → positions: -1, 0, 1
-        // With excludeCenter and 3 total → positions: -1, 1 (center hidden)
-
-        // Map index to a position in the line
-        // Copies are symmetric around center: -(n-1)/2 ... 0 ... (n-1)/2
-        let posIndex: number;
-        if (exclude) {
-          // We have total+1 slots. Index 0 = hidden center, rest are the visible copies
-          if (index === 0) {
-            // Hidden center - scale to 0
-            return matrix.makeScale(0, 0, 0);
-          }
-          // Distribute `total` copies symmetrically, skipping center position
-          // For total=2: positions at -0.5, 0.5 (half spacing on each side)
-          // For total=4: positions at -1.5, -0.5, 0.5, 1.5
-          const i = index - 1; // 0-based among visible copies
-          const half = total / 2;
-          posIndex = i - half + 0.5; // centers the copies
-        } else {
-          // Standard centering: total copies from -(total-1)/2 to (total-1)/2
-          posIndex = index - (total - 1) / 2;
-        }
-
+        const posIndex = index - (total - 1) / 2;
         const offset = posIndex * spacing;
 
+        // excludeCenter: hide the center copy (only exists for odd total)
+        if (exclude && posIndex === 0) {
+          return matrix.makeScale(0, 0, 0);
+        }
+
         // Distance from center for falloff (0 at center, 1 at outermost)
-        const maxDist = exclude
-          ? (total / 2 - 0.5) * spacing
-          : ((total - 1) / 2) * spacing;
+        const maxDist = ((total - 1) / 2) * spacing;
         const dist = Math.abs(offset);
         const normalizedDist = maxDist > 0 ? dist / maxDist : 0;
 

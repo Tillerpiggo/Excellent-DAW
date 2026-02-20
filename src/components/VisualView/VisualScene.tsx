@@ -14,6 +14,7 @@ interface VisualSceneProps {
 
 export function VisualScene({ tracks }: VisualSceneProps) {
   const trackIds = useMemo(() => tracks.map((t) => t.id), [tracks]);
+  const hasCameraTrack = useMemo(() => tracks.some((t) => t.instrumentId === 'cameraControl'), [tracks]);
 
   // Read the full tracks record once (stable ref from store)
   const storeTracks = useProjectStore((s) => s.project.tracks);
@@ -37,14 +38,16 @@ export function VisualScene({ tracks }: VisualSceneProps) {
       <directionalLight position={[5, 5, 5]} intensity={0.8} />
       <pointLight position={[-5, 5, -5]} intensity={0.5} color="#8b5cf6" />
 
-      {/* Camera controls */}
-      <OrbitControls
-        enablePan={false}
-        enableZoom={true}
-        minDistance={3}
-        maxDistance={15}
-        autoRotate={false}
-      />
+      {/* Camera controls — disabled when Camera instrument is active */}
+      {!hasCameraTrack && (
+        <OrbitControls
+          enablePan={false}
+          enableZoom={true}
+          minDistance={3}
+          maxDistance={15}
+          autoRotate={false}
+        />
+      )}
 
       {/* Render visual instruments through plugin chain */}
       {tracks.map((track) => (

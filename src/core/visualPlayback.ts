@@ -7,6 +7,12 @@ import { Event } from './types';
 import { VisualInstrumentState } from './visualTypes';
 import { resolveProject, ResolvedTrack, BlackoutRegion, AutomationLane } from './resolution';
 import { getInstrument } from '@/instruments';
+import {
+  ColorPaletteDef,
+  DEFAULT_PALETTES,
+  resolvePaletteAtBeat,
+  applyColorRoleMapping,
+} from './colorPalette';
 
 interface PerTrackEvents {
   trackId: string;
@@ -41,6 +47,7 @@ function createVisualInstrumentState(
     noteOnCount: 0,
     pitchNoteOnCounts: new Map(),
     blackedOut: false,
+    activePalette: null,
   };
 }
 
@@ -50,6 +57,11 @@ export class VisualPlaybackEngine {
   private lastComputedBeat: number = -1;
   // Per-track last noteOnCount index for incremental pitchNoteOnCounts
   private lastLoPerTrack: Map<string, number> = new Map();
+  // Palette child map: parentTrackId → paletteChildTrackId
+  private paletteChildMap: Map<string, string> = new Map();
+  // Crossfade state per parent track
+  private palettePrevPitch: Map<string, number> = new Map();
+  private palettePrevDef: Map<string, ColorPaletteDef> = new Map();
 
   /**
    * Resolve project events and build per-track sorted event lists.
@@ -59,14 +71,23 @@ export class VisualPlaybackEngine {
     const resolvedTracks = resolveProject(project);
     this.perTrackEvents = [];
 
+    // Build palette child map by scanning project tracks
+    this.paletteChildMap.clear();
+    for (const track of Object.values(project.tracks)) {
+      if (track.instrumentId === 'colorPalette' && track.parentId) {
+        this.paletteChildMap.set(track.parentId, track.id);
+      }
+    }
+
     // Rebuild track states, preserving params from project settings
     const newStates = new Map<string, VisualInstrumentState>();
 
     for (const resolved of resolvedTracks) {
       const instrument = resolved.instrumentId ? getInstrument(resolved.instrumentId) : undefined;
       const hasVisual = instrument?.hasVisual;
-      const hasAutomationOnly = !hasVisual && resolved.automationLanes && resolved.automationLanes.length > 0;
-      if (!hasVisual && !hasAutomationOnly) continue;
+      const isColorPalette = resolved.instrumentId === 'colorPalette';
+      const hasAutomationOnly = !hasVisual && !isColorPalette && resolved.automationLanes && resolved.automationLanes.length > 0;
+      if (!hasVisual && !isColorPalette && !hasAutomationOnly) continue;
 
       const state = createVisualInstrumentState(resolved.instrumentId ?? '', resolved.instrumentSettings);
       newStates.set(resolved.trackId, state);
@@ -99,6 +120,9 @@ export class VisualPlaybackEngine {
     this.trackStates = newStates;
     // Reset incremental tracking
     this.lastLoPerTrack.clear();
+    // Reset palette crossfade state
+    this.palettePrevPitch.clear();
+    this.palettePrevDef.clear();
     // Force recompute on next call
     this.lastComputedBeat = -1;
   }
@@ -280,6 +304,76 @@ export class VisualPlaybackEngine {
       if (lo > 0) {
         const mostRecent = events[lo - 1];
         state.colorShift = (mostRecent.pitch % 12) / 12;
+      }
+    }
+
+    // ── Second pass: resolve color palettes ────────────────────────────
+    for (const [parentTrackId, paletteTrackId] of this.paletteChildMap) {
+      const parentState = this.trackStates.get(parentTrackId);
+      const paletteState = this.trackStates.get(paletteTrackId);
+      if (!parentState || !paletteState) continue;
+
+      // Get palette settings (crossfade, custom palettes)
+      const paletteTrackEvents = this.perTrackEvents.find(e => e.trackId === paletteTrackId);
+      const settings = paletteTrackEvents?.settings ?? {};
+      const palettes = (settings.palettes as ColorPaletteDef[] | undefined) ?? DEFAULT_PALETTES;
+      const crossfadeDuration = (settings.crossfadeDuration as number | undefined) ?? 0;
+
+      // Detect seek/rewind for crossfade reset
+      const prevLo = this.lastLoPerTrack.get(paletteTrackId) ?? 0;
+      const paletteEvents = paletteTrackEvents?.events ?? [];
+      let currentLo = 0;
+      { let lo2 = 0, hi2 = paletteEvents.length;
+        while (lo2 < hi2) {
+          const mid = (lo2 + hi2) >>> 1;
+          if (paletteEvents[mid].startTimeInBeats <= beat) lo2 = mid + 1;
+          else hi2 = mid;
+        }
+        currentLo = lo2;
+      }
+      if (currentLo < prevLo) {
+        // Seek/rewind detected — reset crossfade state
+        this.palettePrevPitch.delete(parentTrackId);
+        this.palettePrevDef.delete(parentTrackId);
+      }
+
+      const prevPitch = this.palettePrevPitch.get(parentTrackId) ?? null;
+      const prevDef = this.palettePrevDef.get(parentTrackId) ?? null;
+
+      const resolved = resolvePaletteAtBeat(
+        paletteState.activeNotes,
+        palettes,
+        crossfadeDuration,
+        beat,
+        prevPitch,
+        prevDef,
+      );
+
+      if (resolved) {
+        parentState.activePalette = resolved;
+
+        // Update prev state for crossfade tracking
+        if (resolved.toPalette) {
+          // Find current pitch from active notes (latest-starting)
+          let bestPitch: number | null = null;
+          let bestStart = -Infinity;
+          for (const note of paletteState.activeNotes.values()) {
+            if (note.startTimeInBeats > bestStart) {
+              bestStart = note.startTimeInBeats;
+              bestPitch = note.pitch;
+            }
+          }
+          if (bestPitch !== null) {
+            this.palettePrevPitch.set(parentTrackId, bestPitch);
+            this.palettePrevDef.set(parentTrackId, resolved.toPalette);
+          }
+        }
+
+        // Apply color role mapping if the parent instrument defines one
+        const parentInstrument = getInstrument(parentState.instrumentId);
+        if (parentInstrument?.colorRoleMapping) {
+          applyColorRoleMapping(parentState, parentInstrument.colorRoleMapping, resolved);
+        }
       }
     }
   }

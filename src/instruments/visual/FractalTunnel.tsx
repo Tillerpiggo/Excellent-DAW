@@ -530,5 +530,9 @@ export const FractalTunnel: Instrument = {
     pulseFadeDuration: { type: 'number', label: 'Fade Duration', min: 0.5, max: 5, step: 0.1, default: 2.0 },
   },
 
+  colorRoleMapping: [
+    { role: 'primary', param: 'baseHue', type: 'hsl-hue' },
+  ],
+
   VisualComponent: FractalTunnelVisual,
 };

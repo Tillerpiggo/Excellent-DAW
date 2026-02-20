@@ -182,6 +182,20 @@ function buildTrackOutputs(
     });
   }
 
+  // Utility instruments (e.g. colorPalette) need a resolved entry
+  // so the visual engine can read their events (active notes, etc.)
+  // Use selfOutput (not combinedOutput) so parent events don't leak in
+  const isUtilityInstrument = instrument && !instrument.hasAudio && !instrument.hasVisual;
+  if (results.length === 0 && isUtilityInstrument && selfOutput.events.length > 0) {
+    results.push({
+      trackId: track.id,
+      instrumentId: track.instrumentId,
+      instrumentSettings: track.instrumentSettings,
+      output: selfOutput,
+      blackoutRegions: blackoutRegions?.length ? blackoutRegions : undefined,
+    });
+  }
+
   // Groups with visual plugins but no instrument still need a resolved entry
   // so automation lanes can be attached and evaluated
   if (results.length === 0 && track.visualPlugins && track.visualPlugins.length > 0) {

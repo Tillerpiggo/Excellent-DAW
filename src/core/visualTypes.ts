@@ -1,6 +1,7 @@
 // Visual Instrument Types
 
 import { Event } from './types';
+import { ResolvedPalette } from './colorPalette';
 
 export interface VisualInstrumentState {
   instrumentId: string;
@@ -13,6 +14,7 @@ export interface VisualInstrumentState {
   noteOnCount: number; // Increments for EVERY note-on trigger (never throttled)
   pitchNoteOnCounts: Map<number, number>; // Per-pitch note-on counts
   blackedOut: boolean; // True when instrument is completely disabled by a mute region
+  activePalette: ResolvedPalette | null; // Active color palette from colorPalette child track
 }
 
 export interface VisualEvent {

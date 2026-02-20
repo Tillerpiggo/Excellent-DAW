@@ -29,6 +29,8 @@ import { VideoKaleidoscope } from './visual/VideoKaleidoscope';
 import { ShapeFlight } from './visual/ShapeFlight';
 import { CylinderFlight } from './visual/CylinderFlight';
 import { ParticleBurst } from './visual/ParticleBurst';
+import { CameraControl } from './visual/CameraControl';
+import { ColorPaletteInstrument } from './visual/ColorPalette';
 
 // Flat registry for quick lookup by ID
 export const INSTRUMENTS: Record<string, Instrument> = {
@@ -58,6 +60,8 @@ export const INSTRUMENTS: Record<string, Instrument> = {
   shapeFlight: ShapeFlight,
   cylinderFlight: CylinderFlight,
   particleBurst: ParticleBurst,
+  cameraControl: CameraControl,
+  colorPalette: ColorPaletteInstrument,
 };
 
 // Get instrument by ID
@@ -101,7 +105,11 @@ export function getInstrumentFolderTree(): InstrumentFolder {
       },
       {
         name: 'Visual',
-        instruments: ['silkSymmetry', 'hexagonDots', 'fractalTunnel', 'circleGrid', 'neonPolar', 'hopfFibration', 'icosahedronBurst', 'metronomeBalls', 'dotField', 'stars', 'textDisplay', 'sun', 'imageDisplay', 'videoSampler', 'videoKaleidoscope', 'shapeFlight', 'cylinderFlight', 'particleBurst'],
+        instruments: ['silkSymmetry', 'hexagonDots', 'fractalTunnel', 'circleGrid', 'neonPolar', 'hopfFibration', 'icosahedronBurst', 'metronomeBalls', 'dotField', 'stars', 'textDisplay', 'sun', 'imageDisplay', 'videoSampler', 'videoKaleidoscope', 'shapeFlight', 'cylinderFlight', 'particleBurst', 'cameraControl'],
+      },
+      {
+        name: 'Utility',
+        instruments: ['colorPalette'],
       },
     ],
   };

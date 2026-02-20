@@ -7,6 +7,36 @@ import { PluginInstance } from '@/core/types';
 import { getPlugin } from '@/plugins';
 import { getPluginSettingsWithOverrides } from '@/core/visualPlayback';
 
+interface SingleTransformProps {
+  trackId: string;
+  instance: PluginInstance;
+  children: React.ReactNode;
+}
+
+/** Applies a single transform plugin to its own nested group */
+function SingleTransform({ trackId, instance, children }: SingleTransformProps) {
+  const groupRef = useRef<THREE.Group>(null);
+  const plugin = getPlugin(instance.pluginId);
+
+  useFrame((state) => {
+    if (!groupRef.current || !plugin?.applyTransform) return;
+
+    // Reset this group's transforms before applying the plugin
+    groupRef.current.rotation.set(0, 0, 0);
+    groupRef.current.scale.set(1, 1, 1);
+    groupRef.current.position.set(0, 0, 0);
+
+    const settings = getPluginSettingsWithOverrides(trackId, instance.id, instance.settings);
+    const isEnabled =
+      settings.enabled !== undefined ? (settings.enabled as number) >= 0.5 : instance.enabled;
+    if (!isEnabled) return;
+
+    plugin.applyTransform(groupRef.current, settings, state.clock.elapsedTime);
+  });
+
+  return <group ref={groupRef}>{children}</group>;
+}
+
 interface TransformWrapperProps {
   trackId: string;
   plugins: PluginInstance[];
@@ -14,35 +44,23 @@ interface TransformWrapperProps {
 }
 
 export function TransformWrapper({ trackId, plugins, children }: TransformWrapperProps) {
-  const groupRef = useRef<THREE.Group>(null);
-
-  // Get all transform plugins (enabled check is per-frame via automation)
+  // Get all transform plugins in order
   const transformPlugins = plugins.filter((instance) => {
     const plugin = getPlugin(instance.pluginId);
     return plugin?.category === 'transform' && plugin.applyTransform;
   });
 
-  useFrame((state) => {
-    if (!groupRef.current) return;
+  // Build nested groups: first plugin in the list is innermost, last is outermost.
+  // This means later transforms wrap earlier ones, so e.g. offset (inner) then
+  // rotate (outer) causes the rotation to apply after the offset — giving orbital motion.
+  let element: React.ReactNode = children;
+  for (let i = 0; i < transformPlugins.length; i++) {
+    element = (
+      <SingleTransform trackId={trackId} instance={transformPlugins[i]}>
+        {element}
+      </SingleTransform>
+    );
+  }
 
-    // Reset transforms before applying plugins
-    groupRef.current.rotation.set(0, 0, 0);
-    groupRef.current.scale.set(1, 1, 1);
-    groupRef.current.position.set(0, 0, 0);
-
-    // Apply each transform plugin in order (with automation overrides)
-    const time = state.clock.elapsedTime;
-    for (const instance of transformPlugins) {
-      const plugin = getPlugin(instance.pluginId);
-      if (plugin?.applyTransform) {
-        const settings = getPluginSettingsWithOverrides(trackId, instance.id, instance.settings);
-        // Check enabled: automation override takes priority, else use store value
-        const isEnabled = settings.enabled !== undefined ? (settings.enabled as number) >= 0.5 : instance.enabled;
-        if (!isEnabled) continue;
-        plugin.applyTransform(groupRef.current, settings, time);
-      }
-    }
-  });
-
-  return <group ref={groupRef}>{children}</group>;
+  return <>{element}</>;
 }

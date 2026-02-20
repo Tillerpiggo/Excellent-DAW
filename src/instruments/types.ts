@@ -1,9 +1,10 @@
 import { Event } from '@/core/types';
+import { ColorRoleMapping } from '@/core/colorPalette';
 
 // Settings schema for auto-generating Inspector UI
 export interface SettingsSchema {
   [key: string]: {
-    type: 'number' | 'boolean' | 'select' | 'string' | 'color';
+    type: 'number' | 'boolean' | 'select' | 'string' | 'color' | 'font' | 'fontVariant';
     label: string;
     min?: number;
     max?: number;
@@ -52,6 +53,12 @@ export interface Instrument {
 
   // Disable bloom post-processing when this instrument is active
   disableBloom?: boolean;
+
+  // Only one track with this instrument can exist at a time
+  singleton?: boolean;
+
+  // Color palette role mapping for automatic palette-to-param conversion
+  colorRoleMapping?: ColorRoleMapping;
 
   // Visual rendering (if hasVisual) - React component
   VisualComponent?: React.ComponentType<{ trackId: string }>;
