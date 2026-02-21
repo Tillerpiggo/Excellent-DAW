@@ -63,7 +63,7 @@ export function TrackTree({ treeId, rootIds }: TrackTreeProps) {
   const dataProvider = useMemo(() => {
     return new StaticTreeDataProvider(treeItems, (item, newName) => ({
       ...item,
-      data: { ...item.data, name: newName },
+      data: item.data ? { ...item.data, name: newName } : item.data,
     }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [treeKey]);

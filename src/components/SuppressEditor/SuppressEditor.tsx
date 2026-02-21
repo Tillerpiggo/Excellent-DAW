@@ -1,11 +1,13 @@
 'use client';
 
 import { useCallback } from 'react';
-import { Block, Track, Event } from '@/core/types';
+import { Block, Track } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
 import { QuantizeSelect } from '@/components/shared/QuantizeSelect';
 import { useMidiEditorState } from '@/hooks/useMidiEditorState';
+import { getAllEventsFromBlock, eventsToMidiNotesFixed, notesToEventsFixed } from '@/utils/midiConverters';
+import { DEFAULT_QUANTIZE } from '@/core/constants';
 
 interface SuppressEditorProps {
   block: Block;
@@ -15,37 +17,20 @@ interface SuppressEditorProps {
 
 // Single row for suppress (pitch 0 as marker)
 const SUPPRESS_PITCH = 0;
-const DEFAULT_QUANTIZE = 0.25;
 
 const SUPPRESS_ROWS: MidiRow[] = [
   { pitch: SUPPRESS_PITCH, label: 'Suppress', color: '#64748b' },
 ];
 
 function extractSuppressFromBlock(block: Block): MidiNote[] {
-  const allEvents = block.streams?.flatMap(s => s.events) || [];
-  return allEvents.map((event, index) => ({
-    id: `suppress-${event.startTimeInBeats}-${index}`,
-    pitch: SUPPRESS_PITCH,
-    time: event.startTimeInBeats,
-    duration: event.duration,
-    velocity: event.velocity,
-  }));
-}
-
-function notesToEvents(notes: MidiNote[]): Event[] {
-  return notes.map(n => ({
-    startTimeInBeats: n.time,
-    pitch: SUPPRESS_PITCH,
-    velocity: n.velocity,
-    duration: n.duration,
-  }));
+  return eventsToMidiNotesFixed(getAllEventsFromBlock(block), SUPPRESS_PITCH, 'suppress');
 }
 
 export function SuppressEditor({ block, track, beatsPerBar }: SuppressEditorProps) {
   const { updateBlock } = useProjectStore();
 
   const saveNotes = useCallback((notes: MidiNote[], trackId: string, blockId: string) => {
-    const events = notesToEvents(notes);
+    const events = notesToEventsFixed(notes, SUPPRESS_PITCH);
     updateBlock(trackId, blockId, { streams: [{ events }] });
   }, [updateBlock]);
 

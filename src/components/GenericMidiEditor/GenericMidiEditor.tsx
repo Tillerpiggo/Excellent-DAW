@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Block, Track, Event } from '@/core/types';
+import { Block, Track } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { MidiEditor, MidiNote, generateRows, generateAutomationRows } from '@/components/shared/MidiEditor';
 import { QuantizeSelect } from '@/components/shared/QuantizeSelect';
@@ -10,6 +10,8 @@ import { useUIStore } from '@/stores/uiStore';
 import { getInstrument } from '@/instruments';
 import { SettingsSchema } from '@/instruments/types';
 import { getPlugin } from '@/plugins';
+import { getAllEventsFromBlock, eventsToMidiNotes, notesToEvents } from '@/utils/midiConverters';
+import { DEFAULT_QUANTIZE } from '@/core/constants';
 
 interface GenericMidiEditorProps {
   block: Block;
@@ -18,29 +20,11 @@ interface GenericMidiEditorProps {
   instrumentId?: string;
 }
 
-const DEFAULT_QUANTIZE = 0.25;
-
 function extractNotesFromBlock(block: Block): MidiNote[] {
-  const allEvents = block.streams?.flatMap(s => s.events) || [];
+  const allEvents = getAllEventsFromBlock(block);
   // Get all pitched events
   const pitchedEvents = allEvents.filter(e => e.pitch !== undefined);
-
-  return pitchedEvents.map((event, index) => ({
-    id: `note-${event.startTimeInBeats}-${event.pitch}-${index}`,
-    pitch: event.pitch!,
-    time: event.startTimeInBeats,
-    duration: event.duration,
-    velocity: event.velocity,
-  }));
-}
-
-function notesToEvents(notes: MidiNote[]): Event[] {
-  return notes.map(n => ({
-    startTimeInBeats: n.time,
-    pitch: n.pitch,
-    velocity: n.velocity,
-    duration: n.duration,
-  }));
+  return eventsToMidiNotes(pitchedEvents, 'note');
 }
 
 export function GenericMidiEditor({ block, track, beatsPerBar, instrumentId }: GenericMidiEditorProps) {

@@ -1,10 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Block, Track, Event } from '@/core/types';
+import { Block, Track } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
 import { QuantizeSelect } from '@/components/shared/QuantizeSelect';
+import { getAllEventsFromBlock, eventsToMidiNotesFixed } from '@/utils/midiConverters';
 
 interface SwingEditorProps {
   block: Block;
@@ -24,7 +25,7 @@ const SWING_ROWS: MidiRow[] = [
 ];
 
 function extractSwingFromBlock(block: Block): { notes: MidiNote[]; swingAmount: number } {
-  const allEvents = block.streams?.flatMap(s => s.events) || [];
+  const allEvents = getAllEventsFromBlock(block);
 
   // Calculate average velocity to determine swing amount
   let swingAmount = DEFAULT_SWING_AMOUNT;
@@ -33,18 +34,12 @@ function extractSwingFromBlock(block: Block): { notes: MidiNote[]; swingAmount: 
     swingAmount = Math.round((avgVelocity / 127) * 100);
   }
 
-  const notes = allEvents.map((event, index) => ({
-    id: `swing-${event.startTimeInBeats}-${index}`,
-    pitch: SWING_PITCH,
-    time: event.startTimeInBeats,
-    duration: event.duration,
-    velocity: event.velocity,
-  }));
+  const notes = eventsToMidiNotesFixed(allEvents, SWING_PITCH, 'swing');
 
   return { notes, swingAmount };
 }
 
-function notesToEvents(notes: MidiNote[], swingAmount: number): Event[] {
+function notesToSwingEvents(notes: MidiNote[], swingAmount: number) {
   const velocity = Math.round((swingAmount / 100) * 127);
   return notes.map(n => ({
     startTimeInBeats: n.time,
@@ -86,7 +81,7 @@ export function SwingEditor({ block, track, beatsPerBar }: SwingEditorProps) {
   // Auto-save when notes or swing amount change
   useEffect(() => {
     const timeout = setTimeout(() => {
-      const events = notesToEvents(notes, swingAmount);
+      const events = notesToSwingEvents(notes, swingAmount);
       updateBlock(track.id, block.id, { streams: [{ events }] });
     }, 500);
     return () => clearTimeout(timeout);

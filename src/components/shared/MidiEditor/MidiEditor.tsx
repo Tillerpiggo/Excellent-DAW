@@ -61,22 +61,7 @@ interface DragState {
 const DRAG_NONE: DragState = { type: 'none', startX: 0, startY: 0, currentX: 0, currentY: 0 };
 const NOTE_EDGE_WIDTH = 8;
 
-// Helper to lighten a color (supports both hex and hsl strings)
-function lightenColor(color: string, amount: number): string {
-  const hslMatch = color.match(/^hsl\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*\)$/);
-  if (hslMatch) {
-    const h = parseFloat(hslMatch[1]);
-    const s = parseFloat(hslMatch[2]);
-    const l = Math.min(100, parseFloat(hslMatch[3]) + amount * 100);
-    return `hsl(${h}, ${s}%, ${l}%)`;
-  }
-  const cleanHex = color.replace('#', '');
-  const num = parseInt(cleanHex, 16);
-  const r = Math.min(255, ((num >> 16) & 0xff) + Math.round(255 * amount));
-  const g = Math.min(255, ((num >> 8) & 0xff) + Math.round(255 * amount));
-  const b = Math.min(255, (num & 0xff) + Math.round(255 * amount));
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-}
+import { lighten } from '@/utils/colors';
 
 export function MidiEditor({
   rows,
@@ -921,7 +906,7 @@ export function MidiEditor({
             const w = Math.max(note.duration * pixelsPerBeat, 8);
             const h = rowHeight - 4;
             const isSelected = selectedNoteIds.has(note.id);
-            const noteColor = isSelected ? lightenColor(row.color, 0.3) : row.color;
+            const noteColor = isSelected ? lighten(row.color, 40) : row.color;
 
             return (
               <div

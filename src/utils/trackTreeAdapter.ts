@@ -4,7 +4,7 @@ import { TreeItem } from 'react-complex-tree';
 import { Project, Track } from '@/core/types';
 
 // TreeItem with Track payload
-export type TrackTreeItem = TreeItem<Track>;
+export type TrackTreeItem = TreeItem<Track | null>;
 
 /**
  * Convert flat track dictionary to react-complex-tree's format.
@@ -16,7 +16,7 @@ export function tracksToTreeItems(project: Project, rootIds?: string[]): Record<
       index: 'root',
       isFolder: true,
       children: rootIds ?? project.rootTracks,
-      data: null as unknown as Track,
+      data: null,
       canMove: false,
       canRename: false,
     },

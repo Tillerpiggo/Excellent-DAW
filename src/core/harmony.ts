@@ -1,4 +1,5 @@
 import { Event, HarmonyInfo, ScaleInfo, Output } from './types';
+import { HARMONY_TOLERANCE } from './constants';
 
 // Common scales
 export const SCALES: Record<string, number[]> = {
@@ -60,7 +61,7 @@ export function findHarmonyInOutput(output: Output, atTime?: number): HarmonyInf
 
   // Try to detect chord from events
   const events = atTime !== undefined
-    ? output.events.filter(e => Math.abs(e.startTimeInBeats - atTime) < 0.1)
+    ? output.events.filter(e => Math.abs(e.startTimeInBeats - atTime) < HARMONY_TOLERANCE)
     : output.events.slice(0, 10); // Look at first few events
 
   const pitches = events

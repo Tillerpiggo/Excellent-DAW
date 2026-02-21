@@ -1,11 +1,12 @@
 'use client';
 
 import { useCallback } from 'react';
-import { Block, Track, Event } from '@/core/types';
+import { Block, Track } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
 import { QuantizeSelect } from '@/components/shared/QuantizeSelect';
 import { useMidiEditorState } from '@/hooks/useMidiEditorState';
+import { getAllEventsFromBlock, eventsToMidiNotes, notesToEvents } from '@/utils/midiConverters';
 
 interface TransposeEditorProps {
   block: Block;
@@ -45,39 +46,15 @@ const TRANSPOSE_ROWS: MidiRow[] = [
   { pitch: 48, label: '-12 (Oct)', color: '#dc2626' },
 ];
 
-// Convert transpose events to MidiNotes for the editor
-function eventsToMidiNotes(events: Event[]): MidiNote[] {
-  return events
-    .filter(e => e.pitch !== undefined)
-    .map((e, i) => ({
-      id: `transpose-${i}-${e.startTimeInBeats}`,
-      pitch: e.pitch!,
-      time: e.startTimeInBeats,
-      duration: e.duration ?? 1,
-      velocity: e.velocity ?? 100,
-    }));
-}
-
-// Convert MidiNotes back to events
-function midiNotesToEvents(notes: MidiNote[]): Event[] {
-  return notes.map(note => ({
-    startTimeInBeats: note.time,
-    pitch: note.pitch,
-    duration: note.duration,
-    velocity: note.velocity,
-  }));
-}
-
 function extractTransposeFromBlock(block: Block): MidiNote[] {
-  const allEvents = block.streams?.flatMap(s => s.events) || [];
-  return eventsToMidiNotes(allEvents);
+  return eventsToMidiNotes(getAllEventsFromBlock(block), 'transpose');
 }
 
 export function TransposeEditor({ block, track, beatsPerBar }: TransposeEditorProps) {
   const { updateBlock } = useProjectStore();
 
   const saveNotes = useCallback((notes: MidiNote[], trackId: string, blockId: string) => {
-    const events = midiNotesToEvents(notes);
+    const events = notesToEvents(notes);
     updateBlock(trackId, blockId, { streams: [{ events }] });
   }, [updateBlock]);
 

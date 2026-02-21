@@ -1,11 +1,13 @@
 'use client';
 
 import { useCallback } from 'react';
-import { Block, Track, Event } from '@/core/types';
+import { Block, Track } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { MidiEditor, MidiNote, MidiRow } from '@/components/shared/MidiEditor';
 import { QuantizeSelect } from '@/components/shared/QuantizeSelect';
 import { useMidiEditorState } from '@/hooks/useMidiEditorState';
+import { getAllEventsFromBlock, eventsToMidiNotesFixed, notesToEventsFixed } from '@/utils/midiConverters';
+import { DEFAULT_QUANTIZE } from '@/core/constants';
 
 interface MuteEditorProps {
   block: Block;
@@ -15,37 +17,20 @@ interface MuteEditorProps {
 
 // Single row for mute blackout (pitch 0 as marker)
 const MUTE_PITCH = 0;
-const DEFAULT_QUANTIZE = 0.25;
 
 const MUTE_ROWS: MidiRow[] = [
   { pitch: MUTE_PITCH, label: 'Mute', color: '#991b1b' },
 ];
 
 function extractMutesFromBlock(block: Block): MidiNote[] {
-  const allEvents = block.streams?.flatMap(s => s.events) || [];
-  return allEvents.map((event, index) => ({
-    id: `mute-${event.startTimeInBeats}-${index}`,
-    pitch: MUTE_PITCH,
-    time: event.startTimeInBeats,
-    duration: event.duration,
-    velocity: event.velocity,
-  }));
-}
-
-function notesToEvents(notes: MidiNote[]): Event[] {
-  return notes.map(n => ({
-    startTimeInBeats: n.time,
-    pitch: MUTE_PITCH,
-    velocity: n.velocity,
-    duration: n.duration,
-  }));
+  return eventsToMidiNotesFixed(getAllEventsFromBlock(block), MUTE_PITCH, 'mute');
 }
 
 export function MuteEditor({ block, track, beatsPerBar }: MuteEditorProps) {
   const { updateBlock } = useProjectStore();
 
   const saveNotes = useCallback((notes: MidiNote[], trackId: string, blockId: string) => {
-    const events = notesToEvents(notes);
+    const events = notesToEventsFixed(notes, MUTE_PITCH);
     updateBlock(trackId, blockId, { streams: [{ events }] });
   }, [updateBlock]);
 

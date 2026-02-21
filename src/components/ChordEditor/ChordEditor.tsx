@@ -1,12 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Block, Track, Event } from '@/core/types';
+import { Block, Track } from '@/core/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { MidiEditor, MidiNote, generateRows } from '@/components/shared/MidiEditor';
 import { QuantizeSelect } from '@/components/shared/QuantizeSelect';
 import { useMidiEditorState } from '@/hooks/useMidiEditorState';
 import { getInstrument } from '@/instruments';
+import { getAllEventsFromBlock, eventsToMidiNotes, notesToEvents } from '@/utils/midiConverters';
+import { DEFAULT_QUANTIZE } from '@/core/constants';
 
 interface ChordEditorProps {
   block: Block;
@@ -15,29 +17,11 @@ interface ChordEditorProps {
   instrumentId?: string;
 }
 
-const DEFAULT_QUANTIZE = 0.25;
-
 function extractNotesFromBlock(block: Block): MidiNote[] {
-  const allEvents = block.streams?.flatMap(s => s.events) || [];
+  const allEvents = getAllEventsFromBlock(block);
   // Get all pitched events (not drum pitches - those are <24)
   const pitchedEvents = allEvents.filter(e => e.pitch !== undefined && e.pitch >= 24);
-
-  return pitchedEvents.map((event, index) => ({
-    id: `note-${event.startTimeInBeats}-${event.pitch}-${index}`,
-    pitch: event.pitch!,
-    time: event.startTimeInBeats,
-    duration: event.duration,
-    velocity: event.velocity,
-  }));
-}
-
-function notesToEvents(notes: MidiNote[]): Event[] {
-  return notes.map(n => ({
-    startTimeInBeats: n.time,
-    pitch: n.pitch,
-    velocity: n.velocity,
-    duration: n.duration,
-  }));
+  return eventsToMidiNotes(pitchedEvents, 'note');
 }
 
 export function ChordEditor({ block, track, beatsPerBar, instrumentId }: ChordEditorProps) {

@@ -1,4 +1,5 @@
 import { TrackTypeDefinition, Output, ProcessContext, Event } from './types';
+import { TIME_TOLERANCE, HARMONY_TOLERANCE } from './constants';
 
 // Helper to merge events, avoiding duplicates at same time
 function mergeEvents(a: Event[], b: Event[]): Event[] {
@@ -15,7 +16,7 @@ function mergeEvents(a: Event[], b: Event[]): Event[] {
 }
 
 // Helper to find events at matching times
-function findEventsAtTime(events: Event[], time: number, tolerance = 0.01): Event[] {
+function findEventsAtTime(events: Event[], time: number, tolerance = TIME_TOLERANCE): Event[] {
   return events.filter(e => Math.abs(e.startTimeInBeats - time) < tolerance);
 }
 
@@ -133,7 +134,7 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
       if (self.events.length === 0) return parent;
       const gatedEvents = parent.events.filter(parentEvent => {
         return self.events.some(
-          gateEvent => Math.abs(gateEvent.startTimeInBeats - parentEvent.startTimeInBeats) < 0.01
+          gateEvent => Math.abs(gateEvent.startTimeInBeats - parentEvent.startTimeInBeats) < TIME_TOLERANCE
         );
       });
       return {
@@ -309,10 +310,10 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
         if (before.length === 0) {
           // Use first events if nothing before
           const firstTime = Math.min(...parent.events.map(e => e.startTimeInBeats));
-          return parent.events.filter(e => Math.abs(e.startTimeInBeats - firstTime) < 0.1);
+          return parent.events.filter(e => Math.abs(e.startTimeInBeats - firstTime) < HARMONY_TOLERANCE);
         }
         const lastTime = Math.max(...before.map(e => e.startTimeInBeats));
-        return before.filter(e => Math.abs(e.startTimeInBeats - lastTime) < 0.1);
+        return before.filter(e => Math.abs(e.startTimeInBeats - lastTime) < HARMONY_TOLERANCE);
       };
 
       const triggered: Event[] = [];
@@ -385,13 +386,13 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
         if (beforeNotes.length === 0) {
           // Use first chord if nothing before
           const firstTime = Math.min(...parentPitched.map(e => e.startTimeInBeats));
-          const firstChordNotes = parentPitched.filter(e => Math.abs(e.startTimeInBeats - firstTime) < 0.1);
+          const firstChordNotes = parentPitched.filter(e => Math.abs(e.startTimeInBeats - firstTime) < HARMONY_TOLERANCE);
           return extractChordTones(firstChordNotes);
         }
 
         // Get the most recent time with notes
         const lastTime = Math.max(...beforeNotes.map(e => e.startTimeInBeats));
-        const lastChordNotes = beforeNotes.filter(e => Math.abs(e.startTimeInBeats - lastTime) < 0.1);
+        const lastChordNotes = beforeNotes.filter(e => Math.abs(e.startTimeInBeats - lastTime) < HARMONY_TOLERANCE);
         return extractChordTones(lastChordNotes);
       };
 
@@ -469,7 +470,7 @@ export const TRACK_TYPES: Record<string, TrackTypeDefinition> = {
         }
         // Check within a small tolerance (for floating point issues)
         for (const [markerTime, amount] of swingMarkers) {
-          if (Math.abs(markerTime - time) < 0.01) {
+          if (Math.abs(markerTime - time) < TIME_TOLERANCE) {
             return amount;
           }
         }
