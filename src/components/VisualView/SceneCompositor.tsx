@@ -368,19 +368,79 @@ export function SceneCompositor({ allTracks, rootScenes }: SceneCompositorProps)
       if (sceneTrack?.muted) continue;
       if (engine.isSceneBlackedOut(sceneId)) continue;
 
-      // Toggle visibility: only tracks assigned to this scene
-      for (const track of allTracks) {
-        const group = refs.get(track.id);
-        if (group) group.visible = getEffectiveSceneId(track) === sceneId;
+      // Check if this scene has a SceneCopy child
+      const copyState = engine.getSceneCopyState(sceneId);
+
+      if (copyState) {
+        // SceneCopy: render the SOURCE scene's tracks with a custom camera
+        const sourceIdx = copyState.sourceSceneIndex;
+        // Determine which scene's tracks to show
+        // sourceIdx 0 = Main (unassigned), 1+ = rootScenes[sourceIdx - 1]
+        const sourceSceneId = sourceIdx === 0 ? undefined : rootScenes[sourceIdx - 1];
+
+        for (const track of allTracks) {
+          const group = refs.get(track.id);
+          if (!group) continue;
+          const effectiveScene = getEffectiveSceneId(track);
+          // Show tracks belonging to the source scene
+          group.visible = sourceSceneId === undefined
+            ? !effectiveScene  // Main = unassigned tracks
+            : effectiveScene === sourceSceneId;
+        }
+
+        // Save camera state
+        const savedPos = camera.position.clone();
+        const savedRot = camera.rotation.clone();
+        const perspCam = camera instanceof THREE.PerspectiveCamera ? camera : null;
+        const savedFov = perspCam?.fov ?? 50;
+
+        // Apply SceneCopy camera params
+        const p = copyState.params;
+        const deg2rad = Math.PI / 180;
+        camera.position.set(
+          (p.posX as number) ?? 0,
+          (p.posY as number) ?? 0,
+          (p.posZ as number) ?? 8,
+        );
+        camera.rotation.set(
+          ((p.rotX as number) ?? 0) * deg2rad,
+          ((p.rotY as number) ?? 0) * deg2rad,
+          ((p.rotZ as number) ?? 0) * deg2rad,
+        );
+        const newFov = (p.fov as number) ?? 50;
+        if (perspCam && perspCam.fov !== newFov) {
+          perspCam.fov = newFov;
+          perspCam.updateProjectionMatrix();
+        }
+
+        const isOpaque = sceneTrack?.sceneOpaque ?? false;
+        gl.setRenderTarget(fbo);
+        gl.setClearColor(isOpaque ? 0x0a0a0f : 0x000000, isOpaque ? 1 : 0);
+        gl.clear();
+        gl.render(sharedScene, camera);
+        gl.setRenderTarget(null);
+
+        // Restore camera state
+        camera.position.copy(savedPos);
+        camera.rotation.copy(savedRot);
+        if (perspCam && perspCam.fov !== savedFov) {
+          perspCam.fov = savedFov;
+          perspCam.updateProjectionMatrix();
+        }
+      } else {
+        // Normal scene render: show this scene's own tracks
+        for (const track of allTracks) {
+          const group = refs.get(track.id);
+          if (group) group.visible = getEffectiveSceneId(track) === sceneId;
+        }
+
+        const isOpaque = sceneTrack?.sceneOpaque ?? false;
+        gl.setRenderTarget(fbo);
+        gl.setClearColor(isOpaque ? 0x0a0a0f : 0x000000, isOpaque ? 1 : 0);
+        gl.clear();
+        gl.render(sharedScene, camera);
+        gl.setRenderTarget(null);
       }
-
-      const isOpaque = sceneTrack?.sceneOpaque ?? false;
-
-      gl.setRenderTarget(fbo);
-      gl.setClearColor(isOpaque ? 0x0a0a0f : 0x000000, isOpaque ? 1 : 0);
-      gl.clear();
-      gl.render(sharedScene, camera);
-      gl.setRenderTarget(null);
 
       // Assign this scene's texture to the next active shader slot
       compositorMaterial.uniforms[`tScene${activeSlot}`].value = fbo.texture;

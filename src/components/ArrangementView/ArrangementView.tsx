@@ -27,8 +27,6 @@ export function ArrangementView() {
   const setScrollTop = useUIStore((s) => s.setScrollTop);
   const setPixelsPerBeat = useUIStore((s) => s.setPixelsPerBeat);
   const setTrackHeightScale = useUIStore((s) => s.setTrackHeightScale);
-  const scenesCollapsed = useUIStore((s) => s.scenesCollapsed);
-  const toggleScenesCollapsed = useUIStore((s) => s.toggleScenesCollapsed);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewportSize, setViewportSize] = useState({ width: 800, height: 600 });
@@ -146,33 +144,27 @@ export function ArrangementView() {
         >
           {/* Track Labels - sticky left, z-30 to stay above timeline blocks and handles */}
           <div className="sticky left-0 z-30 bg-surface border-r border-border">
-            {/* Scene bar section (collapsible) */}
+            {/* Scene bar section */}
             {hasScenes && (
               <>
                 <div
-                  className="sticky top-0 z-40 bg-surface border-b border-border cursor-pointer select-none"
-                  onClick={toggleScenesCollapsed}
+                  className="sticky top-0 z-40 bg-surface border-b border-border select-none"
                 >
                   <div className="h-12 px-3 flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm text-muted-foreground">{scenesCollapsed ? '▸' : '▾'}</span>
-                      <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                        Scenes
-                      </h2>
-                    </div>
+                    <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                      Scenes
+                    </h2>
                     <button
-                      onClick={(e) => { e.stopPropagation(); addScene(); }}
+                      onClick={() => addScene()}
                       className="px-2 py-1 text-xs rounded bg-gradient-to-r from-accent-from/20 to-accent-to/20 text-accent-from hover:from-accent-from/30 hover:to-accent-to/30 transition-colors"
                     >
                       + Scene
                     </button>
                   </div>
                 </div>
-                {!scenesCollapsed && (
-                  <div className="track-tree-reset border-b border-border">
-                    <TrackTree treeId="scene-tracks" rootIds={rootScenes} />
-                  </div>
-                )}
+                <div className="track-tree-reset border-b border-border">
+                  <TrackTree treeId="scene-tracks" rootIds={rootScenes} />
+                </div>
               </>
             )}
 
@@ -208,8 +200,8 @@ export function ArrangementView() {
 
           {/* Timeline Content */}
           <div>
-            {/* Scene timeline (when expanded) */}
-            {hasScenes && !scenesCollapsed && sceneFlatTracks.length > 0 && (
+            {/* Scene timeline */}
+            {hasScenes && sceneFlatTracks.length > 0 && (
               <div className="border-b border-border">
                 <TimelineCanvas
                   flatTracks={sceneFlatTracks}

@@ -45,6 +45,7 @@ const DEFAULTS = {
   heightAmount: 0.35,
   opacity: 1,
   color: '#ffffff',
+  strokeColor: '',
   reverbEnabled: false,
   reverbReflections: 12,
   reverbDecay: 1.5,
@@ -97,11 +98,12 @@ function createTextCanvas(
   fontFamily: string = DEFAULTS.fontFamily,
   color: string = DEFAULTS.color,
   fontVariant: string = DEFAULTS.fontVariant,
+  strokeColor: string = DEFAULTS.strokeColor,
 ): HTMLCanvasElement {
   // Include font-ready status in cache key so fallback-rendered canvases
   // get replaced once the real font finishes loading
   const fontReady = isFontReady(fontFamily, fontVariant);
-  const key = `${word}|${canvasSize}|${strokeWidth}|${fontFamily}|${color}|${fontVariant}|${fontReady}`;
+  const key = `${word}|${canvasSize}|${strokeWidth}|${fontFamily}|${color}|${fontVariant}|${fontReady}|${strokeColor}`;
   const cached = canvasCache.get(key);
   if (cached) return cached;
 
@@ -133,14 +135,18 @@ function createTextCanvas(
 
   const sw = Math.max(1, strokeWidth * fontSize);
   ctx.lineWidth = sw;
-  // Pick stroke contrast based on text color luminance
-  ctx.fillStyle = color;
-  const tmp = ctx.fillStyle; // browser-parsed hex
-  const r = parseInt(tmp.slice(1, 3), 16);
-  const g = parseInt(tmp.slice(3, 5), 16);
-  const b = parseInt(tmp.slice(5, 7), 16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  ctx.strokeStyle = luminance > 0.5 ? 'black' : 'white';
+  // Use explicit stroke color if provided, otherwise auto-pick contrast
+  if (strokeColor) {
+    ctx.strokeStyle = strokeColor;
+  } else {
+    ctx.fillStyle = color;
+    const tmp = ctx.fillStyle; // browser-parsed hex
+    const r = parseInt(tmp.slice(1, 3), 16);
+    const g = parseInt(tmp.slice(3, 5), 16);
+    const b = parseInt(tmp.slice(5, 7), 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    ctx.strokeStyle = luminance > 0.5 ? 'black' : 'white';
+  }
   ctx.lineJoin = 'round';
   const cx = canvasSize / 2;
   const cy = canvasSize / 2;
@@ -168,6 +174,7 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
   const lastStrokeRef = useRef(-1);
   const lastFontRef = useRef('');
   const lastColorRef = useRef('');
+  const lastStrokeColorRef = useRef('');
   const lastVariantRef = useRef('');
   const lastFontReadyRef = useRef(false);
   const noteOnTimeRef = useRef(-1); // clock time when current note started
@@ -347,6 +354,7 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
     const heightAmount = (state.params.heightAmount as number) ?? DEFAULTS.heightAmount;
     const textOpacity = (state.params.opacity as number) ?? DEFAULTS.opacity;
     const color = (state.params.color as string) ?? DEFAULTS.color;
+    const strokeColor = (state.params.strokeColor as string) ?? DEFAULTS.strokeColor;
     const reverbEnabled = (state.params.reverbEnabled as boolean) ?? DEFAULTS.reverbEnabled;
     const reverbReflections = (state.params.reverbReflections as number) ?? DEFAULTS.reverbReflections;
     const reverbDecay = (state.params.reverbDecay as number) ?? DEFAULTS.reverbDecay;
@@ -481,7 +489,7 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
         // Update texture if needed
         const wTex = wallTexturesRef.current[i];
         if (entry.word !== wallLastWordsRef.current[i]) {
-          const canvas = createTextCanvas(entry.word, 512, strokeWidth, fontFamily, color, fontVariant);
+          const canvas = createTextCanvas(entry.word, 512, strokeWidth, fontFamily, color, fontVariant, strokeColor);
           wTex.image = canvas;
           wTex.needsUpdate = true;
           wallLastWordsRef.current[i] = entry.word;
@@ -539,14 +547,15 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
 
       // Update main mesh texture
       const fontReady = isFontReady(fontFamily, fontVariant);
-      if (currentWord !== lastWordRef.current || strokeWidth !== lastStrokeRef.current || fontFamily !== lastFontRef.current || color !== lastColorRef.current || fontVariant !== lastVariantRef.current || fontReady !== lastFontReadyRef.current) {
-        const canvas = createTextCanvas(currentWord, 512, strokeWidth, fontFamily, color, fontVariant);
+      if (currentWord !== lastWordRef.current || strokeWidth !== lastStrokeRef.current || fontFamily !== lastFontRef.current || color !== lastColorRef.current || strokeColor !== lastStrokeColorRef.current || fontVariant !== lastVariantRef.current || fontReady !== lastFontReadyRef.current) {
+        const canvas = createTextCanvas(currentWord, 512, strokeWidth, fontFamily, color, fontVariant, strokeColor);
         textureRef.current.image = canvas;
         textureRef.current.needsUpdate = true;
         lastWordRef.current = currentWord;
         lastStrokeRef.current = strokeWidth;
         lastFontRef.current = fontFamily;
         lastColorRef.current = color;
+        lastStrokeColorRef.current = strokeColor;
         lastVariantRef.current = fontVariant;
         lastFontReadyRef.current = fontReady;
 
@@ -608,7 +617,7 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
         // Update texture if word changed for this slot
         const tex = echoTexturesRef.current[tap];
         if (bestEntry.word !== echoLastWordsRef.current[tap]) {
-          const canvas = createTextCanvas(bestEntry.word, 512, strokeWidth, fontFamily, color, fontVariant);
+          const canvas = createTextCanvas(bestEntry.word, 512, strokeWidth, fontFamily, color, fontVariant, strokeColor);
           tex.image = canvas;
           tex.needsUpdate = true;
           echoLastWordsRef.current[tap] = bestEntry.word;
@@ -673,7 +682,7 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
         // Update texture if word changed
         const rTex = reverbTexturesRef.current[r];
         if (bestEntry.word !== reverbLastWordsRef.current[r]) {
-          const canvas = createTextCanvas(bestEntry.word, 512, strokeWidth, fontFamily, color, fontVariant);
+          const canvas = createTextCanvas(bestEntry.word, 512, strokeWidth, fontFamily, color, fontVariant, strokeColor);
           rTex.image = canvas;
           rTex.needsUpdate = true;
           reverbLastWordsRef.current[r] = bestEntry.word;
@@ -776,6 +785,10 @@ export const TextDisplay: Instrument = {
       type: 'color', label: 'Color',
       default: DEFAULTS.color,
     },
+    strokeColor: {
+      type: 'color', label: 'Stroke Color',
+      default: DEFAULTS.strokeColor,
+    },
     heightAmount: {
       type: 'number', label: 'Height Amount', min: 0, max: 1, step: 0.05,
       default: DEFAULTS.heightAmount,
@@ -826,6 +839,11 @@ export const TextDisplay: Instrument = {
       default: DEFAULTS.wallRotationMax,
     },
   },
+
+  colorRoleMapping: [
+    { role: 'text', param: 'color', type: 'hex' },
+    { role: 'textStroke', param: 'strokeColor', type: 'hex' },
+  ],
 
   VisualComponent: TextDisplayVisual,
 };

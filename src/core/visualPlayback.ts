@@ -63,6 +63,8 @@ export class VisualPlaybackEngine {
   private maskChildMap: Map<string, string[]> = new Map();
   // Scene router child map: parentTrackId → sceneRouterChildTrackId
   private sceneRouterMap: Map<string, string> = new Map();
+  // Scene copy child map: sceneTrackId → sceneCopyChildTrackId
+  private sceneCopyMap: Map<string, string> = new Map();
   // Crossfade state per parent track
   private palettePrevPitch: Map<string, number> = new Map();
   private palettePrevDef: Map<string, ColorPaletteDef> = new Map();
@@ -79,6 +81,7 @@ export class VisualPlaybackEngine {
     this.paletteChildMap.clear();
     this.maskChildMap.clear();
     this.sceneRouterMap.clear();
+    this.sceneCopyMap.clear();
     for (const track of Object.values(project.tracks)) {
       if (track.instrumentId === 'colorPalette' && track.parentId) {
         this.paletteChildMap.set(track.parentId, track.id);
@@ -91,6 +94,9 @@ export class VisualPlaybackEngine {
       if (track.instrumentId === 'sceneRouter' && track.parentId) {
         this.sceneRouterMap.set(track.parentId, track.id);
       }
+      if (track.instrumentId === 'sceneCopy' && track.parentId) {
+        this.sceneCopyMap.set(track.parentId, track.id);
+      }
     }
 
     // Rebuild track states, preserving params from project settings
@@ -102,9 +108,10 @@ export class VisualPlaybackEngine {
       const isColorPalette = resolved.instrumentId === 'colorPalette';
       const isMask = isMaskInstrument(resolved.instrumentId);
       const isSceneRouter = resolved.instrumentId === 'sceneRouter';
-      const hasAutomationOnly = !hasVisual && !isColorPalette && !isMask && !isSceneRouter && resolved.automationLanes && resolved.automationLanes.length > 0;
+      const isSceneCopy = resolved.instrumentId === 'sceneCopy';
+      const hasAutomationOnly = !hasVisual && !isColorPalette && !isMask && !isSceneRouter && !isSceneCopy && resolved.automationLanes && resolved.automationLanes.length > 0;
       const hasBlackoutRegions = (resolved.blackoutRegions?.length ?? 0) > 0;
-      if (!hasVisual && !isColorPalette && !isMask && !isSceneRouter && !hasAutomationOnly && !hasBlackoutRegions) continue;
+      if (!hasVisual && !isColorPalette && !isMask && !isSceneRouter && !isSceneCopy && !hasAutomationOnly && !hasBlackoutRegions) continue;
 
       const state = createVisualInstrumentState(resolved.instrumentId ?? '', resolved.instrumentSettings);
       newStates.set(resolved.trackId, state);
@@ -448,6 +455,39 @@ export class VisualPlaybackEngine {
 
     if (lo === 0) return undefined; // no note has triggered yet
     return events[lo - 1].pitch;
+  }
+
+  /**
+   * Returns scene copy state for a scene track: the source scene index and camera params.
+   * Uses the same latch/binary-search pattern as getDynamicSceneIndex().
+   * Returns undefined if no SceneCopy child or no notes have triggered yet.
+   */
+  getSceneCopyState(sceneTrackId: string): { sourceSceneIndex: number; params: Record<string, unknown> } | undefined {
+    const copyTrackId = this.sceneCopyMap.get(sceneTrackId);
+    if (!copyTrackId) return undefined;
+
+    const trackEvents = this.perTrackEvents.find(e => e.trackId === copyTrackId);
+    if (!trackEvents || trackEvents.events.length === 0) return undefined;
+
+    const beat = this.lastComputedBeat;
+    const events = trackEvents.events;
+
+    // Binary search: find last event with startTimeInBeats <= beat (latch behavior)
+    let lo = 0, hi = events.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (events[mid].startTimeInBeats <= beat) lo = mid + 1;
+      else hi = mid;
+    }
+
+    if (lo === 0) return undefined; // no note has triggered yet
+    const sourceSceneIndex = events[lo - 1].pitch;
+
+    // Get automation-resolved camera params from track state
+    const state = this.trackStates.get(copyTrackId);
+    const params = state?.params ?? {};
+
+    return { sourceSceneIndex, params };
   }
 
   /**

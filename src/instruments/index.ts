@@ -40,6 +40,7 @@ import { RadialMask } from './masks/RadialMask';
 import { GradientMask } from './masks/GradientMask';
 import { StripMask } from './masks/StripMask';
 import { SceneRouter } from './utility/SceneRouter';
+import { SceneCopy } from './utility/SceneCopy';
 
 // Flat registry for quick lookup by ID
 export const INSTRUMENTS: Record<string, Instrument> = {
@@ -79,6 +80,7 @@ export const INSTRUMENTS: Record<string, Instrument> = {
   gradientMask: GradientMask,
   stripMask: StripMask,
   sceneRouter: SceneRouter,
+  sceneCopy: SceneCopy,
 };
 
 // Get instrument by ID
@@ -143,7 +145,7 @@ export function getInstrumentFolderTree(): InstrumentFolder {
       },
       {
         name: 'Utility',
-        instruments: ['colorPalette', 'sceneRouter'],
+        instruments: ['colorPalette', 'sceneRouter', 'sceneCopy'],
       },
     ],
   };
