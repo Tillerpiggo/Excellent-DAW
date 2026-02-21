@@ -466,6 +466,7 @@ export function TimelineCanvas({
     trackIndex?: number;
     originalPositions?: Map<string, { startBar: number; durationBars: number; trackId: string; trackIndex: number; audioOffset?: number; audioData?: import('@/core/types').AudioData }>;
     isCopying?: boolean;
+    shiftKey?: boolean;
   }>({
     type: 'none',
     startX: 0,
@@ -635,6 +636,7 @@ export function TimelineCanvas({
       startY: y,
       currentX: x,
       currentY: y,
+      shiftKey: e.shiftKey,
     });
   }, [dragState.type, clearBlockSelection, screenToWorld]);
 
@@ -792,7 +794,13 @@ export function TimelineCanvas({
         });
 
         if (matchingBlockIds.length > 0) {
-          selectBlocks(matchingBlockIds);
+          if (dragState.shiftKey) {
+            // Merge with existing selection
+            const existing = Array.from(selectedBlockIds);
+            selectBlocks([...existing, ...matchingBlockIds]);
+          } else {
+            selectBlocks(matchingBlockIds);
+          }
         }
       }
 

@@ -829,6 +829,7 @@ export const useProjectStore = create<ProjectState>()(
           id: trackId,
           name: name || 'Scene',
           typeId: 'scene',
+          instrumentId: 'sceneGate',
           muted: false,
           solo: false,
           collapsed: false,
@@ -939,6 +940,13 @@ export const useProjectStore = create<ProjectState>()(
       // Migration: default rootScenes to [] if missing (schema v1 → v2)
       if (!project.rootScenes) {
         project.rootScenes = [];
+      }
+      // Migration: assign sceneGate instrument to existing scene tracks
+      for (const sceneId of project.rootScenes) {
+        const scene = project.tracks[sceneId];
+        if (scene && scene.typeId === 'scene' && !scene.instrumentId) {
+          scene.instrumentId = 'sceneGate';
+        }
       }
       set((state) => {
         state.project = project;

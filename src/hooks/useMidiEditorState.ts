@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Block, Track } from '@/core/types';
 import { MidiNote } from '@/components/shared/MidiEditor';
 
@@ -10,6 +10,24 @@ interface UseMidiEditorStateOptions {
   defaultQuantize: number;
 }
 
+/** Cheap content fingerprint for a block's event data. */
+function blockFingerprint(block: Block): string {
+  let hash = block.id;
+  for (const stream of block.streams) {
+    hash += `:${stream.events.length}`;
+    // Sample first and last events for change detection
+    if (stream.events.length > 0) {
+      const first = stream.events[0];
+      const last = stream.events[stream.events.length - 1];
+      hash += `,${first.startTimeInBeats},${first.pitch},${first.duration}`;
+      if (stream.events.length > 1) {
+        hash += `,${last.startTimeInBeats},${last.pitch},${last.duration}`;
+      }
+    }
+  }
+  return hash;
+}
+
 export function useMidiEditorState({
   block,
   track,
@@ -19,12 +37,19 @@ export function useMidiEditorState({
 }: UseMidiEditorStateOptions) {
   const [quantize, setQuantize] = useState(defaultQuantize);
   const [notes, setNotes] = useState<MidiNote[]>(() => extractNotes(block));
+  // Track whether the last change was from local editing (to avoid re-extracting our own saves)
+  const localEditRef = useRef(false);
 
-  // Update notes when block ID changes
-  const blockId = block.id;
+  // Update notes when block content changes (handles undo/redo and block switches)
+  const fingerprint = blockFingerprint(block);
   useEffect(() => {
+    if (localEditRef.current) {
+      // This change came from our own auto-save writing back to the store — skip
+      localEditRef.current = false;
+      return;
+    }
     setNotes(extractNotes(block));
-  }, [blockId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fingerprint]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle notes change
   const handleNotesChange = useCallback((newNotes: MidiNote[]) => {
@@ -34,6 +59,7 @@ export function useMidiEditorState({
   // Auto-save when notes change
   useEffect(() => {
     const timeout = setTimeout(() => {
+      localEditRef.current = true;
       saveNotes(notes, track.id, block.id);
     }, 500);
     return () => clearTimeout(timeout);

@@ -23,6 +23,8 @@ export const StripMask: Instrument = {
     stripCount: 8,
     angle: 0,
     feather: 0.005,
+    width: 1,
+    height: 1,
   },
   settingsSchema: {
     stripCount: {
@@ -48,6 +50,22 @@ export const StripMask: Instrument = {
       max: 0.1,
       step: 0.001,
       default: 0.005,
+    },
+    width: {
+      type: 'number',
+      label: 'Width',
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
+    },
+    height: {
+      type: 'number',
+      label: 'Height',
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 1,
     },
   },
 };

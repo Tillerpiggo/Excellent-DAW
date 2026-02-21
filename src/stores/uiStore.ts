@@ -1,5 +1,7 @@
 import { create } from 'zustand';
-import { Preset } from '@/core/types';
+import { Block, Preset } from '@/core/types';
+import { useProjectStore } from './projectStore';
+import { flattenTracks } from '@/utils/tree';
 
 interface DragState {
   type: 'preset' | 'block' | 'instrument' | null;
@@ -7,6 +9,11 @@ interface DragState {
   blockId?: string;
   sourceTrackId?: string;
   instrumentId?: string;
+}
+
+interface ClipboardBlock {
+  block: Omit<Block, 'id'>;
+  trackId: string;
 }
 
 interface MarqueeSelection {
@@ -62,6 +69,9 @@ interface UIState {
   // Chord picker state
   chordPickerOpen: boolean;
   chordPickerTargetIndex: number | null;
+
+  // Clipboard
+  clipboard: ClipboardBlock[];
 
   // Scenes
   scenesCollapsed: boolean;
@@ -130,6 +140,10 @@ interface UIState {
   setExportProgress: (v: number) => void;
   setShowExportModal: (v: boolean) => void;
 
+  // Clipboard actions
+  copyBlocks: () => void;
+  pasteBlocks: () => void;
+
   // View actions
   setCurrentView: (view: 'home' | 'editor') => void;
 }
@@ -179,6 +193,9 @@ export const useUIStore = create<UIState>((set) => ({
   // Chord picker state
   chordPickerOpen: false,
   chordPickerTargetIndex: null,
+
+  // Clipboard
+  clipboard: [],
 
   // Scenes
   scenesCollapsed: true,
@@ -434,6 +451,81 @@ export const useUIStore = create<UIState>((set) => ({
 
   setShowExportModal: (v) => {
     set({ showExportModal: v });
+  },
+
+  copyBlocks: () => {
+    const { selectedBlockIds } = useUIStore.getState();
+    if (selectedBlockIds.size === 0) return;
+
+    const projectState = useProjectStore.getState();
+    const tracks = projectState.project.tracks;
+    const clipboardBlocks: ClipboardBlock[] = [];
+
+    for (const trackId of Object.keys(tracks)) {
+      const track = tracks[trackId];
+      for (const block of track.blocks) {
+        if (selectedBlockIds.has(block.id)) {
+          // Deep copy the block data without the id
+          const { id, ...blockData } = block;
+          clipboardBlocks.push({
+            block: JSON.parse(JSON.stringify(blockData)),
+            trackId,
+          });
+        }
+      }
+    }
+
+    set({ clipboard: clipboardBlocks });
+  },
+
+  pasteBlocks: () => {
+    const { clipboard, currentBeat, selectedTrackId } = useUIStore.getState();
+    if (clipboard.length === 0) return;
+
+    const projectState = useProjectStore.getState();
+    const { beatsPerBar, tracks, rootTracks, rootScenes } = projectState.project;
+
+    // Build a flat track ID list (scenes then tracks) for index-based offsets
+    const allFlatIds = flattenTracks(
+      { tracks, rootTracks: [...rootScenes, ...rootTracks] } as Parameters<typeof flattenTracks>[0],
+      new Set() // don't collapse anything for index calculation
+    ).map((n) => n.track.id);
+
+    // Determine the anchor track (topmost clipboard track in flat order)
+    const clipboardTrackIndices = clipboard.map((cb) => allFlatIds.indexOf(cb.trackId));
+    const anchorTrackIndex = Math.min(...clipboardTrackIndices);
+
+    // Target track: use selectedTrackId, or fall back to anchor track
+    const targetTrackId = selectedTrackId && tracks[selectedTrackId] ? selectedTrackId : clipboard[0].trackId;
+    const targetTrackIndex = allFlatIds.indexOf(targetTrackId);
+    const trackOffset = targetTrackIndex - anchorTrackIndex;
+
+    // Time offset
+    const anchorBar = Math.min(...clipboard.map((cb) => cb.block.startBar));
+    const pasteBar = currentBeat / beatsPerBar;
+    const timeOffset = pasteBar - anchorBar;
+
+    const newBlockIds: string[] = [];
+
+    for (let i = 0; i < clipboard.length; i++) {
+      const { block, trackId } = clipboard[i];
+      const origIndex = clipboardTrackIndices[i];
+      const destIndex = origIndex + trackOffset;
+
+      // Clamp to valid flat track range
+      const destTrackId = allFlatIds[Math.max(0, Math.min(destIndex, allFlatIds.length - 1))];
+      if (!destTrackId || !tracks[destTrackId]) continue;
+
+      const newId = projectState.addBlock(destTrackId, {
+        ...JSON.parse(JSON.stringify(block)),
+        startBar: block.startBar + timeOffset,
+      });
+      newBlockIds.push(newId);
+    }
+
+    if (newBlockIds.length > 0) {
+      set({ selectedBlockIds: new Set(newBlockIds) });
+    }
   },
 
   setCurrentView: (view) => {

@@ -51,6 +51,7 @@ precision highp float;
 uniform sampler2D tMain;
 ${samplerDecls}
 uniform int sceneCount;
+uniform vec2 sceneOffset[${MAX_SCENES}];
 
 uniform vec4 maskParams[${MAX_SCENES * 4 * 2}];
 uniform vec4 stripData[${MAX_SCENES * (MAX_STRIPS / 4)}];
@@ -90,12 +91,12 @@ float circleWipeMask(vec2 uv, float radius, float centerX, float centerY, float 
   return 1.0 - smoothstep(radius - feather, radius + feather, dist);
 }
 
-float radialMask(vec2 uv, float segments, float rotation, float offset) {
+float radialMask(vec2 uv, float innerRadius, float outerRadius, float feather) {
   vec2 centered = uv - 0.5;
-  float angle = atan(centered.y, centered.x) + rotation * PI / 180.0;
-  float segAngle = angle * segments / (2.0 * PI);
-  float bar = fract(segAngle + offset);
-  return step(bar, 0.5);
+  float dist = length(centered);
+  float inner = smoothstep(innerRadius - feather, innerRadius + feather, dist);
+  float outer = 1.0 - smoothstep(outerRadius - feather, outerRadius + feather, dist);
+  return inner * outer;
 }
 
 float gradientMask(vec2 uv, float direction, float softness, float position) {
@@ -117,13 +118,16 @@ float getStripState(int sceneIdx, int stripIdx) {
   return v.w;
 }
 
-float stripMaskFn(vec2 uv, int sceneIdx, float stripCount, float angle, float feather) {
+float stripMaskFn(vec2 uv, int sceneIdx, float stripCount, float angle, float feather, float width, float height) {
   float rad = angle * PI / 180.0;
   float cosA = cos(rad);
   float sinA = sin(rad);
-  // Center around screen middle, project along angle
+  // Center around screen middle, scale by width/height
   vec2 centered = uv - 0.5;
-  float projected = centered.x * cosA + centered.y * sinA;
+  vec2 scaled = centered / vec2(width, height);
+  // Clip pixels outside the scaled region
+  if (abs(scaled.x) > 0.5 || abs(scaled.y) > 0.5) return 0.0;
+  float projected = scaled.x * cosA + scaled.y * sinA;
   // Half-extent of the projection at this angle (covers full screen)
   float extent = abs(cosA) * 0.5 + abs(sinA) * 0.5;
   // Map from [-extent, extent] to [0, 1]
@@ -145,7 +149,7 @@ float evaluateMask(int maskType, vec4 p1, vec4 p2, int sceneIdx) {
   if (maskType == 3) return circleWipeMask(vUv, p1.y, p1.z, p1.w, p2.x);
   if (maskType == 4) return radialMask(vUv, p1.y, p1.z, p1.w);
   if (maskType == 5) return gradientMask(vUv, p1.y, p1.z, p1.w);
-  if (maskType == 6) return stripMaskFn(vUv, sceneIdx, p1.y, p1.z, p1.w);
+  if (maskType == 6) return stripMaskFn(vUv, sceneIdx, p1.y, p1.z, p1.w, p2.x, p2.y);
   return 1.0;
 }
 
@@ -157,7 +161,10 @@ void main() {
   for (int i = 0; i < ${MAX_SCENES}; i++) {
     if (i >= sceneCount) break;
 
-    vec4 sceneColor = sampleScene(i, vUv);
+    vec2 offsetUv = vUv - sceneOffset[i];
+    // Discard pixels outside [0,1] after offset (no wrapping)
+    if (offsetUv.x < 0.0 || offsetUv.x > 1.0 || offsetUv.y < 0.0 || offsetUv.y > 1.0) continue;
+    vec4 sceneColor = sampleScene(i, offsetUv);
 
     // Compute combined mask (multiply all masks for this scene)
     float mask = 1.0;
@@ -216,11 +223,11 @@ function getMaskShaderParams(instrumentId: string, params: Record<string, unknow
     case 'circleWipeMask':
       return [n('radius', 0.5), n('centerX', 0.5), n('centerY', 0.5), n('feather', 0.02), 0];
     case 'radialMask':
-      return [n('segments', 6), n('rotation', 0), n('offset', 0.5), 0, 0];
+      return [n('innerRadius', 0), n('outerRadius', 0.5), n('feather', 0.02), 0, 0];
     case 'gradientMask':
       return [n('direction', 0), n('softness', 0.3), n('position', 0.5), 0, 0];
     case 'stripMask':
-      return [n('stripCount', 8), n('angle', 0), n('feather', 0.005), 0, 0];
+      return [n('stripCount', 8), n('angle', 0), n('feather', 0.005), n('width', 1), n('height', 1)];
     default:
       return [0, 0, 0, 0, 0];
   }
@@ -308,6 +315,7 @@ export function SceneCompositor({ allTracks, rootScenes }: SceneCompositorProps)
     const uniforms: Record<string, { value: unknown }> = {
       tMain: { value: mainFBO.texture },
       sceneCount: { value: sceneCount },
+      sceneOffset: { value: new Array(MAX_SCENES).fill(null).map(() => new THREE.Vector2(0, 0)) },
       maskParams: { value: new Array(MAX_SCENES * 4 * 2).fill(null).map(() => new THREE.Vector4(0, 0, 0, 0)) },
       stripData: { value: new Array(MAX_SCENES * (MAX_STRIPS / 4)).fill(null).map(() => new THREE.Vector4(0, 0, 0, 0)) },
     };
@@ -357,6 +365,14 @@ export function SceneCompositor({ allTracks, rootScenes }: SceneCompositorProps)
     gl.setRenderTarget(null);
 
     // 2. Render each non-muted scene to its FBO, packing into contiguous shader slots
+    // DEBUG - inspect the scene's children directly from the store
+    if (rootScenes.length > 0) {
+      const childInstruments = rootScenes.map(id => {
+        const scene = storeTracks[id];
+        return [id, scene?.childIds?.map(cid => ({ id: cid, inst: storeTracks[cid]?.instrumentId, parent: storeTracks[cid]?.parentId }))];
+      });
+      console.log('[SceneCopy] children:', JSON.stringify(childInstruments));
+    }
     let activeSlot = 0;
     for (let i = 0; i < rootScenes.length && i < MAX_SCENES; i++) {
       const sceneId = rootScenes[i];
@@ -364,11 +380,14 @@ export function SceneCompositor({ allTracks, rootScenes }: SceneCompositorProps)
       const fbo = sceneFBOs[i];
       if (!fbo) continue;
 
-      // Skip muted or blacked-out scenes entirely
+      // Skip muted, blacked-out, or gated-off scenes entirely
       if (sceneTrack?.muted) continue;
       if (engine.isSceneBlackedOut(sceneId)) continue;
+      if (!engine.isSceneVisible(sceneId)) continue;
 
       // Check if this scene has a SceneCopy child
+      // DEBUG: log every scene iteration
+      console.log('[SceneCopy] scene loop i=', i, '| sceneId=', sceneId, '| children=', sceneTrack?.childIds);
       const copyState = engine.getSceneCopyState(sceneId);
 
       if (copyState) {
@@ -378,6 +397,7 @@ export function SceneCompositor({ allTracks, rootScenes }: SceneCompositorProps)
         // sourceIdx 0 = Main (unassigned), 1+ = rootScenes[sourceIdx - 1]
         const sourceSceneId = sourceIdx === 0 ? undefined : rootScenes[sourceIdx - 1];
 
+        let visibleCount = 0;
         for (const track of allTracks) {
           const group = refs.get(track.id);
           if (!group) continue;
@@ -386,7 +406,10 @@ export function SceneCompositor({ allTracks, rootScenes }: SceneCompositorProps)
           group.visible = sourceSceneId === undefined
             ? !effectiveScene  // Main = unassigned tracks
             : effectiveScene === sourceSceneId;
+          if (group.visible) visibleCount++;
         }
+        // DEBUG
+        console.log('[SceneCopy] compositor: sourceIdx=', sourceIdx, '| sourceSceneId=', sourceSceneId, '| visibleTracks=', visibleCount, '| rootScenes=', rootScenes);
 
         // Save camera state
         const savedPos = camera.position.clone();
@@ -442,8 +465,12 @@ export function SceneCompositor({ allTracks, rootScenes }: SceneCompositorProps)
         gl.setRenderTarget(null);
       }
 
-      // Assign this scene's texture to the next active shader slot
+      // Assign this scene's texture and offset to the next active shader slot
       compositorMaterial.uniforms[`tScene${activeSlot}`].value = fbo.texture;
+      const gateState = engine.getTrackState(sceneId);
+      const offX = (gateState?.params.offsetX as number) ?? 0;
+      const offY = (gateState?.params.offsetY as number) ?? 0;
+      (compositorMaterial.uniforms.sceneOffset.value as THREE.Vector2[])[activeSlot].set(offX, offY);
 
       // Update mask uniforms for this slot
       const maskStates = engine.getMaskStatesForScene(sceneId);
@@ -499,6 +526,7 @@ export function SceneCompositor({ allTracks, rootScenes }: SceneCompositorProps)
     for (let i = activeSlot; i < MAX_SCENES; i++) {
       compositorMaterial.uniforms[`tScene${i}`].value = EMPTY_TEXTURE;
       compositorMaterial.uniforms[`maskCount${i}`].value = 0;
+      (compositorMaterial.uniforms.sceneOffset.value as THREE.Vector2[])[i].set(0, 0);
     }
     compositorMaterial.uniforms.sceneCount.value = activeSlot;
   });

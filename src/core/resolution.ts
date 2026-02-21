@@ -208,8 +208,9 @@ function buildTrackOutputs(
     });
   }
 
-  // Scene tracks need a resolved entry so blackout regions from mute children are tracked
-  if (results.length === 0 && track.typeId === 'scene' && blackoutRegions?.length) {
+  // Scene tracks need a resolved entry so blackout regions and gate events are tracked
+  const hasSceneEvents = track.typeId === 'scene' && combinedOutput.events.length > 0;
+  if (results.length === 0 && track.typeId === 'scene' && (blackoutRegions?.length || hasSceneEvents)) {
     results.push({
       trackId: track.id,
       instrumentId: undefined,

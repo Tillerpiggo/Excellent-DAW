@@ -13,6 +13,7 @@ import {
   resolvePaletteAtBeat,
   applyColorRoleMapping,
 } from './colorPalette';
+import { SCENE_GATE_PITCH } from '@/instruments/utility/SceneGate';
 
 interface PerTrackEvents {
   trackId: string;
@@ -65,6 +66,8 @@ export class VisualPlaybackEngine {
   private sceneRouterMap: Map<string, string> = new Map();
   // Scene copy child map: sceneTrackId → sceneCopyChildTrackId
   private sceneCopyMap: Map<string, string> = new Map();
+  // Scene gate set: scene IDs that have gate events (MIDI blocks on scene track)
+  private sceneGateSet: Set<string> = new Set();
   // Crossfade state per parent track
   private palettePrevPitch: Map<string, number> = new Map();
   private palettePrevDef: Map<string, ColorPaletteDef> = new Map();
@@ -98,6 +101,17 @@ export class VisualPlaybackEngine {
         this.sceneCopyMap.set(track.parentId, track.id);
       }
     }
+    // DEBUG
+    console.log('[SceneCopy] resolveFromProject: sceneCopyMap size=', this.sceneCopyMap.size, '| all instrumentIds=', Object.values(project.tracks).map(t => [t.id, t.instrumentId, t.parentId]).filter(([, iid]) => iid));
+
+    // Build scene gate set: scene tracks that have resolved events (MIDI blocks on the scene track itself)
+    this.sceneGateSet.clear();
+    for (const resolved of resolvedTracks) {
+      const track = project.tracks[resolved.trackId];
+      if (track?.typeId === 'scene' && resolved.output.events.length > 0) {
+        this.sceneGateSet.add(resolved.trackId);
+      }
+    }
 
     // Rebuild track states, preserving params from project settings
     const newStates = new Map<string, VisualInstrumentState>();
@@ -111,7 +125,8 @@ export class VisualPlaybackEngine {
       const isSceneCopy = resolved.instrumentId === 'sceneCopy';
       const hasAutomationOnly = !hasVisual && !isColorPalette && !isMask && !isSceneRouter && !isSceneCopy && resolved.automationLanes && resolved.automationLanes.length > 0;
       const hasBlackoutRegions = (resolved.blackoutRegions?.length ?? 0) > 0;
-      if (!hasVisual && !isColorPalette && !isMask && !isSceneRouter && !isSceneCopy && !hasAutomationOnly && !hasBlackoutRegions) continue;
+      const isSceneGate = this.sceneGateSet.has(resolved.trackId);
+      if (!hasVisual && !isColorPalette && !isMask && !isSceneRouter && !isSceneCopy && !hasAutomationOnly && !hasBlackoutRegions && !isSceneGate) continue;
 
       const state = createVisualInstrumentState(resolved.instrumentId ?? '', resolved.instrumentSettings);
       newStates.set(resolved.trackId, state);
@@ -430,6 +445,17 @@ export class VisualPlaybackEngine {
   }
 
   /**
+   * Returns whether a scene track is visible based on MIDI gating.
+   * If the scene has no gate events (no MIDI blocks), it's always visible.
+   * If it has gate events, it's only visible when notes are active.
+   */
+  isSceneVisible(sceneTrackId: string): boolean {
+    if (!this.sceneGateSet.has(sceneTrackId)) return true;
+    const state = this.trackStates.get(sceneTrackId);
+    return state?.activeNotes.has(SCENE_GATE_PITCH) ?? false;
+  }
+
+  /**
    * Returns dynamic scene index for a track based on its SceneRouter child.
    * Uses the most recent note-on (latch behavior) — the scene stays until a new note triggers.
    * Returns undefined if no SceneRouter or no notes have triggered yet (use static sceneId).
@@ -464,10 +490,18 @@ export class VisualPlaybackEngine {
    */
   getSceneCopyState(sceneTrackId: string): { sourceSceneIndex: number; params: Record<string, unknown> } | undefined {
     const copyTrackId = this.sceneCopyMap.get(sceneTrackId);
-    if (!copyTrackId) return undefined;
+    if (!copyTrackId) {
+      // DEBUG
+      if (this.sceneCopyMap.size > 0) console.log('[SceneCopy] map has entries but no match for', sceneTrackId, '| map keys:', [...this.sceneCopyMap.keys()]);
+      return undefined;
+    }
 
     const trackEvents = this.perTrackEvents.find(e => e.trackId === copyTrackId);
-    if (!trackEvents || trackEvents.events.length === 0) return undefined;
+    if (!trackEvents || trackEvents.events.length === 0) {
+      // DEBUG
+      console.log('[SceneCopy] copyTrackId found:', copyTrackId, '| trackEvents:', !!trackEvents, '| eventCount:', trackEvents?.events.length ?? 0);
+      return undefined;
+    }
 
     const beat = this.lastComputedBeat;
     const events = trackEvents.events;
@@ -480,12 +514,19 @@ export class VisualPlaybackEngine {
       else hi = mid;
     }
 
-    if (lo === 0) return undefined; // no note has triggered yet
+    if (lo === 0) {
+      // DEBUG
+      console.log('[SceneCopy] no note before beat', beat, '| first event at', events[0]?.startTimeInBeats);
+      return undefined;
+    }
     const sourceSceneIndex = events[lo - 1].pitch;
 
     // Get automation-resolved camera params from track state
     const state = this.trackStates.get(copyTrackId);
     const params = state?.params ?? {};
+
+    // DEBUG
+    console.log('[SceneCopy] active! sourceScene:', sourceSceneIndex, '| beat:', beat, '| params:', JSON.stringify(params));
 
     return { sourceSceneIndex, params };
   }

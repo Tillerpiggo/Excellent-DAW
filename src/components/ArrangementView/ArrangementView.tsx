@@ -27,6 +27,8 @@ export function ArrangementView() {
   const setScrollTop = useUIStore((s) => s.setScrollTop);
   const setPixelsPerBeat = useUIStore((s) => s.setPixelsPerBeat);
   const setTrackHeightScale = useUIStore((s) => s.setTrackHeightScale);
+  const copyBlocks = useUIStore((s) => s.copyBlocks);
+  const pasteBlocks = useUIStore((s) => s.pasteBlocks);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewportSize, setViewportSize] = useState({ width: 800, height: 600 });
@@ -83,6 +85,24 @@ export function ArrangementView() {
     },
     [setScrollLeft, setScrollTop]
   );
+
+  // Copy/Paste blocks at playhead
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey && e.key === 'c') {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+        e.preventDefault();
+        copyBlocks();
+      }
+      if (e.metaKey && e.key === 'v') {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+        e.preventDefault();
+        pasteBlocks();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [copyBlocks, pasteBlocks]);
 
   // Handle wheel zoom with native event listener (passive: false to allow preventDefault)
   useEffect(() => {
