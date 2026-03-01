@@ -57,6 +57,9 @@ export interface Instrument {
   // Only one track with this instrument can exist at a time
   singleton?: boolean;
 
+  // Master channel instrument (post-processing only, always at bottom of track list)
+  isMaster?: boolean;
+
   // Color palette role mapping for automatic palette-to-param conversion
   colorRoleMapping?: ColorRoleMapping;
 

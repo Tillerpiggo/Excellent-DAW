@@ -208,13 +208,13 @@ function buildTrackOutputs(
     });
   }
 
-  // Scene tracks need a resolved entry so blackout regions and gate events are tracked
-  const hasSceneEvents = track.typeId === 'scene' && combinedOutput.events.length > 0;
-  if (results.length === 0 && track.typeId === 'scene' && (blackoutRegions?.length || hasSceneEvents)) {
+  // Scene tracks always need a resolved entry so their instrumentSettings
+  // (scale, offsetX, offsetY) are available, plus blackout regions and gate events
+  if (results.length === 0 && track.typeId === 'scene') {
     results.push({
       trackId: track.id,
-      instrumentId: undefined,
-      instrumentSettings: undefined,
+      instrumentId: track.instrumentId,
+      instrumentSettings: track.instrumentSettings,
       output: combinedOutput,
       blackoutRegions,
     });

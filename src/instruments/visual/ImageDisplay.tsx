@@ -71,17 +71,18 @@ function ImageDisplayVisual({ trackId }: { trackId: string }) {
       });
     }
 
-    // Visibility based on active notes
-    const isVisible = state.activeNotes.size > 0;
-    meshRef.current.visible = isVisible && ready;
-
-    // Apply position and scale
+    // Apply position and scale BEFORE setting visibility so the mesh is
+    // already at the correct location on the frame it first appears.
     const baseScale = Math.min(viewport.width, viewport.height) * 0.5 * scale;
     meshRef.current.scale.set(baseScale * aspectRef.current, baseScale, 1);
     meshRef.current.position.set(x * viewport.width * 0.5, y * viewport.height * 0.5, 0);
 
     const mat = meshRef.current.material as THREE.MeshBasicMaterial;
     mat.opacity = opacity;
+
+    // Visibility based on active notes (set AFTER transforms are applied)
+    const isVisible = state.activeNotes.size > 0;
+    meshRef.current.visible = isVisible && ready;
   });
 
   // Cleanup

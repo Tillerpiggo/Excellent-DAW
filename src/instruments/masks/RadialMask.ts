@@ -13,6 +13,8 @@ export const RadialMask: Instrument = {
     innerRadius: 0,
     outerRadius: 0.5,
     feather: 0.02,
+    offsetX: 0,
+    offsetY: 0,
   },
   settingsSchema: {
     innerRadius: {
@@ -38,6 +40,22 @@ export const RadialMask: Instrument = {
       max: 0.5,
       step: 0.01,
       default: 0.02,
+    },
+    offsetX: {
+      type: 'number',
+      label: 'Offset X',
+      min: -1,
+      max: 1,
+      step: 0.01,
+      default: 0,
+    },
+    offsetY: {
+      type: 'number',
+      label: 'Offset Y',
+      min: -1,
+      max: 1,
+      step: 0.01,
+      default: 0,
     },
   },
 };

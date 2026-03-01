@@ -213,6 +213,11 @@ export async function exportVideo(options: ExportOptions): Promise<Blob> {
       if (frameIndex % 60 === 0 || videoEncoder.encodeQueueSize > 30) {
         onProgress?.(`Rendering frame ${frameIndex + 1}/${totalFrames}...`, frameIndex / totalFrames);
         await new Promise(r => setTimeout(r, 0));
+
+        // Re-assert export dimensions — R3F's ResizeObserver may have reset
+        // the canvas/FBOs back to the DOM container size during the yield
+        handle.setPixelRatio(1);
+        handle.setSize(width, height);
       }
     }
 

@@ -14,6 +14,8 @@ export const CircleWipeMask: Instrument = {
     centerX: 0.5,
     centerY: 0.5,
     feather: 0.02,
+    offsetX: 0,
+    offsetY: 0,
   },
   settingsSchema: {
     radius: {
@@ -47,6 +49,22 @@ export const CircleWipeMask: Instrument = {
       max: 0.5,
       step: 0.005,
       default: 0.02,
+    },
+    offsetX: {
+      type: 'number',
+      label: 'Offset X',
+      min: -1,
+      max: 1,
+      step: 0.01,
+      default: 0,
+    },
+    offsetY: {
+      type: 'number',
+      label: 'Offset Y',
+      min: -1,
+      max: 1,
+      step: 0.01,
+      default: 0,
     },
   },
 };

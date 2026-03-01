@@ -14,6 +14,8 @@ export const SlantedBarsMask: Instrument = {
     angle: 45,
     thickness: 0.5,
     offset: 0,
+    offsetX: 0,
+    offsetY: 0,
   },
   settingsSchema: {
     count: {
@@ -44,6 +46,22 @@ export const SlantedBarsMask: Instrument = {
       type: 'number',
       label: 'Offset',
       min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0,
+    },
+    offsetX: {
+      type: 'number',
+      label: 'Offset X',
+      min: -1,
+      max: 1,
+      step: 0.01,
+      default: 0,
+    },
+    offsetY: {
+      type: 'number',
+      label: 'Offset Y',
+      min: -1,
       max: 1,
       step: 0.01,
       default: 0,

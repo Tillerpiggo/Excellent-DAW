@@ -115,11 +115,10 @@ function TrackLabelRow({ node, trackHeight, onMuteSoloDragStart, onMuteSoloDragE
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
   useEffect(() => {
-    if (contextMenu) {
-      const handleClick = () => closeContextMenu();
-      window.addEventListener('click', handleClick);
-      return () => window.removeEventListener('click', handleClick);
-    }
+    if (!contextMenu) return;
+    const handleClick = () => closeContextMenu();
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
   }, [contextMenu, closeContextMenu]);
 
   const handleAddChildTrack = useCallback(() => {
@@ -170,22 +169,30 @@ function TrackLabelRow({ node, trackHeight, onMuteSoloDragStart, onMuteSoloDragE
   const isCollapsed = collapsedTrackIds.has(track.id);
   const hasChildren = track.childIds.length > 0;
   const isDropTarget = dropTargetTrackId === track.id;
+  const isMaster = track.typeId === 'master';
   const typeColor = TRACK_TYPE_COLORS[track.typeId];
   const instrumentColor = track.instrumentId ? INSTRUMENT_COLORS[track.instrumentId] : undefined;
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       className={`group relative flex items-center px-2 cursor-pointer transition-colors ${
         isSelected ? '' : 'hover:bg-muted/50'
-      } ${isDropTarget && dragState.type === 'preset' ? 'bg-accent-from/30' : ''}`}
+      } ${isDropTarget && dragState.type === 'preset' ? 'bg-accent-from/30' : ''} ${
+        isMaster ? 'border-t border-border/50' : ''
+      }`}
       style={{
         height: trackHeight,
         paddingLeft: `${8 + depth * 16}px`,
         ...(isSelected
           ? { background: 'linear-gradient(90deg, rgba(100, 116, 139, 0.25) 0%, rgba(71, 85, 105, 0.1) 100%)' }
+          : isMaster
+          ? { background: 'rgba(148, 163, 184, 0.05)' }
           : {}),
       }}
       onClick={(e) => selectTrack(track.id, e.shiftKey)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') selectTrack(track.id, e.shiftKey); }}
       onContextMenu={handleContextMenu}
       onDragOver={(e) => {
         if (dragState.type === 'preset') {
@@ -270,37 +277,43 @@ function TrackLabelRow({ node, trackHeight, onMuteSoloDragStart, onMuteSoloDragE
         S
       </button>
 
-      {/* Context menu */}
+      {/* Context menu (not shown for master track — only automation is relevant) */}
       {contextMenu && (
         <div
+          role="menu"
           className="fixed z-[100] min-w-[160px] bg-surface border border-border rounded-lg shadow-xl py-1 overflow-hidden"
           style={{
             left: contextMenu.x,
             top: contextMenu.y,
           }}
           onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => { if (e.key === 'Escape') closeContextMenu(); }}
         >
-          <button
-            onClick={handleAddChildTrack}
-            className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
-          >
-            <span className="text-muted-foreground">+</span>
-            <span>Add Child Track</span>
-          </button>
-          <button
-            onClick={handleAddSuppressTrack}
-            className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
-          >
-            <span className="text-muted-foreground">S</span>
-            <span>Add Suppress Track</span>
-          </button>
-          <button
-            onClick={handleAddMuteTrack}
-            className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
-          >
-            <span className="text-muted-foreground">M</span>
-            <span>Add Mute Track</span>
-          </button>
+          {!isMaster && (
+            <>
+              <button
+                onClick={handleAddChildTrack}
+                className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
+              >
+                <span className="text-muted-foreground">+</span>
+                <span>Add Child Track</span>
+              </button>
+              <button
+                onClick={handleAddSuppressTrack}
+                className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
+              >
+                <span className="text-muted-foreground">S</span>
+                <span>Add Suppress Track</span>
+              </button>
+              <button
+                onClick={handleAddMuteTrack}
+                className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50 transition-colors flex items-center gap-2"
+              >
+                <span className="text-muted-foreground">M</span>
+                <span>Add Mute Track</span>
+              </button>
+            </>
+          )}
           {hasAutomatableParams && (
             <button
               onClick={handleAddAutomationTrack}

@@ -16,9 +16,11 @@ export const SceneGate: Instrument = {
   defaultSettings: {
     offsetX: 0,
     offsetY: 0,
+    scale: 1,
   },
   settingsSchema: {
     offsetX: { type: 'number', label: 'Offset X', min: -1, max: 1, step: 0.01, default: 0 },
     offsetY: { type: 'number', label: 'Offset Y', min: -1, max: 1, step: 0.01, default: 0 },
+    scale: { type: 'number', label: 'Scale', min: 0, max: 12.7, step: 0.01, default: 1 },
   },
 };

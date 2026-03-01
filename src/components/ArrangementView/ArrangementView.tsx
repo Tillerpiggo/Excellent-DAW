@@ -19,6 +19,8 @@ export function ArrangementView() {
   const rootScenes = useProjectStore((state) => state.project.rootScenes);
   const { addTrack, addScene } = useProjectStore();
   const collapsedTrackIds = useUIStore((s) => s.collapsedTrackIds);
+  const showMasterTrack = useUIStore((s) => s.showMasterTrack);
+  const toggleMasterTrack = useUIStore((s) => s.toggleMasterTrack);
   const pixelsPerBeat = useUIStore((s) => s.pixelsPerBeat);
   const trackHeightScale = useUIStore((s) => s.trackHeightScale);
   const scrollLeft = useUIStore((s) => s.scrollLeft);
@@ -33,7 +35,8 @@ export function ArrangementView() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewportSize, setViewportSize] = useState({ width: 800, height: 600 });
   // Create minimal project-like object for flattenTracks
-  const flatTracks = flattenTracks({ tracks, rootTracks } as Parameters<typeof flattenTracks>[0], collapsedTrackIds);
+  const hideMaster = !showMasterTrack;
+  const flatTracks = flattenTracks({ tracks, rootTracks } as Parameters<typeof flattenTracks>[0], collapsedTrackIds, hideMaster);
 
   // Scene tracks (for the scene bar)
   const sceneFlatTracks = useMemo(() => {
@@ -195,6 +198,17 @@ export function ArrangementView() {
                   Tracks
                 </h2>
                 <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={toggleMasterTrack}
+                    className={`px-2 py-1 text-xs rounded transition-colors ${
+                      showMasterTrack
+                        ? 'bg-slate-400/20 text-slate-300'
+                        : 'bg-surface-hover text-muted-foreground hover:text-foreground'
+                    }`}
+                    title={showMasterTrack ? 'Hide master track' : 'Show master track'}
+                  >
+                    M
+                  </button>
                   {!hasScenes && (
                     <button
                       onClick={() => addScene()}
@@ -214,7 +228,7 @@ export function ArrangementView() {
               </div>
             </div>
             <div className="track-tree-reset">
-              <TrackTree treeId="arrangement-tracks" />
+              <TrackTree treeId="arrangement-tracks" hideMasterTrack={hideMaster} />
             </div>
           </div>
 

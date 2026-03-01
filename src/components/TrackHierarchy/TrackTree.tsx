@@ -21,9 +21,10 @@ import { TrackRowRenderer } from './TrackRowRenderer';
 interface TrackTreeProps {
   treeId: string;
   rootIds?: string[];
+  hideMasterTrack?: boolean;
 }
 
-export function TrackTree({ treeId, rootIds }: TrackTreeProps) {
+export function TrackTree({ treeId, rootIds, hideMasterTrack = false }: TrackTreeProps) {
   const project = useProjectStore((state) => state.project);
   const { moveTrack, duplicateTrack } = useProjectStore();
   const collapsedTrackIds = useUIStore((s) => s.collapsedTrackIds);
@@ -44,7 +45,7 @@ export function TrackTree({ treeId, rootIds }: TrackTreeProps) {
   }, []);
 
   // Convert project tracks to tree items
-  const treeItems = useMemo(() => tracksToTreeItems(project, rootIds), [project, rootIds]);
+  const treeItems = useMemo(() => tracksToTreeItems(project, rootIds, hideMasterTrack), [project, rootIds, hideMasterTrack]);
 
   // Key that changes when track structure changes, forcing tree remount.
   // StaticTreeDataProvider has private data that can't be updated externally,

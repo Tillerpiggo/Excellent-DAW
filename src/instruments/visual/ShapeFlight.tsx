@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useMemo } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { getVisualPlaybackEngine, interpolateLane } from '@/core/visualPlayback';
 import { useUIStore } from '@/stores/uiStore';
@@ -138,8 +138,52 @@ const WARP_FOLD_MIN = 3.0;
 const WARP_FOLD_MAX = 8.0;
 const EFFECT_LERP = 0.08;
 
-// Max line segments across all batched shapes
+// Max vertices across all batched shapes (4 per edge now)
 const MAX_VERTS = 80000;
+
+// --- Shaders for thick lines ---
+const vertShader = /* glsl */ `
+attribute vec3 aOther;
+attribute float aSide;
+varying float vEdgeDist;
+varying vec3 vColor;
+
+uniform vec2 uResolution;
+uniform float uLineWidth;
+
+void main() {
+  vColor = color;
+  vEdgeDist = aSide;
+
+  vec4 clipThis = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  vec4 clipOther = projectionMatrix * modelViewMatrix * vec4(aOther, 1.0);
+
+  vec2 ndcThis = clipThis.xy / clipThis.w;
+  vec2 ndcOther = clipOther.xy / clipOther.w;
+
+  vec2 dir = ndcOther - ndcThis;
+  vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
+  dir *= aspect;
+  vec2 perp = normalize(vec2(-dir.y, dir.x));
+  perp /= aspect;
+
+  float thickNDC = uLineWidth / uResolution.y;
+  clipThis.xy += perp * aSide * thickNDC * clipThis.w;
+
+  gl_Position = clipThis;
+}
+`;
+
+const fragShader = /* glsl */ `
+varying float vEdgeDist;
+varying vec3 vColor;
+
+void main() {
+  float dist = abs(vEdgeDist);
+  float alpha = 1.0 - smoothstep(0.3, 1.0, dist);
+  gl_FragColor = vec4(vColor * alpha, 1.0);
+}
+`;
 
 // --- CPU displacement (matches the GPU GLSL version) ---
 
@@ -188,7 +232,33 @@ function ShapeFlightVisual({ trackId }: Props) {
   // Pre-allocated batch buffers
   const batchPos = useMemo(() => new Float32Array(MAX_VERTS * 3), []);
   const batchCol = useMemo(() => new Float32Array(MAX_VERTS * 3), []);
+  const batchOther = useMemo(() => new Float32Array(MAX_VERTS * 3), []);
+  const batchSide = useMemo(() => new Float32Array(MAX_VERTS), []);
+  // Pre-filled index buffer: [0,1,2, 0,2,3, 4,5,6, 4,6,7, ...]
+  const indexBuf = useMemo(() => {
+    const maxQuads = MAX_VERTS / 4;
+    const buf = new Uint32Array(maxQuads * 6);
+    for (let q = 0; q < maxQuads; q++) {
+      const base = q * 4;
+      const idx = q * 6;
+      buf[idx]     = base;
+      buf[idx + 1] = base + 1;
+      buf[idx + 2] = base + 2;
+      buf[idx + 3] = base;
+      buf[idx + 4] = base + 2;
+      buf[idx + 5] = base + 3;
+    }
+    return buf;
+  }, []);
+
   const geoRef = useRef<THREE.BufferGeometry>(null);
+  const matRef = useRef<THREE.ShaderMaterial>(null);
+  const { size } = useThree();
+
+  const uniforms = useMemo(() => ({
+    uResolution: { value: new THREE.Vector2(size.width, size.height) },
+    uLineWidth: { value: 6.0 },
+  }), []);
 
   // Create the BufferGeometry with attributes once
   useEffect(() => {
@@ -196,8 +266,11 @@ function ShapeFlightVisual({ trackId }: Props) {
     if (!geo) return;
     geo.setAttribute('position', new THREE.BufferAttribute(batchPos, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(batchCol, 3));
+    geo.setAttribute('aOther', new THREE.BufferAttribute(batchOther, 3));
+    geo.setAttribute('aSide', new THREE.BufferAttribute(batchSide, 1));
+    geo.setIndex(new THREE.BufferAttribute(indexBuf, 1));
     geo.setDrawRange(0, 0);
-  }, [batchPos, batchCol]);
+  }, [batchPos, batchCol, batchOther, batchSide, indexBuf]);
 
   useFrame(() => {
     const group = groupRef.current;
@@ -247,6 +320,13 @@ function ShapeFlightVisual({ trackId }: Props) {
     const glowPulseAmt   = (par.glowPulseAmount as number) ?? 3;
     const glowPulseDecay = (par.glowPulseDecay as number)  ?? 8;
     const approachGrowth = (par.approachGrowth as number)  ?? 0;
+    const lineWidth      = (par.lineWidth as number)       ?? 6;
+
+    // Update shader uniforms
+    if (matRef.current) {
+      matRef.current.uniforms.uResolution.value.set(size.width, size.height);
+      matRef.current.uniforms.uLineWidth.value = lineWidth;
+    }
 
     const currentBeat = useUIStore.getState().currentBeat;
     const bpm = useProjectStore.getState().project.bpm;
@@ -460,8 +540,8 @@ function ShapeFlightVisual({ trackId }: Props) {
 
         if (z < -farZ || z > fadeOutZ) continue;
 
-        // Check if we have room in the batch
-        if (vertIdx + vertCount * 2 > MAX_VERTS) break;
+        // Check if we have room in the batch (4 verts per edge)
+        if (vertIdx + vertCount * 4 > MAX_VERTS) break;
 
         const approachProgress = 1 - Math.max(0, -z) / farZ;
 
@@ -532,8 +612,9 @@ function ShapeFlightVisual({ trackId }: Props) {
         const shapeLit = paletteStops ? lit : lightness;
         const shapeSat = paletteStops ? sat : saturation;
         const glowLightness = shapeLit + pulseBlend * (1 - shapeLit);
-        const fullGlow = (1 + pulseBlend * 25) * (glowAmount + glowPulseBoost);
-        const glowBoost = 1 + (fullGlow - 1) * approachProgress;
+        // glowAmount is a direct brightness multiplier (0 = dim, 1 = normal, >1 = bloom)
+        const pulseGlow = (1 + pulseBlend * 25) * glowPulseBoost;
+        const glowBoost = glowAmount + pulseGlow * approachProgress;
         _tmpColor.setHSL(hue, shapeSat * (1 - pulseBlend * 0.7), glowLightness);
         _tmpColor.multiplyScalar(glowBoost);
 
@@ -548,7 +629,7 @@ function ShapeFlightVisual({ trackId }: Props) {
         const cg = _tmpColor.g * opacity;
         const cb = _tmpColor.b * opacity;
 
-        // Write line segments: for each edge v[i]→v[i+1], emit 2 vertices
+        // Write quad vertices: for each edge v[i]→v[i+1], emit 4 vertices
         for (let v = 0; v < vertCount; v++) {
           const v0i = v;
           const v1i = (v + 1) % vertCount;
@@ -573,22 +654,36 @@ function ShapeFlightVisual({ trackId }: Props) {
           const wx1 = (lx1 * cosR - ly1 * sinR) * finalScale + posX;
           const wy1 = (lx1 * sinR + ly1 * cosR) * finalScale + posY;
 
+          // v0: pos=A, other=B, side=-1
           const off0 = vertIdx * 3;
-          batchPos[off0] = wx0;
-          batchPos[off0 + 1] = wy0;
-          batchPos[off0 + 2] = posZ;
-          batchCol[off0] = cr;
-          batchCol[off0 + 1] = cg;
-          batchCol[off0 + 2] = cb;
+          batchPos[off0] = wx0; batchPos[off0 + 1] = wy0; batchPos[off0 + 2] = posZ;
+          batchOther[off0] = wx1; batchOther[off0 + 1] = wy1; batchOther[off0 + 2] = posZ;
+          batchCol[off0] = cr; batchCol[off0 + 1] = cg; batchCol[off0 + 2] = cb;
+          batchSide[vertIdx] = -1;
           vertIdx++;
 
+          // v1: pos=A, other=B, side=+1
           const off1 = vertIdx * 3;
-          batchPos[off1] = wx1;
-          batchPos[off1 + 1] = wy1;
-          batchPos[off1 + 2] = posZ;
-          batchCol[off1] = cr;
-          batchCol[off1 + 1] = cg;
-          batchCol[off1 + 2] = cb;
+          batchPos[off1] = wx0; batchPos[off1 + 1] = wy0; batchPos[off1 + 2] = posZ;
+          batchOther[off1] = wx1; batchOther[off1 + 1] = wy1; batchOther[off1 + 2] = posZ;
+          batchCol[off1] = cr; batchCol[off1 + 1] = cg; batchCol[off1 + 2] = cb;
+          batchSide[vertIdx] = 1;
+          vertIdx++;
+
+          // v2: pos=B, other=A, side=+1
+          const off2 = vertIdx * 3;
+          batchPos[off2] = wx1; batchPos[off2 + 1] = wy1; batchPos[off2 + 2] = posZ;
+          batchOther[off2] = wx0; batchOther[off2 + 1] = wy0; batchOther[off2 + 2] = posZ;
+          batchCol[off2] = cr; batchCol[off2 + 1] = cg; batchCol[off2 + 2] = cb;
+          batchSide[vertIdx] = 1;
+          vertIdx++;
+
+          // v3: pos=B, other=A, side=-1
+          const off3 = vertIdx * 3;
+          batchPos[off3] = wx1; batchPos[off3 + 1] = wy1; batchPos[off3 + 2] = posZ;
+          batchOther[off3] = wx0; batchOther[off3 + 1] = wy0; batchOther[off3 + 2] = posZ;
+          batchCol[off3] = cr; batchCol[off3 + 1] = cg; batchCol[off3 + 2] = cb;
+          batchSide[vertIdx] = -1;
           vertIdx++;
         }
       }
@@ -598,26 +693,34 @@ function ShapeFlightVisual({ trackId }: Props) {
     // Update geometry
     const posAttr = geo.getAttribute('position') as THREE.BufferAttribute;
     const colAttr = geo.getAttribute('color') as THREE.BufferAttribute;
-    if (!posAttr || !colAttr) return;
+    const otherAttr = geo.getAttribute('aOther') as THREE.BufferAttribute;
+    const sideAttr = geo.getAttribute('aSide') as THREE.BufferAttribute;
+    if (!posAttr || !colAttr || !otherAttr || !sideAttr) return;
     posAttr.needsUpdate = true;
     colAttr.needsUpdate = true;
-    geo.setDrawRange(0, vertIdx);
+    otherAttr.needsUpdate = true;
+    sideAttr.needsUpdate = true;
+    // Draw indexed triangles: vertIdx verts → (vertIdx / 4) quads → (vertIdx / 4) * 6 indices
+    const numIndices = Math.floor(vertIdx / 4) * 6;
+    geo.setDrawRange(0, numIndices);
   });
 
   return (
     <group ref={groupRef}>
-      <lineSegments frustumCulled={false}>
+      <mesh frustumCulled={false}>
         <bufferGeometry ref={geoRef} />
-        <lineBasicMaterial
+        <shaderMaterial
+          ref={matRef}
+          vertexShader={vertShader}
+          fragmentShader={fragShader}
+          uniforms={uniforms}
           vertexColors
           transparent
-          opacity={1}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
-          fog={false}
           toneMapped={false}
         />
-      </lineSegments>
+      </mesh>
     </group>
   );
 }
@@ -654,8 +757,8 @@ export const ShapeFlight: Instrument = {
     fadeOutZ: 10,
     hueStep: 0.08,
     baseHue: 0.55,
-    saturation: 0.9,
-    lightness: 0.85,
+    saturation: 1.0,
+    lightness: 0.55,
     rBase: 0.25,
     dBase: 0.7,
     pulseSpeed: 200,
@@ -671,10 +774,11 @@ export const ShapeFlight: Instrument = {
     curveY: 0,
     wobbleAmp: 0.15,
     warpAmp: 0.25,
-    glowAmount: 1,
+    glowAmount: 1.0,
     glowPulseAmount: 3,
     glowPulseDecay: 8,
     approachGrowth: 0,
+    lineWidth: 6,
   },
 
   settingsSchema: {
@@ -689,8 +793,8 @@ export const ShapeFlight: Instrument = {
     fadeOutZ:      { type: 'number', label: 'Fade Out Distance',  min: 2,    max: 30,   step: 1,     default: 10 },
     hueStep:       { type: 'number', label: 'Hue Step',           min: 0,    max: 0.5,  step: 0.01,  default: 0.08 },
     baseHue:       { type: 'number', label: 'Base Hue',           min: 0,    max: 1,    step: 0.05,  default: 0.55 },
-    saturation:    { type: 'number', label: 'Saturation',         min: 0,    max: 1,    step: 0.05,  default: 0.9 },
-    lightness:     { type: 'number', label: 'Lightness',          min: 0.1,  max: 1,    step: 0.05,  default: 0.85 },
+    saturation:    { type: 'number', label: 'Saturation',         min: 0,    max: 1,    step: 0.05,  default: 1.0 },
+    lightness:     { type: 'number', label: 'Lightness',          min: 0.1,  max: 1,    step: 0.05,  default: 0.55 },
     rBase:         { type: 'number', label: 'R Base',              min: 0.05, max: 0.5,  step: 0.01,  default: 0.25 },
     dBase:         { type: 'number', label: 'D Base',              min: 0.1,  max: 1.0,  step: 0.05,  default: 0.7 },
     pulseSpeed:    { type: 'number', label: 'Pulse Speed',         min: 5,    max: 500,  step: 5,     default: 200 },
@@ -706,10 +810,11 @@ export const ShapeFlight: Instrument = {
     curveY:        { type: 'number', label: 'Path Curve Y',        min: -20,  max: 20,   step: 0.5,   default: 0 },
     wobbleAmp:     { type: 'number', label: 'Wave Wobble Amp',     min: 0.01, max: 1,    step: 0.01,  default: 0.15 },
     warpAmp:       { type: 'number', label: 'Warp Wobble Amp',     min: 0.01, max: 1,    step: 0.01,  default: 0.25 },
-    glowAmount:    { type: 'number', label: 'Glow Amount',          min: 0.2,  max: 5,    step: 0.1,   default: 1 },
+    glowAmount:    { type: 'number', label: 'Glow Amount',          min: 0,    max: 5,    step: 0.1,   default: 1.0 },
     glowPulseAmount: { type: 'number', label: 'Glow Pulse Amount', min: 0.5,  max: 15,   step: 0.5,   default: 3 },
     glowPulseDecay:  { type: 'number', label: 'Glow Pulse Decay',  min: 1,    max: 30,   step: 1,     default: 8 },
     approachGrowth:  { type: 'number', label: 'Approach Growth',    min: 0,    max: 20,   step: 0.5,   default: 0 },
+    lineWidth:       { type: 'number', label: 'Line Width',         min: 1,    max: 100,  step: 0.5,   default: 6 },
   },
 
   colorRoleMapping: [

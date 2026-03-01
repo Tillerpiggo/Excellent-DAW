@@ -60,17 +60,77 @@ interface ProjectState {
   refreshProjectList: () => void;
 }
 
+function createMasterTrack(): Track {
+  return {
+    id: generateId(),
+    name: 'Master',
+    typeId: 'master',
+    instrumentId: 'masterChannel',
+    instrumentSettings: {
+      exposure: 1.0,
+      contrast: 1.0,
+      saturation: 1.0,
+      temperature: 0.0,
+      vignetteAmount: 0.0,
+      vignetteRadius: 0.5,
+      vignetteSoftness: 0.5,
+      gamma: 1.0,
+    },
+    muted: false,
+    solo: false,
+    collapsed: false,
+    blocks: [],
+    childIds: [],
+  };
+}
+
+function createMainSceneTrack(): Track {
+  return {
+    id: generateId(),
+    name: 'Main',
+    typeId: 'scene',
+    instrumentId: 'sceneGate',
+    muted: false,
+    solo: false,
+    collapsed: false,
+    blocks: [],
+    childIds: [],
+  };
+}
+
 function createDefaultProject(): Project {
+  const master = createMasterTrack();
+  const mainScene = createMainSceneTrack();
   return {
     id: generateId(),
     name: 'New Project',
     bpm: 120,
     totalBars: 8,
     beatsPerBar: 4,
-    rootTracks: [],
-    rootScenes: [],
-    tracks: {},
+    rootTracks: [master.id],
+    rootScenes: [mainScene.id],
+    mainSceneTrackId: mainScene.id,
+    tracks: { [master.id]: master, [mainScene.id]: mainScene },
   };
+}
+
+function ensureMasterTrack(project: Project): void {
+  // Check if any existing track is a master track
+  const hasMaster = Object.values(project.tracks).some(t => t.typeId === 'master');
+  if (!hasMaster) {
+    const master = createMasterTrack();
+    project.tracks[master.id] = master;
+    project.rootTracks.push(master.id);
+  }
+}
+
+function ensureMainSceneTrack(project: Project): void {
+  if (project.mainSceneTrackId && project.tracks[project.mainSceneTrackId]) return;
+  const mainScene = createMainSceneTrack();
+  project.tracks[mainScene.id] = mainScene;
+  // Insert at the beginning of rootScenes
+  project.rootScenes.unshift(mainScene.id);
+  project.mainSceneTrackId = mainScene.id;
 }
 
 function createDefaultTrack(
@@ -311,6 +371,9 @@ export const useProjectStore = create<ProjectState>()(
         const track = state.project.tracks[trackId];
         if (!track) return;
 
+        // Protect master track from deletion
+        if (track.typeId === 'master') return;
+
         // Recursively delete children
         const deleteRecursive = (id: string) => {
           const t = state.project.tracks[id];
@@ -341,6 +404,9 @@ export const useProjectStore = create<ProjectState>()(
       set((state) => {
         const track = state.project.tracks[trackId];
         if (!track) return;
+
+        // Protect master track from moving
+        if (track.typeId === 'master') return;
 
         // Remove from current parent
         if (track.parentId) {
@@ -456,6 +522,9 @@ export const useProjectStore = create<ProjectState>()(
       set((state) => {
         const track = state.project.tracks[trackId];
         if (!track) return;
+
+        // Protect master track from reordering
+        if (track.typeId === 'master') return;
 
         const list = track.parentId
           ? state.project.tracks[track.parentId]?.childIds
@@ -849,6 +918,9 @@ export const useProjectStore = create<ProjectState>()(
         const scene = state.project.tracks[sceneId];
         if (!scene) return;
 
+        // Protect main scene track from deletion
+        if (sceneId === state.project.mainSceneTrackId) return;
+
         // Recursively delete children (mask tracks)
         const deleteRecursive = (id: string) => {
           const t = state.project.tracks[id];
@@ -948,6 +1020,10 @@ export const useProjectStore = create<ProjectState>()(
           scene.instrumentId = 'sceneGate';
         }
       }
+      // Migration: ensure master track exists for old projects
+      ensureMasterTrack(project);
+      // Migration: ensure main scene track exists for old projects
+      ensureMainSceneTrack(project);
       set((state) => {
         state.project = project;
       });
@@ -979,6 +1055,11 @@ export const useProjectStore = create<ProjectState>()(
     switchProject: (id: string) => {
       const project = storage.getProject(id);
       if (!project) return;
+
+      // Migration: ensure master track exists for old projects
+      ensureMasterTrack(project);
+      // Migration: ensure main scene track exists for old projects
+      ensureMainSceneTrack(project);
 
       // Disable history during project switch
       useHistoryStore.getState().setEnabled(false);

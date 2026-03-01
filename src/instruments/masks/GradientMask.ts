@@ -13,6 +13,8 @@ export const GradientMask: Instrument = {
     direction: 0,
     softness: 0.3,
     position: 0.5,
+    offsetX: 0,
+    offsetY: 0,
   },
   settingsSchema: {
     direction: {
@@ -38,6 +40,22 @@ export const GradientMask: Instrument = {
       max: 1,
       step: 0.01,
       default: 0.5,
+    },
+    offsetX: {
+      type: 'number',
+      label: 'Offset X',
+      min: -1,
+      max: 1,
+      step: 0.01,
+      default: 0,
+    },
+    offsetY: {
+      type: 'number',
+      label: 'Offset Y',
+      min: -1,
+      max: 1,
+      step: 0.01,
+      default: 0,
     },
   },
 };

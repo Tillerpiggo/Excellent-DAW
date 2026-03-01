@@ -4,6 +4,7 @@ import { useRef, useEffect, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { getVisualPlaybackEngine } from '@/core/visualPlayback';
+import { useUIStore } from '@/stores/uiStore';
 import { Instrument } from '../types';
 import { loadFont, isFontReady } from '@/utils/fonts';
 
@@ -34,7 +35,7 @@ const DEFAULTS = {
   fontFamily: 'Impact',
   fontVariant: '900 normal',
   strokeWidth: 0.05,
-  delayTaps: 3,
+  delayTaps: 0,
   delayTime: 0.3,
   delayScaleFalloff: 0.15,
   delayOpacityFalloff: 0.25,
@@ -56,6 +57,14 @@ const DEFAULTS = {
   wallClearDuration: 0.6,
   wallScaleVariation: 0.3,
   wallRotationMax: 15,
+  flightEnabled: false,
+  flightSpeed: 15,
+  flightMaxDepth: 50,
+  flightDrift: 0.3,
+  flightTumble: 0.5,
+  flightSubdivRate: 8,
+  rainbowEnabled: false,
+  rainbowCycleLength: 12,
 };
 
 // Pre-generated deterministic wall slot positions (seeded per slot index)
@@ -86,6 +95,37 @@ interface WordHistoryEntry {
   duration: number; // seconds the note was held
   yOffset: number;  // normalized Y offset at trigger time (-1 to 1)
 }
+
+const MAX_FLIGHT_SPRITES = 128;
+
+interface FlightSprite {
+  mesh: THREE.Mesh;
+  texture: THREE.CanvasTexture;
+  birthTime: number;
+  vx: number;
+  vy: number;
+  tumbleX: number;
+  tumbleY: number;
+  targetScale: number;
+  word: string;
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+  if (h < 60) { r = c; g = x; }
+  else if (h < 120) { r = x; g = c; }
+  else if (h < 180) { g = c; b = x; }
+  else if (h < 240) { g = x; b = c; }
+  else if (h < 300) { r = x; b = c; }
+  else { r = c; b = x; }
+  const toHex = (v: number) => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+const TEXT_CANVAS_SIZE = 1024;
 
 // Shared canvas cache keyed by (word, canvasSize, strokeWidth, fontFamily, color)
 const canvasCache = new Map<string, HTMLCanvasElement>();
@@ -203,9 +243,14 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
   const wallEntriesRef = useRef<WallEntry[]>([]);
   const wallPageRef = useRef(0);
   const wallClearStartRef = useRef(-1);
+  const lastRenderKeyRef = useRef('');
+
+  // Flight mode state
+  const flightSpritesRef = useRef<FlightSprite[]>([]);
+  const flightLastSubdivRef = useRef(-1);
 
   useEffect(() => {
-    const tex = new THREE.CanvasTexture(createTextCanvas('Hello', 512, DEFAULTS.strokeWidth));
+    const tex = new THREE.CanvasTexture(createTextCanvas('Hello', TEXT_CANVAS_SIZE, DEFAULTS.strokeWidth));
     tex.minFilter = THREE.LinearFilter;
     tex.magFilter = THREE.LinearFilter;
     textureRef.current = tex;
@@ -217,7 +262,7 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
     const textures: THREE.CanvasTexture[] = [];
     const lastWords: string[] = [];
     for (let i = 0; i < MAX_DELAY_TAPS; i++) {
-      const echoTex = new THREE.CanvasTexture(createTextCanvas('', 512, DEFAULTS.strokeWidth));
+      const echoTex = new THREE.CanvasTexture(createTextCanvas('', TEXT_CANVAS_SIZE, DEFAULTS.strokeWidth));
       echoTex.minFilter = THREE.LinearFilter;
       echoTex.magFilter = THREE.LinearFilter;
       textures.push(echoTex);
@@ -242,7 +287,7 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
     const reverbTextures: THREE.CanvasTexture[] = [];
     const reverbLastWords: string[] = [];
     for (let i = 0; i < MAX_REVERB_REFLECTIONS; i++) {
-      const rTex = new THREE.CanvasTexture(createTextCanvas('', 512, DEFAULTS.strokeWidth));
+      const rTex = new THREE.CanvasTexture(createTextCanvas('', TEXT_CANVAS_SIZE, DEFAULTS.strokeWidth));
       rTex.minFilter = THREE.LinearFilter;
       rTex.magFilter = THREE.LinearFilter;
       reverbTextures.push(rTex);
@@ -267,7 +312,7 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
     const wallTextures: THREE.CanvasTexture[] = [];
     const wallLastWords: string[] = [];
     for (let i = 0; i < MAX_WALL_SLOTS; i++) {
-      const wTex = new THREE.CanvasTexture(createTextCanvas('', 512, DEFAULTS.strokeWidth));
+      const wTex = new THREE.CanvasTexture(createTextCanvas('', TEXT_CANVAS_SIZE, DEFAULTS.strokeWidth));
       wTex.minFilter = THREE.LinearFilter;
       wTex.magFilter = THREE.LinearFilter;
       wallTextures.push(wTex);
@@ -305,6 +350,12 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
         (m.material as THREE.Material).dispose();
         m.geometry.dispose();
       }
+      for (const spr of flightSpritesRef.current) {
+        spr.texture.dispose();
+        (spr.mesh.material as THREE.Material).dispose();
+        spr.mesh.geometry.dispose();
+      }
+      flightSpritesRef.current = [];
     };
   }, []);
 
@@ -365,6 +416,16 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
     const wallClearDuration = (state.params.wallClearDuration as number) ?? DEFAULTS.wallClearDuration;
     const wallScaleVariation = (state.params.wallScaleVariation as number) ?? DEFAULTS.wallScaleVariation;
     const wallRotationMax = (state.params.wallRotationMax as number) ?? DEFAULTS.wallRotationMax;
+    const flightEnabled = (state.params.flightEnabled as boolean) ?? DEFAULTS.flightEnabled;
+    const flightSpeed = (state.params.flightSpeed as number) ?? DEFAULTS.flightSpeed;
+    const flightMaxDepth = (state.params.flightMaxDepth as number) ?? DEFAULTS.flightMaxDepth;
+    const flightDrift = (state.params.flightDrift as number) ?? DEFAULTS.flightDrift;
+    const flightTumble = (state.params.flightTumble as number) ?? DEFAULTS.flightTumble;
+    const flightSubdivRate = (state.params.flightSubdivRate as number) ?? DEFAULTS.flightSubdivRate;
+    const rainbowEnabled = (state.params.rainbowEnabled as boolean) ?? DEFAULTS.rainbowEnabled;
+    const rainbowCycleLength = (state.params.rainbowCycleLength as number) ?? DEFAULTS.rainbowCycleLength;
+
+    const currentBeat = useUIStore.getState().currentBeat;
 
     const words = text.split(/\s+/).filter(Boolean);
     if (words.length === 0) return;
@@ -373,6 +434,27 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
 
     // Detect new word triggers
     const currentCount = state.pitchNoteOnCounts.get(PITCH_NEXT_WORD) ?? 0;
+
+    // Compute effective color — rainbow cycles hue based on subdivision ticks
+    const rainbowSubdiv = Math.floor(currentBeat * flightSubdivRate);
+    const rainbowHue = rainbowEnabled
+      ? ((rainbowSubdiv % rainbowCycleLength) / rainbowCycleLength) * 360
+      : 0;
+    const effectiveColor = rainbowEnabled ? hslToHex(rainbowHue, 1, 0.55) : color;
+
+    // Build a render key from all visual params — when any change, force
+    // echo/reverb/wall textures to re-render (not just on word change)
+    const fontReady = isFontReady(fontFamily, fontVariant);
+    const renderKey = `${strokeWidth}|${fontFamily}|${effectiveColor}|${fontVariant}|${fontReady}|${strokeColor}`;
+
+    // When visual params change, invalidate all echo/reverb/wall caches
+    // so they re-render with the new stroke/color/font on next use
+    if (renderKey !== lastRenderKeyRef.current) {
+      lastRenderKeyRef.current = renderKey;
+      echoLastWordsRef.current.fill('');
+      reverbLastWordsRef.current.fill('');
+      wallLastWordsRef.current.fill('');
+    }
     const wordIndex = currentCount > 0 ? (currentCount - 1) % words.length : 0;
     const currentWord = words[wordIndex];
 
@@ -428,6 +510,103 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
     );
 
     const baseScale = Math.min(viewport.width, viewport.height) * 0.6 * fontSize;
+
+    // --- Flight mode: spawn + update ---
+    if (flightEnabled) {
+      // Spawn continuously while note is held, on each beat subdivision
+      const flightSubdiv = Math.floor(currentBeat * flightSubdivRate);
+      if (flightSubdiv !== flightLastSubdivRef.current) {
+        flightLastSubdivRef.current = flightSubdiv;
+        if (isNoteHeld && groupRef.current && flightSpritesRef.current.length < MAX_FLIGHT_SPRITES) {
+          const canvas = createTextCanvas(currentWord, TEXT_CANVAS_SIZE, strokeWidth, fontFamily, effectiveColor, fontVariant, strokeColor);
+          const tex = new THREE.CanvasTexture(canvas);
+          tex.minFilter = THREE.LinearFilter;
+          tex.magFilter = THREE.LinearFilter;
+          const mat = new THREE.MeshBasicMaterial({
+            map: tex,
+            transparent: true,
+            opacity: textOpacity,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            toneMapped: false,
+          });
+          const geo = new THREE.PlaneGeometry(1, 1);
+          const mesh = new THREE.Mesh(geo, mat);
+          const spawnY = currentYOffsetRef.current * viewport.height * heightAmount;
+          mesh.position.set(0, spawnY, 0);
+          mesh.scale.setScalar(baseScale);
+          groupRef.current.add(mesh);
+
+          const seed = flightSubdiv * 13 + 7;
+          const pseudoRand = (n: number) => {
+            const x = Math.sin(n * 9301 + 49297) * 233280;
+            return x - Math.floor(x);
+          };
+
+          flightSpritesRef.current.push({
+            mesh,
+            texture: tex,
+            birthTime: now,
+            vx: (pseudoRand(seed) - 0.5) * flightDrift,
+            vy: (pseudoRand(seed + 1) - 0.5) * flightDrift * 0.6,
+            tumbleX: (pseudoRand(seed + 2) - 0.5) * flightTumble,
+            tumbleY: (pseudoRand(seed + 3) - 0.5) * flightTumble,
+            targetScale: baseScale,
+            word: currentWord,
+          });
+        }
+      }
+
+      // Update flight sprites
+      const flightDt = Math.min(dt, 0.05);
+      const toRemove: number[] = [];
+      for (let i = 0; i < flightSpritesRef.current.length; i++) {
+        const spr = flightSpritesRef.current[i];
+        const m = spr.mesh;
+
+        m.position.z -= flightSpeed * flightDt;
+        m.position.x += spr.vx * flightDt;
+        m.position.y += spr.vy * flightDt;
+        m.rotation.x += spr.tumbleX * flightDt;
+        m.rotation.y += spr.tumbleY * flightDt;
+
+        // Fade out near max depth
+        const depth = -m.position.z;
+        const fadeStart = flightMaxDepth * 0.7;
+        const mat = m.material as THREE.MeshBasicMaterial;
+        if (depth > fadeStart) {
+          mat.opacity = textOpacity * Math.max(0, 1 - (depth - fadeStart) / (flightMaxDepth - fadeStart));
+        } else {
+          mat.opacity = textOpacity;
+        }
+
+        if (depth > flightMaxDepth) {
+          toRemove.push(i);
+        }
+      }
+
+      // Remove culled sprites
+      for (let i = toRemove.length - 1; i >= 0; i--) {
+        const idx = toRemove[i];
+        const spr = flightSpritesRef.current[idx];
+        groupRef.current?.remove(spr.mesh);
+        spr.texture.dispose();
+        (spr.mesh.material as THREE.Material).dispose();
+        spr.mesh.geometry.dispose();
+        flightSpritesRef.current.splice(idx, 1);
+      }
+    } else {
+      // Clean up flight sprites when disabled
+      if (flightSpritesRef.current.length > 0) {
+        for (const spr of flightSpritesRef.current) {
+          groupRef.current?.remove(spr.mesh);
+          spr.texture.dispose();
+          (spr.mesh.material as THREE.Material).dispose();
+          spr.mesh.geometry.dispose();
+        }
+        flightSpritesRef.current = [];
+      }
+    }
 
     // --- Wall mode ---
     if (wallEnabled) {
@@ -489,7 +668,7 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
         // Update texture if needed
         const wTex = wallTexturesRef.current[i];
         if (entry.word !== wallLastWordsRef.current[i]) {
-          const canvas = createTextCanvas(entry.word, 512, strokeWidth, fontFamily, color, fontVariant, strokeColor);
+          const canvas = createTextCanvas(entry.word, TEXT_CANVAS_SIZE, strokeWidth, fontFamily, effectiveColor, fontVariant, strokeColor);
           wTex.image = canvas;
           wTex.needsUpdate = true;
           wallLastWordsRef.current[i] = entry.word;
@@ -546,26 +725,18 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
       wallClearStartRef.current = -1;
 
       // Update main mesh texture
-      const fontReady = isFontReady(fontFamily, fontVariant);
-      if (currentWord !== lastWordRef.current || strokeWidth !== lastStrokeRef.current || fontFamily !== lastFontRef.current || color !== lastColorRef.current || strokeColor !== lastStrokeColorRef.current || fontVariant !== lastVariantRef.current || fontReady !== lastFontReadyRef.current) {
-        const canvas = createTextCanvas(currentWord, 512, strokeWidth, fontFamily, color, fontVariant, strokeColor);
+      if (currentWord !== lastWordRef.current || strokeWidth !== lastStrokeRef.current || fontFamily !== lastFontRef.current || effectiveColor !== lastColorRef.current || strokeColor !== lastStrokeColorRef.current || fontVariant !== lastVariantRef.current || fontReady !== lastFontReadyRef.current) {
+        const canvas = createTextCanvas(currentWord, TEXT_CANVAS_SIZE, strokeWidth, fontFamily, effectiveColor, fontVariant, strokeColor);
         textureRef.current.image = canvas;
         textureRef.current.needsUpdate = true;
         lastWordRef.current = currentWord;
         lastStrokeRef.current = strokeWidth;
         lastFontRef.current = fontFamily;
-        lastColorRef.current = color;
+        lastColorRef.current = effectiveColor;
         lastStrokeColorRef.current = strokeColor;
         lastVariantRef.current = fontVariant;
         lastFontReadyRef.current = fontReady;
 
-        // When font just became ready, also invalidate echo/reverb/wall caches
-        // so they re-render with the correct font on next use
-        if (fontReady) {
-          echoLastWordsRef.current.fill('');
-          reverbLastWordsRef.current.fill('');
-          wallLastWordsRef.current.fill('');
-        }
       }
 
       // Main mesh visibility and opacity — only while note is held
@@ -617,7 +788,7 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
         // Update texture if word changed for this slot
         const tex = echoTexturesRef.current[tap];
         if (bestEntry.word !== echoLastWordsRef.current[tap]) {
-          const canvas = createTextCanvas(bestEntry.word, 512, strokeWidth, fontFamily, color, fontVariant, strokeColor);
+          const canvas = createTextCanvas(bestEntry.word, TEXT_CANVAS_SIZE, strokeWidth, fontFamily, effectiveColor, fontVariant, strokeColor);
           tex.image = canvas;
           tex.needsUpdate = true;
           echoLastWordsRef.current[tap] = bestEntry.word;
@@ -682,7 +853,7 @@ function TextDisplayVisual({ trackId }: { trackId: string }) {
         // Update texture if word changed
         const rTex = reverbTexturesRef.current[r];
         if (bestEntry.word !== reverbLastWordsRef.current[r]) {
-          const canvas = createTextCanvas(bestEntry.word, 512, strokeWidth, fontFamily, color, fontVariant, strokeColor);
+          const canvas = createTextCanvas(bestEntry.word, TEXT_CANVAS_SIZE, strokeWidth, fontFamily, effectiveColor, fontVariant, strokeColor);
           rTex.image = canvas;
           rTex.needsUpdate = true;
           reverbLastWordsRef.current[r] = bestEntry.word;
@@ -837,6 +1008,36 @@ export const TextDisplay: Instrument = {
     wallRotationMax: {
       type: 'number', label: 'Wall Rotation Max (°)', min: 0, max: 45, step: 1,
       default: DEFAULTS.wallRotationMax,
+    },
+    flightEnabled: {
+      type: 'boolean', label: 'Flight Mode', default: DEFAULTS.flightEnabled,
+    },
+    flightSpeed: {
+      type: 'number', label: 'Flight Speed', min: 2, max: 60, step: 1,
+      default: DEFAULTS.flightSpeed,
+    },
+    flightMaxDepth: {
+      type: 'number', label: 'Flight Max Depth', min: 10, max: 200, step: 5,
+      default: DEFAULTS.flightMaxDepth,
+    },
+    flightDrift: {
+      type: 'number', label: 'Flight Drift', min: 0, max: 3, step: 0.1,
+      default: DEFAULTS.flightDrift,
+    },
+    flightTumble: {
+      type: 'number', label: 'Flight Tumble', min: 0, max: 5, step: 0.1,
+      default: DEFAULTS.flightTumble,
+    },
+    flightSubdivRate: {
+      type: 'number', label: 'Flight Spawns/Beat', min: 1, max: 32, step: 1,
+      default: DEFAULTS.flightSubdivRate,
+    },
+    rainbowEnabled: {
+      type: 'boolean', label: 'Rainbow', default: DEFAULTS.rainbowEnabled,
+    },
+    rainbowCycleLength: {
+      type: 'number', label: 'Rainbow Cycle Length', min: 2, max: 64, step: 1,
+      default: DEFAULTS.rainbowCycleLength,
     },
   },
 

@@ -35,6 +35,7 @@ export class PlaybackEngine {
   private animationFrame: number | null = null;
   private callbacks: PlaybackCallbacks = {};
   private parts: Tone.Part[] = [];
+  private loopRetriggerParts: Tone.Part[] = [];
   private project: Project | null = null;
   private isInitialized = false;
   private loopStartBeat: number | null = null;
@@ -136,6 +137,9 @@ export class PlaybackEngine {
 
     // Stop all audio players
     this.stopAudioPlayers();
+
+    // Clear loop retrigger parts first so they don't accumulate between loop drags/updates
+    this.clearLoopAudioRetriggerParts();
 
     // Dispose all parts
     for (const part of this.parts) {
@@ -401,6 +405,9 @@ export class PlaybackEngine {
     // Stop all audio players immediately
     this.stopAudioPlayers();
 
+    // Remove loop retrigger parts before disposing the rest
+    this.clearLoopAudioRetriggerParts();
+
     // Dispose all parts
     for (const part of this.parts) {
       part.dispose();
@@ -542,6 +549,7 @@ export class PlaybackEngine {
       // Clear loop region - restore full project loop
       this.loopStartBeat = null;
       this.loopEndBeat = null;
+      this.clearLoopAudioRetriggerParts();
       if (this.project) {
         transport.loopStart = 0;
         transport.loopEnd = `${this.project.totalBars}:0`;
@@ -549,6 +557,7 @@ export class PlaybackEngine {
       return;
     }
 
+    const isSameRegion = this.loopStartBeat === startBeat && this.loopEndBeat === endBeat;
     this.loopStartBeat = startBeat;
     this.loopEndBeat = endBeat;
 
@@ -561,9 +570,26 @@ export class PlaybackEngine {
     transport.loopStart = `${startBars}:${startBeats}:0`;
     transport.loopEnd = `${endBars}:${endBeats}:0`;
 
+    // No-op if loop bounds didn't change (common during pointermove with quantized values)
+    if (isSameRegion) return;
+
+    // Loop bounds changed: replace previous retriggers instead of appending endlessly.
+    this.clearLoopAudioRetriggerParts();
+
     // Schedule audio re-triggering at loop start point so audio blocks
     // that start before the loop region still play when the loop wraps
     this.scheduleLoopAudioRetrigger(startBeat, beatsPerBar);
+  }
+
+  private clearLoopAudioRetriggerParts(): void {
+    if (this.loopRetriggerParts.length === 0) return;
+
+    const retriggerSet = new Set(this.loopRetriggerParts);
+    for (const part of this.loopRetriggerParts) {
+      part.dispose();
+    }
+    this.loopRetriggerParts = [];
+    this.parts = this.parts.filter((part) => !retriggerSet.has(part));
   }
 
   private scheduleLoopAudioRetrigger(loopStartBeat: number, beatsPerBar: number): void {
@@ -611,6 +637,7 @@ export class PlaybackEngine {
           retriggerPart.start(0);
           retriggerPart.loop = true;
           retriggerPart.loopEnd = `${this.project.totalBars}:0`;
+          this.loopRetriggerParts.push(retriggerPart);
           this.parts.push(retriggerPart);
         }
       }

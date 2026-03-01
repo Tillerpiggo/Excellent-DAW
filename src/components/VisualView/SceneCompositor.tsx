@@ -51,11 +51,21 @@ precision highp float;
 uniform sampler2D tMain;
 ${samplerDecls}
 uniform int sceneCount;
-uniform vec2 sceneOffset[${MAX_SCENES}];
+uniform vec3 sceneTransform[${MAX_SCENES}]; // xy = offset, z = scale
 
 uniform vec4 maskParams[${MAX_SCENES * 4 * 2}];
 uniform vec4 stripData[${MAX_SCENES * (MAX_STRIPS / 4)}];
 ${maskCountDecls}
+
+// Master channel post-processing uniforms
+uniform float uExposure;
+uniform float uContrast;
+uniform float uSaturation;
+uniform float uTemperature;
+uniform float uVignetteAmount;
+uniform float uVignetteRadius;
+uniform float uVignetteSoftness;
+uniform float uGamma;
 
 varying vec2 vUv;
 
@@ -136,7 +146,8 @@ float stripMaskFn(vec2 uv, int sceneIdx, float stripCount, float angle, float fe
   int strip = int(floor(stripF));
   if (strip < 0 || strip >= int(stripCount)) return 0.0;
   float isOn = getStripState(sceneIdx, strip);
-  // Feather at strip edges
+  // Feather at strip edges (skip when feather is 0 to avoid gaps)
+  if (feather <= 0.0) return isOn;
   float inStrip = fract(stripF);
   float edge = feather * stripCount;
   float edgeMask = smoothstep(0.0, edge, inStrip) * smoothstep(0.0, edge, 1.0 - inStrip);
@@ -144,12 +155,14 @@ float stripMaskFn(vec2 uv, int sceneIdx, float stripCount, float angle, float fe
 }
 
 float evaluateMask(int maskType, vec4 p1, vec4 p2, int sceneIdx) {
-  if (maskType == 1) return splitMask(vUv, p1.y, p1.z, p1.w, p2.x);
-  if (maskType == 2) return slantedBarsMask(vUv, p1.y, p1.z, p1.w, p2.x);
-  if (maskType == 3) return circleWipeMask(vUv, p1.y, p1.z, p1.w, p2.x);
-  if (maskType == 4) return radialMask(vUv, p1.y, p1.z, p1.w);
-  if (maskType == 5) return gradientMask(vUv, p1.y, p1.z, p1.w);
-  if (maskType == 6) return stripMaskFn(vUv, sceneIdx, p1.y, p1.z, p1.w, p2.x, p2.y);
+  // p2.z = offsetX, p2.w = offsetY — shift the UV used by the mask
+  vec2 muv = vUv - vec2(p2.z, p2.w);
+  if (maskType == 1) return splitMask(muv, p1.y, p1.z, p1.w, p2.x);
+  if (maskType == 2) return slantedBarsMask(muv, p1.y, p1.z, p1.w, p2.x);
+  if (maskType == 3) return circleWipeMask(muv, p1.y, p1.z, p1.w, p2.x);
+  if (maskType == 4) return radialMask(muv, p1.y, p1.z, p1.w);
+  if (maskType == 5) return gradientMask(muv, p1.y, p1.z, p1.w);
+  if (maskType == 6) return stripMaskFn(muv, sceneIdx, p1.y, p1.z, p1.w, p2.x, p2.y);
   return 1.0;
 }
 
@@ -161,8 +174,10 @@ void main() {
   for (int i = 0; i < ${MAX_SCENES}; i++) {
     if (i >= sceneCount) break;
 
-    vec2 offsetUv = vUv - sceneOffset[i];
-    // Discard pixels outside [0,1] after offset (no wrapping)
+    // Apply scale around center, then offset
+    float s = sceneTransform[i].z;
+    vec2 offsetUv = (vUv - 0.5) / s + 0.5 - sceneTransform[i].xy;
+    // Discard pixels outside [0,1] after transform (no wrapping)
     if (offsetUv.x < 0.0 || offsetUv.x > 1.0 || offsetUv.y < 0.0 || offsetUv.y > 1.0) continue;
     vec4 sceneColor = sampleScene(i, offsetUv);
 
@@ -185,6 +200,18 @@ void main() {
     float alpha = sceneColor.a * mask;
     result = vec4(mix(result.rgb, sceneColor.rgb, alpha), max(result.a, alpha));
   }
+
+  // Master channel post-processing
+  result.rgb *= uExposure;
+  result.rgb = (result.rgb - 0.5) * uContrast + 0.5;
+  float luma = dot(result.rgb, vec3(0.2126, 0.7152, 0.0722));
+  result.rgb = mix(vec3(luma), result.rgb, uSaturation);
+  result.r *= 1.0 + uTemperature * 0.15;
+  result.b *= 1.0 - uTemperature * 0.15;
+  float vDist = length(vUv - 0.5);
+  float vig = 1.0 - smoothstep(uVignetteRadius, uVignetteRadius + uVignetteSoftness, vDist);
+  result.rgb *= mix(1.0, vig, uVignetteAmount);
+  result.rgb = pow(max(result.rgb, vec3(0.0)), vec3(1.0 / uGamma));
 
   gl_FragColor = result;
 }
@@ -238,9 +265,13 @@ interface SceneCompositorProps {
   rootScenes: string[];
 }
 
+// Reusable THREE.Color to avoid per-frame allocation
+const tmpClearColor = new THREE.Color();
+
 export function SceneCompositor({ allTracks, rootScenes }: SceneCompositorProps) {
   const { gl, camera, size } = useThree();
   const storeTracks = useProjectStore((s) => s.project.tracks);
+  const mainSceneTrackId = useProjectStore((s) => s.project.mainSceneTrackId);
   const quadRef = useRef<THREE.Mesh>(null);
   // Ref map: trackId → THREE.Group for per-frame visibility toggling
   const trackGroupRefs = useRef<Map<string, THREE.Group>>(new Map());
@@ -315,9 +346,18 @@ export function SceneCompositor({ allTracks, rootScenes }: SceneCompositorProps)
     const uniforms: Record<string, { value: unknown }> = {
       tMain: { value: mainFBO.texture },
       sceneCount: { value: sceneCount },
-      sceneOffset: { value: new Array(MAX_SCENES).fill(null).map(() => new THREE.Vector2(0, 0)) },
+      sceneTransform: { value: new Array(MAX_SCENES).fill(null).map(() => new THREE.Vector3(0, 0, 1)) },
       maskParams: { value: new Array(MAX_SCENES * 4 * 2).fill(null).map(() => new THREE.Vector4(0, 0, 0, 0)) },
       stripData: { value: new Array(MAX_SCENES * (MAX_STRIPS / 4)).fill(null).map(() => new THREE.Vector4(0, 0, 0, 0)) },
+      // Master channel post-processing
+      uExposure: { value: 1.0 },
+      uContrast: { value: 1.0 },
+      uSaturation: { value: 1.0 },
+      uTemperature: { value: 0.0 },
+      uVignetteAmount: { value: 0.0 },
+      uVignetteRadius: { value: 0.5 },
+      uVignetteSoftness: { value: 0.5 },
+      uGamma: { value: 1.0 },
     };
 
     for (let i = 0; i < MAX_SCENES; i++) {
@@ -336,7 +376,11 @@ export function SceneCompositor({ allTracks, rootScenes }: SceneCompositorProps)
   }, [mainFBO, sceneFBOs.length]);
 
   // Per-frame: determine scene membership, toggle visibility, render FBOs.
-  useFrame(() => {
+  // Use render priority 1 so all child useFrame hooks (instruments applying
+  // position/scale, TrackRenderer toggling mute visibility) run first at
+  // default priority 0.  This prevents the flash where an instrument is
+  // visible for a frame before its settings have been applied.
+  useFrame(({ scene: rootScene }) => {
     const engine = getVisualPlaybackEngine();
     const refs = trackGroupRefs.current;
 
@@ -359,7 +403,13 @@ export function SceneCompositor({ allTracks, rootScenes }: SceneCompositorProps)
       if (group) group.visible = !getEffectiveSceneId(track);
     }
     gl.setRenderTarget(mainFBO);
-    gl.setClearColor(0x0a0a0f, 1);
+    const mainBg = mainSceneTrackId ? engine.getSceneBackgroundColor(mainSceneTrackId) : null;
+    if (mainBg) {
+      tmpClearColor.set(mainBg);
+      gl.setClearColor(tmpClearColor, 1);
+    } else {
+      gl.setClearColor(0x0a0a0f, 1);
+    }
     gl.clear();
     gl.render(sharedScene, camera);
     gl.setRenderTarget(null);
@@ -437,8 +487,14 @@ export function SceneCompositor({ allTracks, rootScenes }: SceneCompositorProps)
         }
 
         const isOpaque = sceneTrack?.sceneOpaque ?? false;
+        const sceneBg = engine.getSceneBackgroundColor(sceneId);
         gl.setRenderTarget(fbo);
-        gl.setClearColor(isOpaque ? 0x0a0a0f : 0x000000, isOpaque ? 1 : 0);
+        if (sceneBg) {
+          tmpClearColor.set(sceneBg);
+          gl.setClearColor(tmpClearColor, 1);
+        } else {
+          gl.setClearColor(isOpaque ? 0x0a0a0f : 0x000000, isOpaque ? 1 : 0);
+        }
         gl.clear();
         gl.render(sharedScene, camera);
         gl.setRenderTarget(null);
@@ -458,8 +514,14 @@ export function SceneCompositor({ allTracks, rootScenes }: SceneCompositorProps)
         }
 
         const isOpaque = sceneTrack?.sceneOpaque ?? false;
+        const sceneBg = engine.getSceneBackgroundColor(sceneId);
         gl.setRenderTarget(fbo);
-        gl.setClearColor(isOpaque ? 0x0a0a0f : 0x000000, isOpaque ? 1 : 0);
+        if (sceneBg) {
+          tmpClearColor.set(sceneBg);
+          gl.setClearColor(tmpClearColor, 1);
+        } else {
+          gl.setClearColor(isOpaque ? 0x0a0a0f : 0x000000, isOpaque ? 1 : 0);
+        }
         gl.clear();
         gl.render(sharedScene, camera);
         gl.setRenderTarget(null);
@@ -470,7 +532,8 @@ export function SceneCompositor({ allTracks, rootScenes }: SceneCompositorProps)
       const gateState = engine.getTrackState(sceneId);
       const offX = (gateState?.params.offsetX as number) ?? 0;
       const offY = (gateState?.params.offsetY as number) ?? 0;
-      (compositorMaterial.uniforms.sceneOffset.value as THREE.Vector2[])[activeSlot].set(offX, offY);
+      const scl = (gateState?.params.scale as number) ?? 1;
+      (compositorMaterial.uniforms.sceneTransform.value as THREE.Vector3[])[activeSlot].set(offX, offY, scl);
 
       // Update mask uniforms for this slot
       const maskStates = engine.getMaskStatesForScene(sceneId);
@@ -488,8 +551,10 @@ export function SceneCompositor({ allTracks, rootScenes }: SceneCompositorProps)
           const mask = maskStates[m];
           const typeIdx = getMaskTypeIndex(mask.instrumentId);
           const [p1, p2, p3, p4, p5] = getMaskShaderParams(mask.instrumentId, mask.params);
+          const maskOffX = (mask.params.offsetX as number) ?? 0;
+          const maskOffY = (mask.params.offsetY as number) ?? 0;
           compositorMaterial.uniforms.maskParams.value[baseIdx].set(typeIdx, p1, p2, p3);
-          compositorMaterial.uniforms.maskParams.value[baseIdx + 1].set(p4, p5, 0, 0);
+          compositorMaterial.uniforms.maskParams.value[baseIdx + 1].set(p4, p5, maskOffX, maskOffY);
 
           // Populate strip data from active notes for strip masks
           if (mask.instrumentId === 'stripMask') {
@@ -526,10 +591,29 @@ export function SceneCompositor({ allTracks, rootScenes }: SceneCompositorProps)
     for (let i = activeSlot; i < MAX_SCENES; i++) {
       compositorMaterial.uniforms[`tScene${i}`].value = EMPTY_TEXTURE;
       compositorMaterial.uniforms[`maskCount${i}`].value = 0;
-      (compositorMaterial.uniforms.sceneOffset.value as THREE.Vector2[])[i].set(0, 0);
+      (compositorMaterial.uniforms.sceneTransform.value as THREE.Vector3[])[i].set(0, 0, 1);
     }
     compositorMaterial.uniforms.sceneCount.value = activeSlot;
-  });
+
+    // 5. Update master channel post-processing uniforms
+    const masterTrack = Object.values(storeTracks).find(t => t.typeId === 'master');
+    if (masterTrack) {
+      const masterState = engine.getTrackState(masterTrack.id);
+      const mp = masterState?.params ?? masterTrack.instrumentSettings ?? {};
+      compositorMaterial.uniforms.uExposure.value = (mp.exposure as number) ?? 1.0;
+      compositorMaterial.uniforms.uContrast.value = (mp.contrast as number) ?? 1.0;
+      compositorMaterial.uniforms.uSaturation.value = (mp.saturation as number) ?? 1.0;
+      compositorMaterial.uniforms.uTemperature.value = (mp.temperature as number) ?? 0.0;
+      compositorMaterial.uniforms.uVignetteAmount.value = (mp.vignetteAmount as number) ?? 0.0;
+      compositorMaterial.uniforms.uVignetteRadius.value = (mp.vignetteRadius as number) ?? 0.5;
+      compositorMaterial.uniforms.uVignetteSoftness.value = (mp.vignetteSoftness as number) ?? 0.5;
+      compositorMaterial.uniforms.uGamma.value = (mp.gamma as number) ?? 1.0;
+    }
+
+    // Manually render the root scene (compositor quad) since render priority 1
+    // disables R3F's automatic render pass.
+    gl.render(rootScene, camera);
+  }, 1);
 
   return (
     <>

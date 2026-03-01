@@ -42,22 +42,22 @@ export type ColorRoleMapping = ColorRoleMappingEntry[];
 export const PALETTE_PITCH_MIN = 36;
 
 export const DEFAULT_PALETTES: ColorPaletteDef[] = [
-  { name: 'Midnight Ocean',   primary: '#1a73e8', secondary: '#0d47a1', accent: '#00bcd4',  background: '#0a1929', highlight: '#64b5f6', text: '#4fc3f7', textStroke: '#0d47a1' },
-  { name: 'Ember',            primary: '#ff5722', secondary: '#e64a19', accent: '#ffab40',  background: '#1a0a00', highlight: '#ff8a65', text: '#ff6e40', textStroke: '#b71c1c' },
-  { name: 'Forest',           primary: '#2e7d32', secondary: '#1b5e20', accent: '#76ff03',  background: '#0a1f0c', highlight: '#81c784', text: '#69f0ae', textStroke: '#1b5e20' },
-  { name: 'Neon Nights',      primary: '#e040fb', secondary: '#7c4dff', accent: '#00e5ff',  background: '#0d0021', highlight: '#ea80fc', text: '#e040fb', textStroke: '#6200ea' },
-  { name: 'Sunset',           primary: '#ff6f00', secondary: '#f44336', accent: '#ffc107',  background: '#1a0800', highlight: '#ffcc80', text: '#ffab00', textStroke: '#d84315' },
-  { name: 'Arctic',           primary: '#b3e5fc', secondary: '#4fc3f7', accent: '#e1f5fe',  background: '#01579b', highlight: '#ffffff', text: '#e1f5fe', textStroke: '#0277bd' },
-  { name: 'Lavender Dream',   primary: '#9575cd', secondary: '#7e57c2', accent: '#f48fb1',  background: '#1a0033', highlight: '#d1c4e9', text: '#b388ff', textStroke: '#4a148c' },
-  { name: 'Coral Reef',       primary: '#ff7043', secondary: '#26a69a', accent: '#ffee58',  background: '#002220', highlight: '#ff8a80', text: '#ff8a65', textStroke: '#00695c' },
-  { name: 'Monochrome',       primary: '#e0e0e0', secondary: '#9e9e9e', accent: '#ffffff',  background: '#121212', highlight: '#f5f5f5', text: '#ffffff', textStroke: '#424242' },
-  { name: 'Cyberpunk',        primary: '#ff1744', secondary: '#d500f9', accent: '#00e5ff',  background: '#0a0014', highlight: '#ff80ab', text: '#ff1744', textStroke: '#aa00ff' },
-  { name: 'Golden Hour',      primary: '#ffd54f', secondary: '#ffb300', accent: '#fff176',  background: '#1a1200', highlight: '#ffe082', text: '#ffd600', textStroke: '#e65100' },
-  { name: 'Deep Space',       primary: '#311b92', secondary: '#4a148c', accent: '#00b0ff',  background: '#000011', highlight: '#7c4dff', text: '#7c4dff', textStroke: '#1a0066' },
-  { name: 'Cherry Blossom',   primary: '#f48fb1', secondary: '#f06292', accent: '#fce4ec',  background: '#1a0011', highlight: '#f8bbd0', text: '#f06292', textStroke: '#880e4f' },
-  { name: 'Toxic',            primary: '#76ff03', secondary: '#64dd17', accent: '#00e676',  background: '#0a1a00', highlight: '#b2ff59', text: '#76ff03', textStroke: '#33691e' },
-  { name: 'Warm Earth',       primary: '#8d6e63', secondary: '#6d4c41', accent: '#d7ccc8',  background: '#1a1210', highlight: '#bcaaa4', text: '#d7ccc8', textStroke: '#3e2723' },
-  { name: 'Electric Blue',    primary: '#2979ff', secondary: '#2962ff', accent: '#82b1ff',  background: '#000a1a', highlight: '#448aff', text: '#448aff', textStroke: '#0d47a1' },
+  { name: 'Midnight Ocean',   primary: '#1a73e8', secondary: '#0d47a1', accent: '#00bcd4',  background: '#0d47a1', highlight: '#64b5f6', text: '#4fc3f7', textStroke: '#0d47a1' },
+  { name: 'Ember',            primary: '#ff5722', secondary: '#e64a19', accent: '#ffab40',  background: '#d84315', highlight: '#ff8a65', text: '#ff6e40', textStroke: '#b71c1c' },
+  { name: 'Forest',           primary: '#2e7d32', secondary: '#1b5e20', accent: '#76ff03',  background: '#1b5e20', highlight: '#81c784', text: '#69f0ae', textStroke: '#1b5e20' },
+  { name: 'Neon Nights',      primary: '#e040fb', secondary: '#7c4dff', accent: '#00e5ff',  background: '#6200ea', highlight: '#ea80fc', text: '#e040fb', textStroke: '#6200ea' },
+  { name: 'Sunset',           primary: '#ff6f00', secondary: '#f44336', accent: '#ffc107',  background: '#e65100', highlight: '#ffcc80', text: '#ffab00', textStroke: '#d84315' },
+  { name: 'Arctic',           primary: '#b3e5fc', secondary: '#4fc3f7', accent: '#e1f5fe',  background: '#0277bd', highlight: '#ffffff', text: '#e1f5fe', textStroke: '#0277bd' },
+  { name: 'Lavender Dream',   primary: '#9575cd', secondary: '#7e57c2', accent: '#f48fb1',  background: '#5e35b1', highlight: '#d1c4e9', text: '#b388ff', textStroke: '#4a148c' },
+  { name: 'Coral Reef',       primary: '#ff7043', secondary: '#26a69a', accent: '#ffee58',  background: '#00897b', highlight: '#ff8a80', text: '#ff8a65', textStroke: '#00695c' },
+  { name: 'Monochrome',       primary: '#e0e0e0', secondary: '#9e9e9e', accent: '#ffffff',  background: '#424242', highlight: '#f5f5f5', text: '#ffffff', textStroke: '#424242' },
+  { name: 'Cyberpunk',        primary: '#ff1744', secondary: '#d500f9', accent: '#00e5ff',  background: '#aa00ff', highlight: '#ff80ab', text: '#ff1744', textStroke: '#aa00ff' },
+  { name: 'Golden Hour',      primary: '#ffd54f', secondary: '#ffb300', accent: '#fff176',  background: '#f57f17', highlight: '#ffe082', text: '#ffd600', textStroke: '#e65100' },
+  { name: 'Deep Space',       primary: '#311b92', secondary: '#4a148c', accent: '#00b0ff',  background: '#1a237e', highlight: '#7c4dff', text: '#7c4dff', textStroke: '#1a0066' },
+  { name: 'Cherry Blossom',   primary: '#f48fb1', secondary: '#f06292', accent: '#fce4ec',  background: '#c2185b', highlight: '#f8bbd0', text: '#f06292', textStroke: '#880e4f' },
+  { name: 'Toxic',            primary: '#76ff03', secondary: '#64dd17', accent: '#00e676',  background: '#33691e', highlight: '#b2ff59', text: '#76ff03', textStroke: '#33691e' },
+  { name: 'Warm Earth',       primary: '#8d6e63', secondary: '#6d4c41', accent: '#d7ccc8',  background: '#5d4037', highlight: '#bcaaa4', text: '#d7ccc8', textStroke: '#3e2723' },
+  { name: 'Electric Blue',    primary: '#2979ff', secondary: '#2962ff', accent: '#82b1ff',  background: '#1565c0', highlight: '#448aff', text: '#448aff', textStroke: '#0d47a1' },
 ];
 
 export const PALETTE_PITCH_MAX = PALETTE_PITCH_MIN + DEFAULT_PALETTES.length - 1;

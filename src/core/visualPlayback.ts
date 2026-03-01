@@ -55,6 +55,7 @@ function createVisualInstrumentState(
 export class VisualPlaybackEngine {
   private trackStates: Map<string, VisualInstrumentState> = new Map();
   private perTrackEvents: PerTrackEvents[] = [];
+  private perTrackEventsById: Map<string, PerTrackEvents> = new Map();
   private lastComputedBeat: number = -1;
   // Per-track last noteOnCount index for incremental pitchNoteOnCounts
   private lastLoPerTrack: Map<string, number> = new Map();
@@ -79,6 +80,7 @@ export class VisualPlaybackEngine {
   resolveFromProject(project: Project): void {
     const resolvedTracks = resolveProject(project);
     this.perTrackEvents = [];
+    this.perTrackEventsById.clear();
 
     // Build palette child map and mask child map by scanning project tracks
     this.paletteChildMap.clear();
@@ -126,7 +128,8 @@ export class VisualPlaybackEngine {
       const hasAutomationOnly = !hasVisual && !isColorPalette && !isMask && !isSceneRouter && !isSceneCopy && resolved.automationLanes && resolved.automationLanes.length > 0;
       const hasBlackoutRegions = (resolved.blackoutRegions?.length ?? 0) > 0;
       const isSceneGate = this.sceneGateSet.has(resolved.trackId);
-      if (!hasVisual && !isColorPalette && !isMask && !isSceneRouter && !isSceneCopy && !hasAutomationOnly && !hasBlackoutRegions && !isSceneGate) continue;
+      const isSceneTrack = resolved.instrumentId === 'sceneGate';
+      if (!hasVisual && !isColorPalette && !isMask && !isSceneRouter && !isSceneCopy && !hasAutomationOnly && !hasBlackoutRegions && !isSceneGate && !isSceneTrack) continue;
 
       const state = createVisualInstrumentState(resolved.instrumentId ?? '', resolved.instrumentSettings);
       newStates.set(resolved.trackId, state);
@@ -146,14 +149,26 @@ export class VisualPlaybackEngine {
         .slice()
         .sort((a, b) => a.startBeat - b.startBeat);
 
-      this.perTrackEvents.push({
+      const perTrack: PerTrackEvents = {
         trackId: resolved.trackId,
         instrumentId: resolved.instrumentId!,
         settings: resolved.instrumentSettings ?? {},
         blackoutRegions,
         automationLanes: resolved.automationLanes ?? [],
         events,
-      });
+      };
+      this.perTrackEvents.push(perTrack);
+      this.perTrackEventsById.set(perTrack.trackId, perTrack);
+    }
+
+    // Ensure palette parent tracks have states even if they weren't in resolvedTracks
+    // (e.g. scene tracks with no visual/audio output of their own)
+    for (const [parentTrackId] of this.paletteChildMap) {
+      if (!newStates.has(parentTrackId)) {
+        const track = project.tracks[parentTrackId];
+        const state = createVisualInstrumentState(track?.instrumentId ?? '', track?.instrumentSettings);
+        newStates.set(parentTrackId, state);
+      }
     }
 
     this.trackStates = newStates;
@@ -313,8 +328,19 @@ export class VisualPlaybackEngine {
       // Find active notes: notes that started <= beat and haven't ended yet
       state.activeNotes.clear();
 
-      // Scan backwards from lo to find active notes (limit scan for perf)
-      const scanStart = Math.max(0, lo - 200);
+      // Use time-based scan window: binary search for the earliest event
+      // that could still be active (supports notes up to 64 beats long)
+      const scanBeat = beat - 64;
+      let scanStart = 0;
+      if (scanBeat > 0) {
+        let sLo = 0, sHi = lo;
+        while (sLo < sHi) {
+          const mid = (sLo + sHi) >>> 1;
+          if (events[mid].startTimeInBeats < scanBeat) sLo = mid + 1;
+          else sHi = mid;
+        }
+        scanStart = sLo;
+      }
       for (let i = scanStart; i < lo; i++) {
         const ev = events[i];
         const noteEnd = ev.startTimeInBeats + ev.duration;
@@ -353,7 +379,7 @@ export class VisualPlaybackEngine {
       if (!parentState || !paletteState) continue;
 
       // Get palette settings (crossfade, custom palettes)
-      const paletteTrackEvents = this.perTrackEvents.find(e => e.trackId === paletteTrackId);
+      const paletteTrackEvents = this.perTrackEventsById.get(paletteTrackId);
       const settings = paletteTrackEvents?.settings ?? {};
       const palettes = (settings.palettes as ColorPaletteDef[] | undefined) ?? DEFAULT_PALETTES;
       const crossfadeDuration = (settings.crossfadeDuration as number | undefined) ?? 0;
@@ -427,7 +453,7 @@ export class VisualPlaybackEngine {
 
     return maskIds.map(maskTrackId => {
       const state = this.trackStates.get(maskTrackId);
-      const trackEvents = this.perTrackEvents.find(e => e.trackId === maskTrackId);
+      const trackEvents = this.perTrackEventsById.get(maskTrackId);
       return {
         instrumentId: trackEvents?.instrumentId ?? '',
         params: state?.params ?? {},
@@ -465,7 +491,7 @@ export class VisualPlaybackEngine {
     const routerTrackId = this.sceneRouterMap.get(trackId);
     if (!routerTrackId) return undefined;
 
-    const trackEvents = this.perTrackEvents.find(e => e.trackId === routerTrackId);
+    const trackEvents = this.perTrackEventsById.get(routerTrackId);
     if (!trackEvents || trackEvents.events.length === 0) return undefined;
 
     const beat = this.lastComputedBeat;
@@ -496,7 +522,7 @@ export class VisualPlaybackEngine {
       return undefined;
     }
 
-    const trackEvents = this.perTrackEvents.find(e => e.trackId === copyTrackId);
+    const trackEvents = this.perTrackEventsById.get(copyTrackId);
     if (!trackEvents || trackEvents.events.length === 0) {
       // DEBUG
       console.log('[SceneCopy] copyTrackId found:', copyTrackId, '| trackEvents:', !!trackEvents, '| eventCount:', trackEvents?.events.length ?? 0);
@@ -532,6 +558,14 @@ export class VisualPlaybackEngine {
   }
 
   /**
+   * Returns the palette background color for a scene track, or null if none active.
+   */
+  getSceneBackgroundColor(sceneTrackId: string): string | null {
+    const state = this.trackStates.get(sceneTrackId);
+    return (state?.activePalette?.background as string) ?? null;
+  }
+
+  /**
    * Returns track IDs that have visual state.
    */
   getActiveTrackIds(): string[] {
@@ -542,7 +576,7 @@ export class VisualPlaybackEngine {
    * Returns noteOnCount at an arbitrary beat for a given track (for look-ahead).
    */
   getNoteOnCountAtBeat(trackId: string, beat: number): number {
-    const trackEvents = this.perTrackEvents.find(e => e.trackId === trackId);
+    const trackEvents = this.perTrackEventsById.get(trackId);
     if (!trackEvents) return 0;
     const events = trackEvents.events;
     let lo = 0, hi = events.length;
@@ -559,7 +593,7 @@ export class VisualPlaybackEngine {
    * taking automation into account. Returns defaultValue if no automation exists.
    */
   getParamAtBeat(trackId: string, paramKey: string, beat: number, defaultValue: number): number {
-    const trackEvents = this.perTrackEvents.find(e => e.trackId === trackId);
+    const trackEvents = this.perTrackEventsById.get(trackId);
     if (!trackEvents) return defaultValue;
 
     // Find the automation lane for this param
@@ -601,13 +635,13 @@ export class VisualPlaybackEngine {
 
   /** Get an automation lane for a track+param (cache-friendly: call once, reuse). */
   getAutomationLane(trackId: string, paramKey: string): AutomationLane | null {
-    const trackEvents = this.perTrackEvents.find(e => e.trackId === trackId);
+    const trackEvents = this.perTrackEventsById.get(trackId);
     if (!trackEvents) return null;
     return trackEvents.automationLanes.find(l => !l.pluginInstanceId && l.paramKey === paramKey) ?? null;
   }
 
   getTrackEvents(trackId: string): PerTrackEvents['events'] | null {
-    const te = this.perTrackEvents.find(e => e.trackId === trackId);
+    const te = this.perTrackEventsById.get(trackId);
     return te ? te.events : null;
   }
 

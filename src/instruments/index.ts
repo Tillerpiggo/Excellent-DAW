@@ -31,6 +31,8 @@ import { CylinderFlight } from './visual/CylinderFlight';
 import { ParticleBurst } from './visual/ParticleBurst';
 import { CameraControl } from './visual/CameraControl';
 import { ColorPaletteInstrument } from './visual/ColorPalette';
+import { WindowsXP } from './visual/WindowsXP';
+import { FolderFlight } from './visual/FolderFlight';
 
 // Mask instruments
 import { SplitMask } from './masks/SplitMask';
@@ -42,6 +44,7 @@ import { StripMask } from './masks/StripMask';
 import { SceneRouter } from './utility/SceneRouter';
 import { SceneCopy } from './utility/SceneCopy';
 import { SceneGate } from './utility/SceneGate';
+import { MasterChannel } from './utility/MasterChannel';
 
 // Flat registry for quick lookup by ID
 export const INSTRUMENTS: Record<string, Instrument> = {
@@ -73,6 +76,8 @@ export const INSTRUMENTS: Record<string, Instrument> = {
   particleBurst: ParticleBurst,
   cameraControl: CameraControl,
   colorPalette: ColorPaletteInstrument,
+  windowsXP: WindowsXP,
+  folderFlight: FolderFlight,
   // Masks
   splitMask: SplitMask,
   slantedBarsMask: SlantedBarsMask,
@@ -83,6 +88,7 @@ export const INSTRUMENTS: Record<string, Instrument> = {
   sceneRouter: SceneRouter,
   sceneCopy: SceneCopy,
   sceneGate: SceneGate,
+  masterChannel: MasterChannel,
 };
 
 // Get instrument by ID
@@ -139,7 +145,7 @@ export function getInstrumentFolderTree(): InstrumentFolder {
       },
       {
         name: 'Visual',
-        instruments: ['silkSymmetry', 'hexagonDots', 'fractalTunnel', 'circleGrid', 'neonPolar', 'hopfFibration', 'icosahedronBurst', 'metronomeBalls', 'dotField', 'stars', 'textDisplay', 'sun', 'imageDisplay', 'videoSampler', 'videoKaleidoscope', 'shapeFlight', 'cylinderFlight', 'particleBurst', 'cameraControl'],
+        instruments: ['silkSymmetry', 'hexagonDots', 'fractalTunnel', 'circleGrid', 'neonPolar', 'hopfFibration', 'icosahedronBurst', 'metronomeBalls', 'dotField', 'stars', 'textDisplay', 'sun', 'imageDisplay', 'videoSampler', 'videoKaleidoscope', 'shapeFlight', 'cylinderFlight', 'particleBurst', 'cameraControl', 'windowsXP', 'folderFlight'],
       },
       {
         name: 'Masks',
@@ -147,7 +153,7 @@ export function getInstrumentFolderTree(): InstrumentFolder {
       },
       {
         name: 'Utility',
-        instruments: ['colorPalette', 'sceneRouter', 'sceneCopy', 'sceneGate'],
+        instruments: ['colorPalette', 'sceneRouter', 'sceneCopy', 'sceneGate', 'masterChannel'],
       },
     ],
   };

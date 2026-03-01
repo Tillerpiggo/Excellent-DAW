@@ -1,8 +1,7 @@
 'use client';
 
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree, createPortal } from '@react-three/fiber';
-import { useFBO } from '@react-three/drei';
 import * as THREE from 'three';
 import { PluginInstance } from '@/core/types';
 import { getInstrument } from '@/instruments';
@@ -36,6 +35,12 @@ interface TrackRendererProps {
   plugins: PluginInstance[];
   isGroup?: boolean;
   childIds?: string[];
+}
+
+interface ShaderPipeline {
+  fbo: THREE.WebGLRenderTarget;
+  scene: THREE.Scene;
+  camera: THREE.PerspectiveCamera;
 }
 
 export function TrackRenderer({
@@ -82,45 +87,49 @@ export function TrackRenderer({
   });
 
   const hasAnyPlugins = hasShaderPlugins || hasClonePlugins || hasTransformPlugins;
+  const usesShaderPipeline = hasShaderPlugins && !hasClonePlugins;
 
-  // Create FBO for rendering instrument to texture
-  const fbo = useFBO(1024, 1024, {
-    minFilter: THREE.LinearFilter,
-    magFilter: THREE.LinearFilter,
-    format: THREE.RGBAFormat,
-    stencilBuffer: false,
-  });
+  // Lazily allocate offscreen render resources only when shader plugins are active.
+  const shaderPipeline = useMemo<ShaderPipeline | null>(() => {
+    if (!usesShaderPipeline) return null;
 
-  // Create a separate scene for the instrument
-  const instrumentScene = useMemo(() => {
-    const s = new THREE.Scene();
-    // Add same lighting as main scene
+    const fbo = new THREE.WebGLRenderTarget(1024, 1024, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat,
+      stencilBuffer: false,
+    });
+
+    const scene = new THREE.Scene();
     const ambient = new THREE.AmbientLight(0xffffff, 0.4);
     const directional = new THREE.DirectionalLight(0xffffff, 0.8);
     directional.position.set(5, 5, 5);
     const point = new THREE.PointLight(0x8b5cf6, 0.5);
     point.position.set(-5, 5, -5);
-    s.add(ambient, directional, point);
-    return s;
-  }, []);
+    scene.add(ambient, directional, point);
 
-  // Create a camera for rendering to FBO
-  const fboCamera = useMemo(() => {
-    const cam = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
-    cam.position.set(0, 0, 8);
-    return cam;
-  }, []);
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+    camera.position.set(0, 0, 8);
+
+    return { fbo, scene, camera };
+  }, [usesShaderPipeline]);
+
+  useEffect(() => {
+    return () => {
+      shaderPipeline?.fbo.dispose();
+    };
+  }, [shaderPipeline]);
 
   useFrame(() => {
-    // Only render to FBO when we're actually using shaders (no clones)
-    if (!hasShaderPlugins || hasClonePlugins) return;
+    // Only render to FBO when shader pipeline is active.
+    if (!shaderPipeline) return;
     if (!isGroup && !Component) return;
 
     // Render instrument scene to FBO
-    gl.setRenderTarget(fbo);
+    gl.setRenderTarget(shaderPipeline.fbo);
     gl.setClearColor(0x000000, 0);
     gl.clear();
-    gl.render(instrumentScene, fboCamera);
+    gl.render(shaderPipeline.scene, shaderPipeline.camera);
     gl.setRenderTarget(null);
   });
 
@@ -279,17 +288,17 @@ export function TrackRenderer({
 
   // Has shader plugins - render to FBO and apply shader chain
   // Skip shaders if clone plugins are present (clones need 3D objects, not flat planes)
-  if (hasShaderPlugins && !hasClonePlugins) {
+  if (usesShaderPipeline && shaderPipeline) {
     return (
       <group ref={rootGroupRef}>
         {/* Render base content to offscreen scene (portal) - no clone wrapper here */}
         {createPortal(
           <group position={[0, 0, 0]}>{buildBaseContentElement()}</group>,
-          instrumentScene
+          shaderPipeline.scene
         )}
 
         {/* Apply shader chain and render result */}
-        <ShaderChain trackId={trackId} inputTexture={fbo.texture} plugins={plugins} />
+        <ShaderChain trackId={trackId} inputTexture={shaderPipeline.fbo.texture} plugins={plugins} />
       </group>
     );
   }

@@ -11,7 +11,8 @@ export interface TrackNode {
 // Flatten track tree for rendering
 export function flattenTracks(
   project: Project,
-  collapsedIds: Set<string> = new Set()
+  collapsedIds: Set<string> = new Set(),
+  hideMasterTrack: boolean = false
 ): TrackNode[] {
   const result: TrackNode[] = [];
 
@@ -38,7 +39,16 @@ export function flattenTracks(
     });
   }
 
-  traverse(project.rootTracks, 0, []);
+  // Sort root tracks so master track is always last, optionally filter it out
+  let sortedRootTracks = [...project.rootTracks].sort((a, b) => {
+    const aIsMaster = project.tracks[a]?.typeId === 'master' ? 1 : 0;
+    const bIsMaster = project.tracks[b]?.typeId === 'master' ? 1 : 0;
+    return aIsMaster - bIsMaster;
+  });
+  if (hideMasterTrack) {
+    sortedRootTracks = sortedRootTracks.filter(id => project.tracks[id]?.typeId !== 'master');
+  }
+  traverse(sortedRootTracks, 0, []);
   return result;
 }
 

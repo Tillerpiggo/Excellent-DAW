@@ -82,7 +82,8 @@ export type TrackTypeId =
   | 'rhythm'
   | 'rest'
   | 'swing'
-  | 'scene';
+  | 'scene'
+  | 'master';
 
 // Legacy type for backwards compatibility during migration
 // New code should use string instrumentId directly
@@ -152,6 +153,7 @@ export interface Project {
   beatsPerBar: number;
   rootTracks: string[]; // IDs of top-level tracks
   rootScenes: string[]; // IDs of top-level scene tracks
+  mainSceneTrackId?: string; // ID of the main scene track (for palette background on main view)
   tracks: Record<string, Track>;
 }
 

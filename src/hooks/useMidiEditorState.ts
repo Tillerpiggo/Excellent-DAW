@@ -39,15 +39,20 @@ export function useMidiEditorState({
   const [notes, setNotes] = useState<MidiNote[]>(() => extractNotes(block));
   // Track whether the last change was from local editing (to avoid re-extracting our own saves)
   const localEditRef = useRef(false);
+  const prevBlockIdRef = useRef(block.id);
 
   // Update notes when block content changes (handles undo/redo and block switches)
   const fingerprint = blockFingerprint(block);
   useEffect(() => {
-    if (localEditRef.current) {
+    const blockChanged = prevBlockIdRef.current !== block.id;
+    prevBlockIdRef.current = block.id;
+
+    if (localEditRef.current && !blockChanged) {
       // This change came from our own auto-save writing back to the store — skip
       localEditRef.current = false;
       return;
     }
+    localEditRef.current = false;
     setNotes(extractNotes(block));
   }, [fingerprint]); // eslint-disable-line react-hooks/exhaustive-deps
 

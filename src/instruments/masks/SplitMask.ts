@@ -14,6 +14,8 @@ export const SplitMask: Instrument = {
     angle: 0,
     feather: 0.01,
     invert: 0,
+    offsetX: 0,
+    offsetY: 0,
   },
   settingsSchema: {
     position: {
@@ -46,6 +48,22 @@ export const SplitMask: Instrument = {
       min: 0,
       max: 1,
       step: 1,
+      default: 0,
+    },
+    offsetX: {
+      type: 'number',
+      label: 'Offset X',
+      min: -1,
+      max: 1,
+      step: 0.01,
+      default: 0,
+    },
+    offsetY: {
+      type: 'number',
+      label: 'Offset Y',
+      min: -1,
+      max: 1,
+      step: 0.01,
       default: 0,
     },
   },

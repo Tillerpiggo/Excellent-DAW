@@ -11,6 +11,7 @@ export function VisualViewPanel() {
   const tracks = useProjectStore((s) => s.project.tracks);
   const rootTracks = useProjectStore((s) => s.project.rootTracks);
   const rootScenes = useProjectStore((s) => s.project.rootScenes);
+  const mainSceneTrackId = useProjectStore((s) => s.project.mainSceneTrackId);
 
   // Sync visual engine with project changes
   useVisualSync();
@@ -95,9 +96,10 @@ export function VisualViewPanel() {
   }, [tracks, rootTracks]);
 
   // Collect scene track IDs for passing to VisualView
+  // Filter out the main scene track — it's only used for palette background, not as a named scene overlay
   const sceneTrackIds = useMemo(() => {
-    return rootScenes.filter(id => tracks[id]);
-  }, [rootScenes, tracks]);
+    return rootScenes.filter(id => tracks[id] && id !== mainSceneTrackId);
+  }, [rootScenes, tracks, mainSceneTrackId]);
 
   if (visualTracks.length === 0) {
     return (

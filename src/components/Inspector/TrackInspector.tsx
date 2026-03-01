@@ -245,8 +245,9 @@ export function TrackInspector({ track }: TrackInspectorProps) {
         <>
           {/* Track Name */}
           <div>
-            <label className="block text-xs text-muted-foreground mb-1">Name</label>
+            <label htmlFor="track-name" className="block text-xs text-muted-foreground mb-1">Name</label>
             <input
+              id="track-name"
               type="text"
               value={track.name}
               onChange={(e) => updateTrack(track.id, { name: e.target.value })}
@@ -258,8 +259,9 @@ export function TrackInspector({ track }: TrackInspectorProps) {
           {track.typeId === 'scene' && (
             <>
               <div>
-                <label className="block text-xs text-muted-foreground mb-1">Add Mask</label>
+                <label htmlFor="add-mask" className="block text-xs text-muted-foreground mb-1">Add Mask</label>
                 <select
+                  id="add-mask"
                   value=""
                   onChange={(e) => {
                     if (e.target.value) {
@@ -300,8 +302,9 @@ export function TrackInspector({ track }: TrackInspectorProps) {
 
           {/* Track Type */}
           <div>
-            <label className="block text-xs text-muted-foreground mb-1">Track Type</label>
+            <label htmlFor="track-type" className="block text-xs text-muted-foreground mb-1">Track Type</label>
             <select
+              id="track-type"
               value={track.typeId}
               onChange={(e) => updateTrack(track.id, { typeId: e.target.value as TrackTypeId })}
               className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
@@ -318,8 +321,9 @@ export function TrackInspector({ track }: TrackInspectorProps) {
           {/* Unified Instrument (hidden for automation tracks) */}
           {!track.automationConfig && (
             <div>
-              <label className="block text-xs text-muted-foreground mb-1">Instrument</label>
+              <label htmlFor="track-instrument" className="block text-xs text-muted-foreground mb-1">Instrument</label>
               <select
+                id="track-instrument"
                 value={track.instrumentId || ''}
                 onChange={(e) => handleInstrumentChange(e.target.value || undefined)}
                 className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
@@ -345,8 +349,9 @@ export function TrackInspector({ track }: TrackInspectorProps) {
           {/* Scene Assignment (only for visual tracks when scenes exist) */}
           {!track.automationConfig && hasVisualInstrument && rootScenes.length > 0 && (
             <div>
-              <label className="block text-xs text-muted-foreground mb-1">Scene</label>
+              <label htmlFor="track-scene" className="block text-xs text-muted-foreground mb-1">Scene</label>
               <select
+                id="track-scene"
                 value={track.sceneId || ''}
                 onChange={(e) => assignTrackToScene(track.id, e.target.value || undefined)}
                 className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
@@ -564,12 +569,13 @@ export function TrackInspector({ track }: TrackInspectorProps) {
 
             return (
               <div className="space-y-3 pl-3 border-l-2 border-accent-from/30">
-                <label className="block text-xs text-muted-foreground">Automation</label>
+                <label htmlFor="automation-target" className="block text-xs text-muted-foreground">Automation</label>
 
                 {/* Hierarchical target parameter picker */}
                 <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Target Parameter</label>
+                  <label htmlFor="automation-target" className="block text-xs text-muted-foreground mb-1">Target Parameter</label>
                   <select
+                    id="automation-target"
                     value={currentValue}
                     onChange={(e) => handleTargetChange(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-accent-from"
@@ -603,11 +609,37 @@ export function TrackInspector({ track }: TrackInspectorProps) {
                       ));
                     })()}
                   </select>
+                  {/* Show current default value for the selected parameter */}
+                  {currentValue && (() => {
+                    let defaultVal: string | undefined;
+                    if (currentValue.startsWith('plugin:')) {
+                      const parts = currentValue.split(':');
+                      const instanceId = parts[1];
+                      const paramKey = parts.slice(2).join(':');
+                      const pi = parentTrack?.visualPlugins?.find(p => p.id === instanceId);
+                      if (paramKey === 'enabled') {
+                        defaultVal = pi?.enabled ? 'On' : 'Off';
+                      } else {
+                        const plugin = pi ? getPlugin(pi.pluginId) : undefined;
+                        const val = pi?.settings?.[paramKey];
+                        const schemaDefault = plugin?.settingsSchema?.[paramKey]?.default;
+                        defaultVal = val !== undefined ? String(val) : (schemaDefault !== undefined ? String(schemaDefault) : undefined);
+                      }
+                    } else {
+                      const val = parentTrack?.instrumentSettings?.[currentValue];
+                      const schemaDefault = instrumentSchema?.[currentValue]?.default;
+                      defaultVal = val !== undefined ? String(val) : (schemaDefault !== undefined ? String(schemaDefault) : undefined);
+                    }
+                    return defaultVal !== undefined ? (
+                      <p className="text-xs text-muted-foreground mt-1">Current default: <span className="text-foreground">{defaultVal}</span></p>
+                    ) : null;
+                  })()}
                 </div>
 
                 <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Interpolation</label>
+                  <label htmlFor="automation-interpolation" className="block text-xs text-muted-foreground mb-1">Interpolation</label>
                   <select
+                    id="automation-interpolation"
                     value={track.automationConfig!.interpolation ?? (track.automationConfig!.interpolate ? 'linear' : 'step')}
                     onChange={(e) =>
                       updateTrack(track.id, {
@@ -654,15 +686,17 @@ export function TrackInspector({ track }: TrackInspectorProps) {
             </p>
           </div>
 
-          {/* Delete Button */}
-          <div className="pt-4">
-            <button
-              onClick={handleDelete}
-              className="w-full px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
-            >
-              Delete Track
-            </button>
-          </div>
+          {/* Delete Button (hidden for master track) */}
+          {track.typeId !== 'master' && (
+            <div className="pt-4">
+              <button
+                onClick={handleDelete}
+                className="w-full px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+              >
+                Delete Track
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

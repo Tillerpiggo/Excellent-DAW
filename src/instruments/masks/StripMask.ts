@@ -17,7 +17,7 @@ export const StripMask: Instrument = {
   hasAudio: false,
   hasVisual: false,
   editorType: 'generic',
-  noteRange: { min: 0, max: MAX_STRIPS - 1 },
+  noteRange: { min: 0, max: 40 },
   rangeLabels,
   defaultSettings: {
     stripCount: 8,
@@ -25,6 +25,8 @@ export const StripMask: Instrument = {
     feather: 0.005,
     width: 1,
     height: 1,
+    offsetX: 0,
+    offsetY: 0,
   },
   settingsSchema: {
     stripCount: {
@@ -66,6 +68,22 @@ export const StripMask: Instrument = {
       max: 2,
       step: 0.01,
       default: 1,
+    },
+    offsetX: {
+      type: 'number',
+      label: 'Offset X',
+      min: -1,
+      max: 1,
+      step: 0.01,
+      default: 0,
+    },
+    offsetY: {
+      type: 'number',
+      label: 'Offset Y',
+      min: -1,
+      max: 1,
+      step: 0.01,
+      default: 0,
     },
   },
 };

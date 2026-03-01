@@ -76,6 +76,9 @@ interface UIState {
   // Scenes
   scenesCollapsed: boolean;
 
+  // Master track visibility
+  showMasterTrack: boolean;
+
   // Visual fullscreen
   visualFullscreen: boolean;
 
@@ -131,6 +134,9 @@ interface UIState {
 
   // Scenes
   toggleScenesCollapsed: () => void;
+
+  // Master track
+  toggleMasterTrack: () => void;
 
   // Visual fullscreen
   setVisualFullscreen: (v: boolean) => void;
@@ -199,6 +205,9 @@ export const useUIStore = create<UIState>((set) => ({
 
   // Scenes
   scenesCollapsed: true,
+
+  // Master track visibility
+  showMasterTrack: false,
 
   // Visual fullscreen
   visualFullscreen: false,
@@ -435,6 +444,10 @@ export const useUIStore = create<UIState>((set) => ({
 
   toggleScenesCollapsed: () => {
     set((state) => ({ scenesCollapsed: !state.scenesCollapsed }));
+  },
+
+  toggleMasterTrack: () => {
+    set((state) => ({ showMasterTrack: !state.showMasterTrack }));
   },
 
   setVisualFullscreen: (v) => {
