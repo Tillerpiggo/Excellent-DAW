@@ -423,6 +423,7 @@ export function TimelineCanvas({
   } | null>(null);
 
   const selectedBlockIds = useUIStore((state) => state.selectedBlockIds);
+  const selectedTrackIds = useUIStore((state) => state.selectedTrackIds);
   const selectBlock = useUIStore((state) => state.selectBlock);
   const selectBlocks = useUIStore((state) => state.selectBlocks);
   const clearBlockSelection = useUIStore((state) => state.clearBlockSelection);
@@ -482,10 +483,13 @@ export function TimelineCanvas({
   // Grid background CSS
   const gridBackground = useMemo(() => {
     return {
-      backgroundImage: `repeating-linear-gradient(to right, rgba(255,255,255,0.06) 0px 1px, transparent 1px ${barWidth}px)`,
-      backgroundSize: `${barWidth}px 100%`,
+      backgroundImage: [
+        `repeating-linear-gradient(to right, rgba(255,255,255,0.06) 0px 1px, transparent 1px ${barWidth}px)`,
+        `repeating-linear-gradient(to bottom, transparent 0px ${trackHeight - 1}px, rgba(255,255,255,0.06) ${trackHeight - 1}px ${trackHeight}px)`,
+      ].join(', '),
+      backgroundSize: `${barWidth}px ${trackHeight}px, 100% ${trackHeight}px`,
     };
-  }, [barWidth]);
+  }, [barWidth, trackHeight]);
 
   // Playhead update via direct DOM mutation (rAF loop)
   useEffect(() => {
@@ -1241,6 +1245,20 @@ export function TimelineCanvas({
         }}
         onPointerDown={handleBackgroundPointerDown}
       >
+        {/* Selected track row highlights */}
+        {flatTracks.map((node, i) =>
+          selectedTrackIds.has(node.track.id) && (
+            <div key={`sel-${node.track.id}`} style={{
+              position: 'absolute',
+              top: i * trackHeight,
+              left: 0,
+              width: '100%',
+              height: trackHeight,
+              backgroundColor: 'rgba(100, 116, 139, 0.12)',
+              pointerEvents: 'none',
+            }} />
+          )
+        )}
         {/* Blocks */}
         {(() => {
           const anySolo = flatTracks.some((n) => n.track.solo);
@@ -1475,67 +1493,78 @@ export function TimelineCanvas({
                   />
                 )}
 
-                {/* Hit areas */}
-                {/* Body */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    left: 12,
-                    top: 0,
-                    width: contentAreaWidth - 24,
-                    height: blockHeight,
-                    cursor: 'grab',
-                    zIndex: 4,
-                  }}
-                  onPointerDown={(e) => handleBlockPointerDown(e, block, track, trackIndex, 'body')}
-                  onPointerOver={() => { setHoverBlockId(block.id); setHoverZone('body'); }}
-                  onPointerOut={() => { setHoverBlockId(null); setHoverZone(null); }}
-                />
-                {/* Left edge */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    left: 0,
-                    top: 0,
-                    width: 12,
-                    height: blockHeight,
-                    cursor: 'ew-resize',
-                    zIndex: 4,
-                  }}
-                  onPointerDown={(e) => handleBlockPointerDown(e, block, track, trackIndex, 'left-edge')}
-                  onPointerOver={() => { setHoverBlockId(block.id); setHoverZone('left-edge'); }}
-                  onPointerOut={() => { setHoverBlockId(null); setHoverZone(null); }}
-                />
-                {/* Right loop (top half of handle) */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    right: 0,
-                    top: 0,
-                    width: handleWidthPx,
-                    height: blockHeight / 2,
-                    cursor: 'col-resize',
-                    zIndex: 4,
-                  }}
-                  onPointerDown={(e) => handleBlockPointerDown(e, block, track, trackIndex, 'right-loop')}
-                  onPointerOver={() => { setHoverBlockId(block.id); setHoverZone('right-loop'); }}
-                  onPointerOut={() => { setHoverBlockId(null); setHoverZone(null); }}
-                />
-                {/* Right extend (bottom half of handle) */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    right: 0,
-                    top: blockHeight / 2,
-                    width: handleWidthPx,
-                    height: blockHeight / 2,
-                    cursor: 'e-resize',
-                    zIndex: 4,
-                  }}
-                  onPointerDown={(e) => handleBlockPointerDown(e, block, track, trackIndex, 'right-extend')}
-                  onPointerOver={() => { setHoverBlockId(block.id); setHoverZone('right-extend'); }}
-                  onPointerOut={() => { setHoverBlockId(null); setHoverZone(null); }}
-                />
+                {/* Hit areas — adapt edge sizes for narrow blocks */}
+                {(() => {
+                  const edgeWidth = Math.min(12, Math.floor(blockWidth / 3));
+                  const bodyLeft = edgeWidth;
+                  const bodyWidth = Math.max(0, blockWidth - edgeWidth * 2);
+                  return (
+                    <>
+                      {/* Body */}
+                      {bodyWidth > 0 && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            left: bodyLeft,
+                            top: 0,
+                            width: bodyWidth,
+                            height: blockHeight,
+                            cursor: 'grab',
+                            zIndex: 4,
+                          }}
+                          onPointerDown={(e) => handleBlockPointerDown(e, block, track, trackIndex, 'body')}
+                          onPointerOver={() => { setHoverBlockId(block.id); setHoverZone('body'); }}
+                          onPointerOut={() => { setHoverBlockId(null); setHoverZone(null); }}
+                        />
+                      )}
+                      {/* Left edge */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: 0,
+                          top: 0,
+                          width: edgeWidth,
+                          height: blockHeight,
+                          cursor: 'ew-resize',
+                          zIndex: 4,
+                        }}
+                        onPointerDown={(e) => handleBlockPointerDown(e, block, track, trackIndex, 'left-edge')}
+                        onPointerOver={() => { setHoverBlockId(block.id); setHoverZone('left-edge'); }}
+                        onPointerOut={() => { setHoverBlockId(null); setHoverZone(null); }}
+                      />
+                      {/* Right loop (top half of handle) */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          right: 0,
+                          top: 0,
+                          width: edgeWidth,
+                          height: blockHeight / 2,
+                          cursor: 'col-resize',
+                          zIndex: 5,
+                        }}
+                        onPointerDown={(e) => handleBlockPointerDown(e, block, track, trackIndex, 'right-loop')}
+                        onPointerOver={() => { setHoverBlockId(block.id); setHoverZone('right-loop'); }}
+                        onPointerOut={() => { setHoverBlockId(null); setHoverZone(null); }}
+                      />
+                      {/* Right extend (bottom half of handle) */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          right: 0,
+                          top: blockHeight / 2,
+                          width: edgeWidth,
+                          height: blockHeight / 2,
+                          cursor: 'e-resize',
+                          zIndex: 5,
+                        }}
+                        onPointerDown={(e) => handleBlockPointerDown(e, block, track, trackIndex, 'right-extend')}
+                        onPointerOver={() => { setHoverBlockId(block.id); setHoverZone('right-extend'); }}
+                        onPointerOut={() => { setHoverBlockId(null); setHoverZone(null); }}
+                      />
+                    </>
+                  );
+                })()}
               </div>
             );
             })

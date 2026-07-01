@@ -266,6 +266,7 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
   const waterAngle = useRef(0);
   const lastDropTime = useRef(0);
   const colorModeRef = useRef(0);
+  const prevSeekGenRef = useRef(0);
   const centerRipples = useRef<CenterRipple[]>([]);
   const scaleKicks = useRef<ScaleKick[]>([]);
   const colorPulses = useRef<ColorPulse[]>([]);
@@ -333,6 +334,23 @@ function DotFieldVisual({ trackId }: { trackId: string }) {
     if (!root) return;
     const state = engineRef.current.getTrackState(trackId);
     if (!state) return;
+
+    // Seek detection — reset accumulated state when user scrubs the timeline
+    if (state.seekGeneration !== prevSeekGenRef.current) {
+      prevSeekGenRef.current = state.seekGeneration;
+      prevCounts.current = new Map(state.pitchNoteOnCounts);
+      effectsOn.current = new Array(EFFECT_COUNT).fill(false);
+      activeBlades.current = [];
+      algoIdx.current = 0;
+      waterOn.current = false;
+      activeRipples.current = [];
+      waterAngle.current = 0;
+      lastDropTime.current = 0;
+      colorModeRef.current = 0;
+      centerRipples.current = [];
+      scaleKicks.current = [];
+      colorPulses.current = [];
+    }
 
     const vw = viewport.width;
     const vh = viewport.height;

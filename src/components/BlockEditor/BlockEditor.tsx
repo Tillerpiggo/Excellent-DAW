@@ -6,15 +6,14 @@ import { useProjectStore } from '@/stores/projectStore';
 import { ChordEditorPanel } from '../ChordEditor';
 import { DrumEditorPanel } from '../DrumEditor';
 import { ArpEditorPanel } from '../ArpEditor';
-import { SuppressEditorPanel } from '../SuppressEditor';
-import { MuteEditorPanel } from '../MuteEditor';
 import { TransposeEditorPanel } from '../TransposeEditor';
-import { RhythmEditorPanel } from '../RhythmEditor';
 import { SwingEditorPanel } from '../SwingEditor';
 import { GenericMidiEditorPanel } from '../GenericMidiEditor';
 import { WaveformEditorPanel } from '../WaveformEditor';
 import { PatternCategory } from '@/core/types';
 import { getInstrument, getInheritedMidiInstrumentId } from '@/instruments';
+import { CATEGORY_PRESETS } from '@/core/presets';
+import { CATEGORY_COLORS } from '@/utils/colors';
 
 export type EditorType = 'chord' | 'drum' | 'arp' | 'suppress' | 'mute' | 'transpose' | 'rhythm' | 'swing' | 'waveform' | 'generic' | null;
 
@@ -67,11 +66,11 @@ export function BlockEditor() {
 
     const { patternCategory, typeId } = selectedTrack;
 
+    if (typeId === 'mute') return 'mute';
+    if (typeId === 'suppress') return 'suppress';
     if (typeId === 'rhythm') return 'rhythm';
     if (typeId === 'transpose') return 'transpose';
     if (typeId === 'swing') return 'swing';
-    if (typeId === 'suppress') return 'suppress';
-    if (typeId === 'mute') return 'mute';
 
     if (patternCategory) {
       const categoryEditor = getEditorForCategory(patternCategory);
@@ -98,14 +97,14 @@ export function BlockEditor() {
         return <DrumEditorPanel />;
       case 'arp':
         return <ArpEditorPanel />;
-      case 'suppress':
-        return <SuppressEditorPanel />;
       case 'mute':
-        return <MuteEditorPanel />;
+        return <GenericMidiEditorPanel presets={CATEGORY_PRESETS.mute} color={CATEGORY_COLORS.mute} />;
+      case 'suppress':
+        return <GenericMidiEditorPanel presets={CATEGORY_PRESETS.suppress} color={CATEGORY_COLORS.suppress} />;
+      case 'rhythm':
+        return <GenericMidiEditorPanel presets={CATEGORY_PRESETS.rhythm} color={CATEGORY_COLORS.rhythm} />;
       case 'transpose':
         return <TransposeEditorPanel />;
-      case 'rhythm':
-        return <RhythmEditorPanel />;
       case 'swing':
         return <SwingEditorPanel />;
       case 'waveform':

@@ -1,12 +1,14 @@
 'use client';
 
-import { useMemo } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { useMemo, useState } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import { VisualScene } from './VisualScene';
 import { SceneCompositor } from './SceneCompositor';
 import { ExportController } from '../ExportController';
 import { getInstrument } from '@/instruments';
+import { getVisualPlaybackEngine } from '@/core/visualPlayback';
+import { useProjectStore } from '@/stores/projectStore';
 
 export interface VisualTrackInfo {
   id: string;
@@ -22,6 +24,63 @@ interface VisualViewProps {
 }
 
 const EMPTY_ROOT_SCENES: string[] = [];
+const DEFAULT_MASTER_GLOW = {
+  intensity: 1.5,
+  threshold: 0.2,
+  smoothing: 0.9,
+};
+
+type MasterGlowParams = typeof DEFAULT_MASTER_GLOW;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function num(params: Record<string, unknown> | undefined, key: string, fallback: number): number {
+  const value = params?.[key];
+  return typeof value === 'number' ? value : fallback;
+}
+
+function getMasterGlowParams(params: Record<string, unknown> | undefined): MasterGlowParams {
+  return {
+    intensity: clamp(num(params, 'glowIntensity', DEFAULT_MASTER_GLOW.intensity), 0, 6),
+    threshold: clamp(num(params, 'glowThreshold', DEFAULT_MASTER_GLOW.threshold), 0, 1),
+    smoothing: clamp(num(params, 'glowSmoothing', DEFAULT_MASTER_GLOW.smoothing), 0, 1),
+  };
+}
+
+function sameGlowParams(a: MasterGlowParams, b: MasterGlowParams): boolean {
+  return a.intensity === b.intensity && a.threshold === b.threshold && a.smoothing === b.smoothing;
+}
+
+function MasterGlow({ disabled }: { disabled: boolean }) {
+  const masterTrackId = useProjectStore((s) => Object.values(s.project.tracks).find((t) => t.typeId === 'master')?.id);
+  const masterSettings = useProjectStore((s) => (
+    masterTrackId ? s.project.tracks[masterTrackId]?.instrumentSettings : undefined
+  ));
+
+  const [glow, setGlow] = useState<MasterGlowParams>(DEFAULT_MASTER_GLOW);
+
+  useFrame(() => {
+    const engine = getVisualPlaybackEngine();
+    const masterState = masterTrackId ? engine.getTrackState(masterTrackId) : undefined;
+    const next = getMasterGlowParams(masterState?.params ?? masterSettings);
+    setGlow((current) => (sameGlowParams(current, next) ? current : next));
+  });
+
+  if (disabled) return null;
+
+  return (
+    <EffectComposer multisampling={0}>
+      <Bloom
+        intensity={glow.intensity}
+        luminanceThreshold={glow.threshold}
+        luminanceSmoothing={glow.smoothing}
+        mipmapBlur
+      />
+    </EffectComposer>
+  );
+}
 
 export function VisualView({ tracks, rootScenes = EMPTY_ROOT_SCENES }: VisualViewProps) {
   const shouldDisableBloom = useMemo(
@@ -55,16 +114,7 @@ export function VisualView({ tracks, rootScenes = EMPTY_ROOT_SCENES }: VisualVie
           <VisualScene tracks={tracks} />
         )}
 
-        {!shouldDisableBloom && (
-          <EffectComposer multisampling={0}>
-            <Bloom
-              intensity={1.5}
-              luminanceThreshold={0.2}
-              luminanceSmoothing={0.9}
-              mipmapBlur
-            />
-          </EffectComposer>
-        )}
+        <MasterGlow disabled={shouldDisableBloom} />
       </Canvas>
     </div>
   );

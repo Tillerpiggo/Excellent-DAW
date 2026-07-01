@@ -5,7 +5,7 @@
 import { Project } from './types';
 import { Event } from './types';
 import { VisualInstrumentState } from './visualTypes';
-import { resolveProject, ResolvedTrack, BlackoutRegion, AutomationLane } from './resolution';
+import { resolveProject, BlackoutRegion, AutomationLane } from './resolution';
 import { getInstrument, isMaskInstrument } from '@/instruments';
 import {
   ColorPaletteDef,
@@ -30,6 +30,83 @@ interface PerTrackEvents {
   }[];
 }
 
+interface AutomationSample {
+  value: number;
+  sourceBeat: number;
+}
+
+interface WinningAutomationSample extends AutomationSample {
+  lane: AutomationLane;
+  laneIndex: number;
+}
+
+function automationTargetKey(lane: AutomationLane): string {
+  return `${lane.pluginInstanceId ?? ''}\u0000${lane.paramKey}`;
+}
+
+function isNewerAutomationSample(sample: WinningAutomationSample, current: WinningAutomationSample): boolean {
+  if (sample.sourceBeat !== current.sourceBeat) return sample.sourceBeat > current.sourceBeat;
+  return sample.laneIndex > current.laneIndex;
+}
+
+function sampleAutomationLane(lane: AutomationLane, beat: number): AutomationSample | null {
+  const kf = lane.keyframes;
+  if (kf.length === 0) return null;
+
+  // Binary search: find last keyframe with beatTime <= beat
+  let aLo = 0, aHi = kf.length;
+  while (aLo < aHi) {
+    const mid = (aLo + aHi) >>> 1;
+    if (kf[mid].beatTime <= beat) aLo = mid + 1;
+    else aHi = mid;
+  }
+
+  if (aLo === 0) return null;
+
+  const prev = kf[aLo - 1];
+  const mode = lane.interpolation ?? (lane.interpolate ? 'linear' : 'step');
+  if (mode === 'step' || aLo >= kf.length) {
+    return { value: prev.value, sourceBeat: prev.beatTime };
+  }
+
+  const next = kf[aLo];
+  const tLinear = (beat - prev.beatTime) / (next.beatTime - prev.beatTime);
+  let t: number;
+  switch (mode) {
+    case 'ease-in':      t = tLinear * tLinear; break;
+    case 'ease-out':     t = 1 - (1 - tLinear) * (1 - tLinear); break;
+    case 'ease-in-out':  t = tLinear < 0.5 ? 2 * tLinear * tLinear : 1 - 2 * (1 - tLinear) * (1 - tLinear); break;
+    case 'exponential':  t = tLinear * tLinear * tLinear; break;
+    case 'smooth-step':  t = tLinear * tLinear * (3 - 2 * tLinear); break;
+    default:             t = tLinear;
+  }
+  return {
+    value: prev.value + t * (next.value - prev.value),
+    sourceBeat: prev.beatTime,
+  };
+}
+
+function sampleLatestAutomation(
+  lanes: AutomationLane[],
+  beat: number,
+  matches: (lane: AutomationLane) => boolean
+): WinningAutomationSample | null {
+  let winning: WinningAutomationSample | null = null;
+  for (let laneIndex = 0; laneIndex < lanes.length; laneIndex++) {
+    const lane = lanes[laneIndex];
+    if (!matches(lane)) continue;
+
+    const sample = sampleAutomationLane(lane, beat);
+    if (!sample) continue;
+
+    const candidate = { ...sample, lane, laneIndex };
+    if (!winning || isNewerAutomationSample(candidate, winning)) {
+      winning = candidate;
+    }
+  }
+  return winning;
+}
+
 // Create visual instrument state from unified instrument system
 function createVisualInstrumentState(
   instrumentId: string,
@@ -49,6 +126,7 @@ function createVisualInstrumentState(
     pitchNoteOnCounts: new Map(),
     blackedOut: false,
     activePalette: null,
+    seekGeneration: 0,
   };
 }
 
@@ -57,6 +135,8 @@ export class VisualPlaybackEngine {
   private perTrackEvents: PerTrackEvents[] = [];
   private perTrackEventsById: Map<string, PerTrackEvents> = new Map();
   private lastComputedBeat: number = -1;
+  // Increments on seek/scrub so instruments can reset accumulated state
+  private seekGeneration: number = 0;
   // Per-track last noteOnCount index for incremental pitchNoteOnCounts
   private lastLoPerTrack: Map<string, number> = new Map();
   // Palette child map: parentTrackId → paletteChildTrackId
@@ -177,6 +257,8 @@ export class VisualPlaybackEngine {
     // Reset palette crossfade state
     this.palettePrevPitch.clear();
     this.palettePrevDef.clear();
+    // Bump seek generation so instruments reset accumulated state
+    this.seekGeneration++;
     // Force recompute on next call
     this.lastComputedBeat = -1;
   }
@@ -189,11 +271,26 @@ export class VisualPlaybackEngine {
   computeStatesAtBeat(beat: number): void {
     // Short-circuit: same beat as last frame
     if (beat === this.lastComputedBeat) return;
+
+    // Detect seek/scrub: beat jumped by more than ~0.25 beats or went backward
+    const prevBeat = this.lastComputedBeat;
+    if (prevBeat >= 0) {
+      const delta = beat - prevBeat;
+      if (delta < 0 || delta > 0.25) {
+        this.seekGeneration++;
+      }
+    }
     this.lastComputedBeat = beat;
 
     for (const trackEvents of this.perTrackEvents) {
       const state = this.trackStates.get(trackEvents.trackId);
       if (!state) continue;
+
+      // Propagate seek generation to track state
+      state.seekGeneration = this.seekGeneration;
+      const instrument = trackEvents.instrumentId ? getInstrument(trackEvents.instrumentId) : undefined;
+      state.params = { ...(instrument?.defaultSettings ?? {}), ...trackEvents.settings };
+      state.pluginParamOverrides.clear();
 
       // Check if current beat falls within a blackout region (binary search)
       const regions = trackEvents.blackoutRegions;
@@ -213,55 +310,23 @@ export class VisualPlaybackEngine {
       }
       state.blackedOut = isBlackedOut;
 
-      // Apply automation lanes to params (runs even during blackout/empty events)
-      state.pluginParamOverrides.clear();
-      for (const lane of trackEvents.automationLanes) {
-        const kf = lane.keyframes;
-        if (kf.length === 0) continue;
-
-        // Binary search: find last keyframe with beatTime <= beat
-        let aLo = 0, aHi = kf.length;
-        while (aLo < aHi) {
-          const mid = (aLo + aHi) >>> 1;
-          if (kf[mid].beatTime <= beat) aLo = mid + 1;
-          else aHi = mid;
+      // Apply automation lanes to params (runs even during blackout/empty events).
+      // When multiple lanes target the same param, the lane with the newest
+      // already-reached keyframe wins; exact ties prefer later child track order.
+      const automationByTarget = new Map<string, WinningAutomationSample>();
+      for (let laneIndex = 0; laneIndex < trackEvents.automationLanes.length; laneIndex++) {
+        const lane = trackEvents.automationLanes[laneIndex];
+        const sample = sampleAutomationLane(lane, beat);
+        if (!sample) continue;
+        const key = automationTargetKey(lane);
+        const candidate = { ...sample, lane, laneIndex };
+        const current = automationByTarget.get(key);
+        if (!current || isNewerAutomationSample(candidate, current)) {
+          automationByTarget.set(key, candidate);
         }
+      }
 
-        if (aLo === 0) continue; // no keyframe before current beat
-
-        let value: number;
-        const mode = lane.interpolation ?? (lane.interpolate ? 'linear' : 'step');
-        if (mode === 'step' || aLo >= kf.length) {
-          value = kf[aLo - 1].value;
-        } else {
-          const prev = kf[aLo - 1];
-          const next = kf[aLo];
-          const tLinear = (beat - prev.beatTime) / (next.beatTime - prev.beatTime);
-          let t: number;
-          switch (mode) {
-            case 'ease-in':
-              t = tLinear * tLinear;
-              break;
-            case 'ease-out':
-              t = 1 - (1 - tLinear) * (1 - tLinear);
-              break;
-            case 'ease-in-out':
-              t = tLinear < 0.5
-                ? 2 * tLinear * tLinear
-                : 1 - 2 * (1 - tLinear) * (1 - tLinear);
-              break;
-            case 'exponential':
-              t = tLinear * tLinear * tLinear;
-              break;
-            case 'smooth-step':
-              t = tLinear * tLinear * (3 - 2 * tLinear);
-              break;
-            default: // linear
-              t = tLinear;
-          }
-          value = prev.value + t * (next.value - prev.value);
-        }
-
+      for (const { lane, value } of automationByTarget.values()) {
         if (lane.pluginInstanceId) {
           // Write to plugin param overrides
           let overrides = state.pluginParamOverrides.get(lane.pluginInstanceId);
@@ -565,6 +630,7 @@ export class VisualPlaybackEngine {
     return (state?.activePalette?.background as string) ?? null;
   }
 
+
   /**
    * Returns track IDs that have visual state.
    */
@@ -596,41 +662,12 @@ export class VisualPlaybackEngine {
     const trackEvents = this.perTrackEventsById.get(trackId);
     if (!trackEvents) return defaultValue;
 
-    // Find the automation lane for this param
-    const lane = trackEvents.automationLanes.find(l => !l.pluginInstanceId && l.paramKey === paramKey);
-    if (!lane) return defaultValue;
-
-    const kf = lane.keyframes;
-    if (kf.length === 0) return defaultValue;
-
-    // Binary search: find last keyframe with beatTime <= beat
-    let aLo = 0, aHi = kf.length;
-    while (aLo < aHi) {
-      const mid = (aLo + aHi) >>> 1;
-      if (kf[mid].beatTime <= beat) aLo = mid + 1;
-      else aHi = mid;
-    }
-
-    if (aLo === 0) return defaultValue;
-
-    const mode = lane.interpolation ?? (lane.interpolate ? 'linear' : 'step');
-    if (mode === 'step' || aLo >= kf.length) {
-      return kf[aLo - 1].value;
-    }
-
-    const prev = kf[aLo - 1];
-    const next = kf[aLo];
-    const tLinear = (beat - prev.beatTime) / (next.beatTime - prev.beatTime);
-    let t: number;
-    switch (mode) {
-      case 'ease-in':      t = tLinear * tLinear; break;
-      case 'ease-out':     t = 1 - (1 - tLinear) * (1 - tLinear); break;
-      case 'ease-in-out':  t = tLinear < 0.5 ? 2 * tLinear * tLinear : 1 - 2 * (1 - tLinear) * (1 - tLinear); break;
-      case 'exponential':  t = tLinear * tLinear * tLinear; break;
-      case 'smooth-step':  t = tLinear * tLinear * (3 - 2 * tLinear); break;
-      default:             t = tLinear;
-    }
-    return prev.value + t * (next.value - prev.value);
+    const sample = sampleLatestAutomation(
+      trackEvents.automationLanes,
+      beat,
+      lane => !lane.pluginInstanceId && lane.paramKey === paramKey
+    );
+    return sample?.value ?? defaultValue;
   }
 
   /** Get an automation lane for a track+param (cache-friendly: call once, reuse). */
@@ -638,6 +675,13 @@ export class VisualPlaybackEngine {
     const trackEvents = this.perTrackEventsById.get(trackId);
     if (!trackEvents) return null;
     return trackEvents.automationLanes.find(l => !l.pluginInstanceId && l.paramKey === paramKey) ?? null;
+  }
+
+  /** Get all automation lanes for a track+param so callers can resolve latest-event-wins. */
+  getAutomationLanes(trackId: string, paramKey: string): AutomationLane[] {
+    const trackEvents = this.perTrackEventsById.get(trackId);
+    if (!trackEvents) return [];
+    return trackEvents.automationLanes.filter(l => !l.pluginInstanceId && l.paramKey === paramKey);
   }
 
   getTrackEvents(trackId: string): PerTrackEvents['events'] | null {
@@ -657,35 +701,13 @@ export class VisualPlaybackEngine {
 /** Interpolate a pre-fetched automation lane at a given beat (no .find() lookups). */
 export function interpolateLane(lane: AutomationLane | null, beat: number, defaultValue: number): number {
   if (!lane) return defaultValue;
-  const kf = lane.keyframes;
-  if (kf.length === 0) return defaultValue;
+  return sampleAutomationLane(lane, beat)?.value ?? defaultValue;
+}
 
-  let aLo = 0, aHi = kf.length;
-  while (aLo < aHi) {
-    const mid = (aLo + aHi) >>> 1;
-    if (kf[mid].beatTime <= beat) aLo = mid + 1;
-    else aHi = mid;
-  }
-  if (aLo === 0) return defaultValue;
-
-  const mode = lane.interpolation ?? (lane.interpolate ? 'linear' : 'step');
-  if (mode === 'step' || aLo >= kf.length) {
-    return kf[aLo - 1].value;
-  }
-
-  const prev = kf[aLo - 1];
-  const next = kf[aLo];
-  const tLinear = (beat - prev.beatTime) / (next.beatTime - prev.beatTime);
-  let t: number;
-  switch (mode) {
-    case 'ease-in':      t = tLinear * tLinear; break;
-    case 'ease-out':     t = 1 - (1 - tLinear) * (1 - tLinear); break;
-    case 'ease-in-out':  t = tLinear < 0.5 ? 2 * tLinear * tLinear : 1 - 2 * (1 - tLinear) * (1 - tLinear); break;
-    case 'exponential':  t = tLinear * tLinear * tLinear; break;
-    case 'smooth-step':  t = tLinear * tLinear * (3 - 2 * tLinear); break;
-    default:             t = tLinear;
-  }
-  return prev.value + t * (next.value - prev.value);
+/** Interpolate multiple lanes for one param; the newest reached keyframe wins. */
+export function interpolateLanes(lanes: AutomationLane[], beat: number, defaultValue: number): number {
+  const sample = sampleLatestAutomation(lanes, beat, () => true);
+  return sample?.value ?? defaultValue;
 }
 
 /**

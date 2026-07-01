@@ -15,6 +15,7 @@ export interface VisualInstrumentState {
   pitchNoteOnCounts: Map<number, number>; // Per-pitch note-on counts
   blackedOut: boolean; // True when instrument is completely disabled by a mute region
   activePalette: ResolvedPalette | null; // Active color palette from colorPalette child track
+  seekGeneration: number; // Increments on seek/scrub — instruments should reset accumulated state
 }
 
 export interface VisualEvent {

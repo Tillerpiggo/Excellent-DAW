@@ -10,8 +10,23 @@ import { useUIStore } from '@/stores/uiStore';
 import { getInstrument } from '@/instruments';
 import { SettingsSchema } from '@/instruments/types';
 import { getPlugin } from '@/plugins';
-import { getAllEventsFromBlock, eventsToMidiNotes, notesToEvents } from '@/utils/midiConverters';
+import { getAllEventsFromBlock, eventsToMidiNotes, eventsToMidiNotesFixed, notesToEvents, notesToEventsFixed } from '@/utils/midiConverters';
 import { DEFAULT_QUANTIZE } from '@/core/constants';
+import { getAutomationPitchRange } from '@/core/automationRange';
+import { TrackTypeId } from '@/core/types';
+import { MidiRow } from '@/components/shared/MidiEditor';
+
+// Fixed-pitch track type configs — single-row editors that were previously separate components
+interface TrackTypeEditorConfig {
+  rows: MidiRow[];
+  fixedPitch: number;
+}
+
+const TRACK_TYPE_EDITOR_CONFIGS: Partial<Record<TrackTypeId, TrackTypeEditorConfig>> = {
+  mute: { rows: [{ pitch: 0, label: 'Mute', color: '#991b1b' }], fixedPitch: 0 },
+  suppress: { rows: [{ pitch: 0, label: 'Suppress', color: '#64748b' }], fixedPitch: 0 },
+  rhythm: { rows: [{ pitch: 60, label: 'Rhythm', color: '#F9A826' }], fixedPitch: 60 },
+};
 
 interface GenericMidiEditorProps {
   block: Block;
@@ -22,7 +37,6 @@ interface GenericMidiEditorProps {
 
 function extractNotesFromBlock(block: Block): MidiNote[] {
   const allEvents = getAllEventsFromBlock(block);
-  // Get all pitched events
   const pitchedEvents = allEvents.filter(e => e.pitch !== undefined);
   return eventsToMidiNotes(pitchedEvents, 'note');
 }
@@ -35,6 +49,7 @@ export function GenericMidiEditor({ block, track, beatsPerBar, instrumentId }: G
   const tracks = useProjectStore((s) => s.project.tracks);
   const instrument = getInstrument(instrumentId);
   const isAutomation = !!track.automationConfig;
+  const trackTypeConfig = TRACK_TYPE_EDITOR_CONFIGS[track.typeId];
 
   // For automation tracks, find the target schema to build value-labeled rows
   const automationData = useMemo(() => {
@@ -67,27 +82,72 @@ export function GenericMidiEditor({ block, track, beatsPerBar, instrumentId }: G
 
     const field = schema[track.automationConfig.targetParam];
     if (!field || field.type !== 'number') return null;
-    const noteRange = parentInstrument?.noteRange ?? { min: 36, max: 96 };
+    const paramMin = field.min ?? 0;
+    const paramMax = field.max ?? 1;
+    const noteRange = getAutomationPitchRange(paramMin, paramMax, field.step);
     return generateAutomationRows(
       noteRange,
-      field.min ?? 0,
-      field.max ?? 1,
+      paramMin,
+      paramMax,
       field.label,
     );
   }, [isAutomation, track.automationConfig, track.parentId, tracks]);
 
   const rows = useMemo(() => {
+    if (trackTypeConfig) return trackTypeConfig.rows;
     if (automationData) return automationData.rows;
     return generateRows(instrument?.noteRange);
-  }, [automationData, instrument?.noteRange]);
+  }, [trackTypeConfig, automationData, instrument?.noteRange]);
 
-  const rangeLabels = automationData ? automationData.rangeLabels : instrument?.rangeLabels;
+  const rangeLabels = useMemo(() => {
+    if (automationData) return automationData.rangeLabels;
+    // For emoji display, derive emoji labels from the track's current emojis setting
+    if (instrumentId === 'emojiDisplay') {
+      const emojisStr = (track.instrumentSettings?.emojis as string) ?? '';
+      const tokens = emojisStr.split(/\s+/).filter(Boolean);
+      if (tokens.length > 0) {
+        const emojiPitchMin = 36;
+        const emojiPitchMax = 59;
+        return [
+          { startPitch: 25, endPitch: 25, label: 'Bottom Row CCW' },
+          { startPitch: 26, endPitch: 26, label: 'Bottom Row CW' },
+          { startPitch: 27, endPitch: 27, label: 'Top Row CCW' },
+          { startPitch: 28, endPitch: 28, label: 'Top Row CW' },
+          { startPitch: 29, endPitch: 29, label: 'Whole 180°' },
+          { startPitch: 30, endPitch: 30, label: '3D Depth' },
+          { startPitch: 31, endPitch: 31, label: 'Flip Axis' },
+          { startPitch: 32, endPitch: 32, label: 'Rotate CCW' },
+          { startPitch: 33, endPitch: 33, label: 'Rotate CW' },
+          { startPitch: 34, endPitch: 34, label: 'Swap Halves' },
+          { startPitch: 35, endPitch: 35, label: 'Switch Corners' },
+          ...tokens.slice(0, emojiPitchMax - emojiPitchMin + 1).map((token, i) => ({
+            startPitch: emojiPitchMin + i,
+            endPitch: emojiPitchMin + i,
+            label: token,
+          })),
+        ];
+      }
+    }
+    return instrument?.rangeLabels;
+  }, [automationData, instrumentId, track.instrumentSettings?.emojis, instrument?.rangeLabels, instrument?.noteRange]);
   const [snapEnabled, setSnapEnabled] = useState(true);
 
   const saveNotes = useCallback((notes: MidiNote[], trackId: string, blockId: string) => {
-    const events = notesToEvents(notes);
-    updateBlockEvents(trackId, blockId, events);
-  }, [updateBlockEvents]);
+    if (trackTypeConfig) {
+      const events = notesToEventsFixed(notes, trackTypeConfig.fixedPitch);
+      updateBlockEvents(trackId, blockId, events);
+    } else {
+      const events = notesToEvents(notes);
+      updateBlockEvents(trackId, blockId, events);
+    }
+  }, [updateBlockEvents, trackTypeConfig]);
+
+  const extractNotes = useCallback((block: Block): MidiNote[] => {
+    if (trackTypeConfig) {
+      return eventsToMidiNotesFixed(getAllEventsFromBlock(block), trackTypeConfig.fixedPitch, track.typeId);
+    }
+    return extractNotesFromBlock(block);
+  }, [trackTypeConfig, track.typeId]);
 
   const midiPixelsPerBeat = useUIStore((s) => s.midiPixelsPerBeat);
   const midiRowScale = useUIStore((s) => s.midiRowScale);
@@ -95,7 +155,7 @@ export function GenericMidiEditor({ block, track, beatsPerBar, instrumentId }: G
   const { notes, quantize, setQuantize, handleNotesChange, handleClear } = useMidiEditorState({
     block,
     track,
-    extractNotes: extractNotesFromBlock,
+    extractNotes,
     saveNotes,
     defaultQuantize: DEFAULT_QUANTIZE,
   });
@@ -125,21 +185,41 @@ export function GenericMidiEditor({ block, track, beatsPerBar, instrumentId }: G
     hasScrolledRef.current = false;
   }, [block.id]);
 
-  // Compute word labels for text display instruments (pitch 48 = next word trigger)
+  // Compute word/syllable labels for text display instruments (pitch 48 = next trigger)
   const noteLabels = useMemo(() => {
     if (instrumentId !== 'textDisplay') return undefined;
     const text = (track.instrumentSettings?.text as string) ?? '';
     const words = text.split(/\s+/).filter(Boolean);
     if (words.length === 0) return undefined;
 
+    // Build syllable steps: "di|vide" => ["di", "vide"]
+    const steps: string[] = [];
+    for (const word of words) {
+      if (word.includes('|')) {
+        for (const syl of word.split('|')) {
+          if (syl) steps.push(syl);
+        }
+      } else {
+        steps.push(word);
+      }
+    }
+    if (steps.length === 0) return undefined;
+
+    // Count pitch-48 notes in all blocks before the current one
+    let priorPitch48Count = 0;
+    for (const b of track.blocks) {
+      if (b.startBar >= block.startBar) continue;
+      const events = getAllEventsFromBlock(b);
+      priorPitch48Count += events.filter(e => e.pitch === 48).length;
+    }
+
     const labels = new Map<string, string>();
-    // Sort pitch-48 notes by time to assign words in order
     const wordNotes = notes.filter(n => n.pitch === 48).sort((a, b) => a.time - b.time);
     wordNotes.forEach((note, i) => {
-      labels.set(note.id, words[i % words.length]);
+      labels.set(note.id, steps[(priorPitch48Count + i) % steps.length]);
     });
     return labels;
-  }, [instrumentId, track.instrumentSettings?.text, notes]);
+  }, [instrumentId, track.instrumentSettings?.text, notes, block.startBar, track.blocks]);
 
   return (
     <div ref={containerRef} className="flex flex-col h-full" data-editor-panel="generic">

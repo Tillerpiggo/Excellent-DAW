@@ -3,6 +3,7 @@
 import { useRef, useCallback, useEffect, useState, useMemo } from 'react';
 import { TimelineCanvas } from './TimelineCanvas';
 import { TrackTree } from '../TrackHierarchy/TrackTree';
+import { TrackNumberColumn } from './TrackNumberColumn';
 import { TimelineToolbar } from './TimelineToolbar';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -52,6 +53,7 @@ export function ArrangementView() {
   const totalBeats = totalBars * beatsPerBar;
   const timelineWidth = totalBeats * pixelsPerBeat;
   const trackLabelWidth = 256;
+  const trackNumberWidth = 20;
 
   // Track viewport size for canvas rendering
   useEffect(() => {
@@ -59,8 +61,8 @@ export function ArrangementView() {
     if (!container) return;
 
     const updateViewportSize = () => {
-      // Viewport is the visible area minus track labels
-      const width = container.clientWidth - trackLabelWidth;
+      // Viewport is the visible area minus track labels and number column
+      const width = container.clientWidth - trackLabelWidth - trackNumberWidth;
       const height = container.clientHeight;
       setViewportSize({ width: Math.max(width, 100), height: Math.max(height, 100) });
     };
@@ -160,13 +162,31 @@ export function ArrangementView() {
         <div
           className="grid timeline-content"
           style={{
-            gridTemplateColumns: `${trackLabelWidth}px 1fr`,
-            width: timelineWidth + trackLabelWidth,
+            gridTemplateColumns: `${trackNumberWidth}px ${trackLabelWidth}px 1fr`,
+            width: timelineWidth + trackLabelWidth + trackNumberWidth,
             minHeight: '100%',
           }}
         >
-          {/* Track Labels - sticky left, z-30 to stay above timeline blocks and handles */}
-          <div className="sticky left-0 z-30 bg-surface border-r border-border">
+          {/* Track Number Column - sticky left at 0, z-31 to be above track labels */}
+          <div className="sticky z-[31] bg-surface" style={{ left: 0 }}>
+            {/* Spacer for scene bar section */}
+            {hasScenes && (
+              <>
+                <div className="sticky top-0 z-40 bg-surface border-b border-border select-none">
+                  <div className="h-12" />
+                </div>
+                <TrackNumberColumn flatTracks={sceneFlatTracks} />
+              </>
+            )}
+            {/* Header spacer matching the "Tracks" header */}
+            <div className="sticky top-0 z-40 bg-surface border-b border-border" style={{ top: hasScenes ? undefined : 0 }}>
+              <div className="h-12" />
+            </div>
+            <TrackNumberColumn flatTracks={flatTracks} />
+          </div>
+
+          {/* Track Labels - sticky left at trackNumberWidth, z-30 to stay above timeline blocks and handles */}
+          <div className="sticky z-30 bg-surface border-r border-border" style={{ left: trackNumberWidth }}>
             {/* Scene bar section */}
             {hasScenes && (
               <>

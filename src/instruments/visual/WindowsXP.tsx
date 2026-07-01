@@ -1001,11 +1001,11 @@ function WindowsXPVisual({ trackId }: { trackId: string }) {
   const posOffsetRef = useRef(0);
   const lastTimeRef = useRef(0);
   const lastNoteOnCountsRef = useRef(new Map<number, number>());
-  const prevTotalNoteOnCountRef = useRef(0);
   const idCounterRef = useRef(0);
   const wallpaperIndexRef = useRef(0);
   const lastIconSubdivRef = useRef(-1); // tracks last 16th-note subdivision that spawned icons
   const shakeTimeRef = useRef(0); // remaining shake duration in ms
+  const prevSeekGenRef = useRef(0);
 
   useEffect(() => {
     // Start loading Bliss (default wallpaper)
@@ -1054,18 +1054,18 @@ function WindowsXPVisual({ trackId }: { trackId: string }) {
     // Drift
     posOffsetRef.current += driftSpeed * clampedDt;
 
-    // Seek detection
-    let totalNoteOnCount = 0;
-    for (const c of state.pitchNoteOnCounts.values()) totalNoteOnCount += c;
-    if (totalNoteOnCount < prevTotalNoteOnCountRef.current) {
+    // Seek detection via seekGeneration
+    if (state.seekGeneration !== prevSeekGenRef.current) {
+      prevSeekGenRef.current = state.seekGeneration;
+      lastNoteOnCountsRef.current = new Map(state.pitchNoteOnCounts);
       windowsRef.current = [];
       spritesRef.current = [];
       posOffsetRef.current = 0;
-      lastNoteOnCountsRef.current = new Map();
+      idCounterRef.current = 0;
       lastIconSubdivRef.current = -1;
       shakeTimeRef.current = 0;
+      lastTimeRef.current = -1;
     }
-    prevTotalNoteOnCountRef.current = totalNoteOnCount;
 
     // Wallpaper switching (C1-B1): most recent note-on selects wallpaper
     for (let pitch = WALLPAPER_PITCH_MIN; pitch <= WALLPAPER_PITCH_MAX; pitch++) {

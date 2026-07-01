@@ -456,6 +456,7 @@ function ParticleBurstVisual({ trackId }: Props) {
   const clockRef = useRef(0);
   // Cache palette preset — only rebuild when palette hex values change
   const cachedPaletteRef = useRef<{ key: string; preset: ColorPreset } | null>(null);
+  const prevSeekGenRef = useRef(0);
 
   useEffect(() => () => {
     burstsRef.current = [];
@@ -464,6 +465,15 @@ function ParticleBurstVisual({ trackId }: Props) {
   useFrame((_, delta) => {
     const vs = engineRef.current.getTrackState(trackId);
     if (!vs) return;
+
+    // Seek detection — reset accumulated state when user scrubs the timeline
+    if (vs.seekGeneration !== prevSeekGenRef.current) {
+      prevSeekGenRef.current = vs.seekGeneration;
+      prevCountsRef.current = new Map(vs.pitchNoteOnCounts);
+      burstsRef.current = [];
+      idCounter.current = 0;
+      clockRef.current = 0;
+    }
 
     clockRef.current += delta;
     const now = clockRef.current;

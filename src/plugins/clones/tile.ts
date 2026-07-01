@@ -79,7 +79,7 @@ export const TilePlugin: VisualPlugin = {
     staggerOffset: {
       type: 'number',
       label: 'Stagger Rows',
-      min: 0,
+      min: -1,
       max: 1,
       step: 0.1,
       default: 0,
@@ -130,7 +130,7 @@ export const TilePlugin: VisualPlugin = {
         let posY = row * spacingY;
 
         // Apply stagger (offset every other row)
-        if (staggerOffset > 0 && row % 2 === 1) {
+        if (staggerOffset !== 0 && row % 2 === 1) {
           posX += spacingX * staggerOffset;
         }
 
@@ -139,7 +139,7 @@ export const TilePlugin: VisualPlugin = {
           posX -= ((tilesX - 1) * spacingX) / 2;
           posY -= ((tilesY - 1) * spacingY) / 2;
           // Adjust for stagger
-          if (staggerOffset > 0) {
+          if (staggerOffset !== 0) {
             posX -= (spacingX * staggerOffset) / 2;
           }
         }

@@ -101,6 +101,7 @@ export const FONT_OPTIONS: FontOption[] = [
   { value: 'Courier New', label: 'Courier New', category: 'mono', variants: SYSTEM_VARIANTS },
 
   // Sans (system)
+  { value: 'Arial', label: 'Arial', category: 'sans', variants: SYSTEM_VARIANTS },
   { value: 'Verdana', label: 'Verdana', category: 'sans', variants: SYSTEM_VARIANTS },
   { value: 'Trebuchet MS', label: 'Trebuchet MS', category: 'sans', variants: SYSTEM_VARIANTS },
 ];

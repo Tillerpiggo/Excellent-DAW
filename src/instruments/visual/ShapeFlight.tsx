@@ -3,7 +3,7 @@
 import { useRef, useEffect, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { getVisualPlaybackEngine, interpolateLane } from '@/core/visualPlayback';
+import { getVisualPlaybackEngine, interpolateLanes } from '@/core/visualPlayback';
 import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { Instrument } from '../types';
@@ -472,10 +472,10 @@ function ShapeFlightVisual({ trackId }: Props) {
     }
 
     // Cache automation lane lookups once per frame (avoids .find() per copy)
-    const laneCurveX = engine.getAutomationLane(trackId, 'curveX');
-    const laneCurveY = engine.getAutomationLane(trackId, 'curveY');
-    const laneScale = engine.getAutomationLane(trackId, 'scale');
-    const laneSpawnRate = engine.getAutomationLane(trackId, 'spawnRate');
+    const lanesCurveX = engine.getAutomationLanes(trackId, 'curveX');
+    const lanesCurveY = engine.getAutomationLanes(trackId, 'curveY');
+    const lanesScale = engine.getAutomationLanes(trackId, 'scale');
+    const lanesSpawnRate = engine.getAutomationLanes(trackId, 'spawnRate');
 
     // === Batch rendering: write all shape vertices into a single geometry ===
     let vertIdx = 0;
@@ -496,7 +496,7 @@ function ShapeFlightVisual({ trackId }: Props) {
       const d = dBase + pitchNorm * 0.25;
       const copySpacing = 0.1 * (0.5 + (ev.pitch % 12) / 12 * 1.5);
 
-      const noteSpawnRate = interpolateLane(laneSpawnRate, ev.startTimeInBeats, spawnRateDefault);
+      const noteSpawnRate = interpolateLanes(lanesSpawnRate, ev.startTimeInBeats, spawnRateDefault);
       const spawnInterval = 1 / noteSpawnRate;
       const noteEnd = ev.startTimeInBeats + ev.duration;
       const numCopies = Math.floor(ev.duration * noteSpawnRate);
@@ -574,15 +574,15 @@ function ShapeFlightVisual({ trackId }: Props) {
         }
 
         // --- Curved flight path ---
-        const cvx = interpolateLane(laneCurveX, copyBeat, curveXDefault);
-        const cvy = interpolateLane(laneCurveY, copyBeat, curveYDefault);
+        const cvx = interpolateLanes(lanesCurveX, copyBeat, curveXDefault);
+        const cvy = interpolateLanes(lanesCurveY, copyBeat, curveYDefault);
         const invT = 1 - approachProgress;
         const posX = bx + cvx * invT * invT;
         const posY = by + cvy * invT * invT;
         const posZ = z;
 
         // Scale
-        const copyScale = interpolateLane(laneScale, copyBeat, scaleDefault);
+        const copyScale = interpolateLanes(lanesScale, copyBeat, scaleDefault);
         const finalScale = shapeSize * copyScale * (1 + approachProgress * approachGrowth) * (1 + shakeScaleBump);
 
         // Rotation

@@ -384,6 +384,14 @@ export function SceneCompositor({ allTracks, rootScenes }: SceneCompositorProps)
     const engine = getVisualPlaybackEngine();
     const refs = trackGroupRefs.current;
 
+    // Update root scene background from main scene palette
+    const mainBgColor = mainSceneTrackId ? engine.getSceneBackgroundColor(mainSceneTrackId) : null;
+    if (mainBgColor && rootScene.background instanceof THREE.Color) {
+      rootScene.background.set(mainBgColor);
+    } else if (!mainBgColor && rootScene.background instanceof THREE.Color) {
+      rootScene.background.set(0x0a0a0f);
+    }
+
     // Build per-frame scene assignments: trackId → sceneId (undefined = main)
     const getEffectiveSceneId = (track: VisualTrackInfo): string | undefined => {
       // Check for dynamic override from SceneRouter
@@ -508,9 +516,19 @@ export function SceneCompositor({ allTracks, rootScenes }: SceneCompositorProps)
         }
       } else {
         // Normal scene render: show this scene's own tracks
+        let hasVisibleTracks = false;
         for (const track of allTracks) {
           const group = refs.get(track.id);
-          if (group) group.visible = getEffectiveSceneId(track) === sceneId;
+          if (group) {
+            const belongs = getEffectiveSceneId(track) === sceneId;
+            group.visible = belongs;
+            if (belongs) hasVisibleTracks = true;
+          }
+        }
+
+        // Skip rendering scenes with no visible child tracks (avoids darkening from black FBO)
+        if (!hasVisibleTracks && !(sceneTrack?.sceneOpaque) && !engine.getSceneBackgroundColor(sceneId)) {
+          continue;
         }
 
         const isOpaque = sceneTrack?.sceneOpaque ?? false;

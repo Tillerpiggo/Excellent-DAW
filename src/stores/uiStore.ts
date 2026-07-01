@@ -268,8 +268,10 @@ export const useUIStore = create<UIState>((set) => ({
 
   selectBlock: (blockId, trackId, addToSelection = false) => {
     set((state) => {
+      const resolvedTrackId = trackId || state.selectedTrackId;
+      const selectedTrackIds = new Set([resolvedTrackId].filter(Boolean) as string[]);
       if (blockId === null) {
-        return { selectedBlockIds: new Set(), selectedTrackId: trackId || state.selectedTrackId };
+        return { selectedBlockIds: new Set(), selectedTrackId: resolvedTrackId, selectedTrackIds };
       }
       if (addToSelection) {
         const newSet = new Set(state.selectedBlockIds);
@@ -278,9 +280,9 @@ export const useUIStore = create<UIState>((set) => ({
         } else {
           newSet.add(blockId);
         }
-        return { selectedBlockIds: newSet, selectedTrackId: trackId || state.selectedTrackId };
+        return { selectedBlockIds: newSet, selectedTrackId: resolvedTrackId, selectedTrackIds };
       }
-      return { selectedBlockIds: new Set([blockId]), selectedTrackId: trackId || state.selectedTrackId };
+      return { selectedBlockIds: new Set([blockId]), selectedTrackId: resolvedTrackId, selectedTrackIds };
     });
   },
 

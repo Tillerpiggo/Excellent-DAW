@@ -71,23 +71,43 @@ export function TrackRenderer({
 
   // Check plugin categories — include all plugins (even disabled ones) since
   // automation can toggle enabled state per-frame
-  const hasShaderPlugins = plugins.some((instance) => {
+  const opacityPlugins = useMemo(
+    () => plugins.filter((instance) => instance.pluginId === 'opacity'),
+    [plugins],
+  );
+  const hasOpacityPlugins = opacityPlugins.length > 0;
+  const nonOpacityPlugins = useMemo(
+    () => plugins.filter((instance) => instance.pluginId !== 'opacity'),
+    [plugins],
+  );
+
+  const hasShaderPlugins = nonOpacityPlugins.some((instance) => {
     const plugin = getPlugin(instance.pluginId);
     return plugin?.category === 'shader';
   });
 
-  const hasClonePlugins = plugins.some((instance) => {
+  const hasClonePlugins = nonOpacityPlugins.some((instance) => {
     const plugin = getPlugin(instance.pluginId);
     return plugin?.category === 'clone';
   });
 
-  const hasTransformPlugins = plugins.some((instance) => {
+  const hasTransformPlugins = nonOpacityPlugins.some((instance) => {
     const plugin = getPlugin(instance.pluginId);
     return plugin?.category === 'transform';
   });
 
-  const hasAnyPlugins = hasShaderPlugins || hasClonePlugins || hasTransformPlugins;
-  const usesShaderPipeline = hasShaderPlugins && !hasClonePlugins;
+  const hasAnyPlugins = hasShaderPlugins || hasClonePlugins || hasTransformPlugins || hasOpacityPlugins;
+  const usesShaderPipeline = (hasShaderPlugins && !hasClonePlugins) || hasOpacityPlugins;
+  const shaderPipelinePlugins = useMemo(
+    () => {
+      const shaderInstances = plugins.filter((instance) => {
+        const plugin = getPlugin(instance.pluginId);
+        return plugin?.category === 'shader';
+      });
+      return hasClonePlugins ? opacityPlugins : shaderInstances;
+    },
+    [hasClonePlugins, opacityPlugins, plugins],
+  );
 
   // Lazily allocate offscreen render resources only when shader plugins are active.
   const shaderPipeline = useMemo<ShaderPipeline | null>(() => {
@@ -172,6 +192,41 @@ export function TrackRenderer({
     return components;
   }, [isGroup, childIds, tracks, trackId, instrument]);
 
+  // Split transform plugins into pre-clone and post-clone groups based on
+  // their position relative to clone plugins in the user's plugin order.
+  // Transforms before the first clone affect the base shape; transforms after
+  // the last clone affect the entire cloned output.
+  const { preClonePlugins, postClonePlugins } = useMemo(() => {
+    const firstCloneIdx = nonOpacityPlugins.findIndex((inst) => {
+      const p = getPlugin(inst.pluginId);
+      return p?.category === 'clone';
+    });
+    const lastCloneIdx = (() => {
+      for (let i = nonOpacityPlugins.length - 1; i >= 0; i--) {
+        const p = getPlugin(nonOpacityPlugins[i].pluginId);
+        if (p?.category === 'clone') return i;
+      }
+      return -1;
+    })();
+
+    if (firstCloneIdx === -1) {
+      // No clone plugins — all transforms are "pre-clone"
+      return { preClonePlugins: nonOpacityPlugins, postClonePlugins: [] as PluginInstance[] };
+    }
+
+    const pre = nonOpacityPlugins.filter((inst, idx) => {
+      const p = getPlugin(inst.pluginId);
+      return p?.category === 'transform' && idx < firstCloneIdx;
+    });
+    const post = nonOpacityPlugins.filter((inst, idx) => {
+      const p = getPlugin(inst.pluginId);
+      return p?.category === 'transform' && idx > lastCloneIdx;
+    });
+    return { preClonePlugins: pre, postClonePlugins: post };
+  }, [nonOpacityPlugins]);
+
+  const hasPostCloneTransforms = postClonePlugins.length > 0;
+
   // For groups without any visual children, nothing to render
   if (isGroup && childVisualComponents.length === 0) {
     return null;
@@ -181,41 +236,6 @@ export function TrackRenderer({
   if (!isGroup && !Component) {
     return null;
   }
-
-  // Split transform plugins into pre-clone and post-clone groups based on
-  // their position relative to clone plugins in the user's plugin order.
-  // Transforms before the first clone affect the base shape; transforms after
-  // the last clone affect the entire cloned output.
-  const { preClonePlugins, postClonePlugins } = useMemo(() => {
-    const firstCloneIdx = plugins.findIndex((inst) => {
-      const p = getPlugin(inst.pluginId);
-      return p?.category === 'clone';
-    });
-    const lastCloneIdx = (() => {
-      for (let i = plugins.length - 1; i >= 0; i--) {
-        const p = getPlugin(plugins[i].pluginId);
-        if (p?.category === 'clone') return i;
-      }
-      return -1;
-    })();
-
-    if (firstCloneIdx === -1) {
-      // No clone plugins — all transforms are "pre-clone"
-      return { preClonePlugins: plugins, postClonePlugins: [] as PluginInstance[] };
-    }
-
-    const pre = plugins.filter((inst, idx) => {
-      const p = getPlugin(inst.pluginId);
-      return p?.category === 'transform' && idx < firstCloneIdx;
-    });
-    const post = plugins.filter((inst, idx) => {
-      const p = getPlugin(inst.pluginId);
-      return p?.category === 'transform' && idx > lastCloneIdx;
-    });
-    return { preClonePlugins: pre, postClonePlugins: post };
-  }, [plugins]);
-
-  const hasPostCloneTransforms = postClonePlugins.length > 0;
 
   // Build the base content element (instrument only, no clone wrapper)
   const buildBaseContentElement = () => {
@@ -253,8 +273,9 @@ export function TrackRenderer({
     if (!element) return null;
 
     // Wrap with CloneWrapper if we have clone plugins (and no shaders)
-    if (hasClonePlugins) {
-      element = <CloneWrapper trackId={trackId} plugins={plugins}>{element}</CloneWrapper>;
+    // Skip if the instrument handles cloning internally on its canvas
+    if (hasClonePlugins && !instrument?.handlesCloning) {
+      element = <CloneWrapper trackId={trackId} plugins={nonOpacityPlugins}>{element}</CloneWrapper>;
     }
 
     // Wrap with post-clone TransformWrapper (transforms after last clone plugin)
@@ -286,19 +307,22 @@ export function TrackRenderer({
     );
   }
 
-  // Has shader plugins - render to FBO and apply shader chain
-  // Skip shaders if clone plugins are present (clones need 3D objects, not flat planes)
+  // Has shader plugins - render to FBO and apply shader chain.
+  // Ordinary shaders still skip clone paths, but opacity is allowed as a final
+  // post pass after the cloned/transformed content is rendered.
   if (usesShaderPipeline && shaderPipeline) {
+    const shaderSourceElement = hasClonePlugins ? buildContentElement() : buildBaseContentElement();
+
     return (
       <group ref={rootGroupRef}>
-        {/* Render base content to offscreen scene (portal) - no clone wrapper here */}
+        {/* Render source content to offscreen scene (portal) */}
         {createPortal(
-          <group position={[0, 0, 0]}>{buildBaseContentElement()}</group>,
+          <group position={[0, 0, 0]}>{shaderSourceElement}</group>,
           shaderPipeline.scene
         )}
 
         {/* Apply shader chain and render result */}
-        <ShaderChain trackId={trackId} inputTexture={shaderPipeline.fbo.texture} plugins={plugins} />
+        <ShaderChain trackId={trackId} inputTexture={shaderPipeline.fbo.texture} plugins={shaderPipelinePlugins} />
       </group>
     );
   }

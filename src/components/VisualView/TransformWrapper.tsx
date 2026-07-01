@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { PluginInstance } from '@/core/types';
 import { getPlugin } from '@/plugins';
 import { getPluginSettingsWithOverrides } from '@/core/visualPlayback';
+import { virtualClock } from '@/core/virtualClock';
 
 interface SingleTransformProps {
   trackId: string;
@@ -31,7 +32,7 @@ function SingleTransform({ trackId, instance, children }: SingleTransformProps) 
       settings.enabled !== undefined ? (settings.enabled as number) >= 0.5 : instance.enabled;
     if (!isEnabled) return;
 
-    plugin.applyTransform(groupRef.current, settings, state.clock.elapsedTime);
+    plugin.applyTransform(groupRef.current, settings, virtualClock.now() / 1000);
   });
 
   return <group ref={groupRef}>{children}</group>;

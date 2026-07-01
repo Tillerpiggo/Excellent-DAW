@@ -3,7 +3,7 @@ import { Instrument } from '../types';
 export const MasterChannel: Instrument = {
   id: 'masterChannel',
   name: 'Master',
-  description: 'Global post-processing applied after all scene compositing — exposure, contrast, saturation, color temperature, vignette, and gamma',
+  description: 'Global post-processing applied after all scene compositing — glow, exposure, contrast, saturation, color temperature, vignette, and gamma',
   icon: '🎛️',
   color: '#94a3b8',
   hasAudio: false,
@@ -14,6 +14,9 @@ export const MasterChannel: Instrument = {
 
   defaultSettings: {
     exposure: 1.0,
+    glowIntensity: 1.5,
+    glowThreshold: 0.2,
+    glowSmoothing: 0.9,
     contrast: 1.0,
     saturation: 1.0,
     temperature: 0.0,
@@ -25,6 +28,9 @@ export const MasterChannel: Instrument = {
 
   settingsSchema: {
     exposure:         { type: 'number', label: 'Exposure',           min: 0.2, max: 3.0, step: 0.05, default: 1.0 },
+    glowIntensity:    { type: 'number', label: 'Glow Intensity',     min: 0.0, max: 6.0, step: 0.05, default: 1.5 },
+    glowThreshold:    { type: 'number', label: 'Glow Threshold',     min: 0.0, max: 1.0, step: 0.01, default: 0.2 },
+    glowSmoothing:    { type: 'number', label: 'Glow Smoothing',     min: 0.0, max: 1.0, step: 0.01, default: 0.9 },
     contrast:         { type: 'number', label: 'Contrast',           min: 0.2, max: 3.0, step: 0.05, default: 1.0 },
     saturation:       { type: 'number', label: 'Saturation',         min: 0.0, max: 3.0, step: 0.05, default: 1.0 },
     temperature:      { type: 'number', label: 'Temperature',        min: -1.0, max: 1.0, step: 0.05, default: 0.0 },

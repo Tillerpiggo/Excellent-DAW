@@ -164,6 +164,9 @@ function StarsVisual({ trackId }: { trackId: string }) {
   const groundBuilt = useRef(false);
   const groundOffset = useRef({ x: 0, z: 0 });
 
+  // Seek detection
+  const prevSeekGenRef = useRef(0);
+
   // Scratch color
   const scratchColor = useRef(new THREE.Color());
 
@@ -280,6 +283,27 @@ function StarsVisual({ trackId }: { trackId: string }) {
     if (!root) return;
     const tState = engineRef.current.getTrackState(trackId);
     if (!tState) return;
+
+    // Seek detection — reset accumulated state when user scrubs the timeline
+    if (tState.seekGeneration !== prevSeekGenRef.current) {
+      prevSeekGenRef.current = tState.seekGeneration;
+      // Reset edge detection refs to current counts
+      prevCounts.current = new Map(tState.pitchNoteOnCounts);
+      // Reset smoothed velocity
+      velRef.current = { x: 0, y: 0, z: 0 };
+      // Reset tumble state
+      tumbleAxis.current = { x: 0.3, y: 0.7, z: 0.1 };
+      tumbleTime.current = 0;
+      // Reset streak toggle
+      streakOn.current = false;
+      // Clear active pulses
+      pulses.current = [];
+      // Reset ground scroll offset
+      groundOffset.current = { x: 0, z: 0 };
+      // Reset background colors to defaults
+      bgColorObj.current.set(DEFAULTS.bgColor);
+      bgTargetColor.current.set(DEFAULTS.bgColor);
+    }
 
     const dt = Math.min(delta, 0.05); // Cap delta to avoid huge jumps
 

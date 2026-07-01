@@ -670,7 +670,7 @@ export function MidiEditor({
         }}
       >
         {/* Ruler label spacer */}
-        <div style={{ width: labelWidth, flexShrink: 0, backgroundColor: '#141414' }} />
+        <div style={{ width: labelWidth, flexShrink: 0, backgroundColor: '#141414', position: 'sticky', left: 0, zIndex: 21 }} />
         {/* Ruler track */}
         <div
           style={{
@@ -746,8 +746,9 @@ export function MidiEditor({
             height: canvasHeight,
             flexShrink: 0,
             backgroundColor: '#141414',
-            position: 'relative',
-            zIndex: 2,
+            position: 'sticky',
+            left: 0,
+            zIndex: 10,
             cursor: 'default',
           }}
           onPointerMove={() => {

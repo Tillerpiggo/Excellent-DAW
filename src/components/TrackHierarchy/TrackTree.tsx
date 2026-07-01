@@ -53,12 +53,13 @@ export function TrackTree({ treeId, rootIds, hideMasterTrack = false }: TrackTre
   const effectiveRootIds = rootIds ?? project.rootTracks;
   const treeKey = useMemo(() => {
     const rootStr = effectiveRootIds.join(',');
+    const masterVisibility = hideMasterTrack ? 'hide-master' : 'show-master';
     const childStr = Object.entries(project.tracks)
       .map(([id, t]) => `${id}:${t.childIds.join('.')}:${t.name}`)
       .sort()
       .join('|');
-    return `${rootStr}||${childStr}`;
-  }, [project.tracks, effectiveRootIds]);
+    return `${rootStr}||${masterVisibility}||${childStr}`;
+  }, [project.tracks, effectiveRootIds, hideMasterTrack]);
 
   // Create data provider (memoized per treeKey)
   const dataProvider = useMemo(() => {

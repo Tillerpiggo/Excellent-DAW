@@ -3,6 +3,7 @@ import { getTrackType } from './trackTypes';
 import { findHarmonyInOutput, deriveScaleFromHarmony } from './harmony';
 import { getInstrument } from '@/instruments';
 import { getPlugin } from '@/plugins';
+import { getAutomationPitchRange } from './automationRange';
 
 /**
  * Check if a track should be skipped given solo state among its siblings.
@@ -322,10 +323,15 @@ function buildAutomationLanes(
       paramMax = field.max ?? 1;
     }
 
-    // "enabled" uses a simple 0-1 pitch range; others use instrument noteRange
+    // Step quantization: snap automation values to nearest step increment
+    const paramStep = config.targetParam !== 'enabled' && schema
+      ? (schema[config.targetParam]?.step ?? 0)
+      : 0;
+
+    // Compute pitch range from the parameter's own range/step
     const noteRange = config.targetParam === 'enabled'
       ? { min: 0, max: 1 }
-      : (parentInstrument?.noteRange ?? { min: 36, max: 96 });
+      : getAutomationPitchRange(paramMin, paramMax, paramStep || undefined);
     const pitchMin = noteRange.min;
     const pitchMax = noteRange.max;
     const pitchSpan = pitchMax - pitchMin;
@@ -335,9 +341,15 @@ function buildAutomationLanes(
 
     let keyframes: AutomationKeyframe[] = output.events.map(e => {
       const t = Math.max(0, Math.min(1, (e.pitch - pitchMin) / pitchSpan));
+      let value = paramMin + t * (paramMax - paramMin);
+      // Snap to step if step >= 1 (integer-valued params like symmetry)
+      if (paramStep >= 1) {
+        value = Math.round(value / paramStep) * paramStep;
+        value = Math.max(paramMin, Math.min(paramMax, value));
+      }
       return {
         beatTime: e.startTimeInBeats,
-        value: paramMin + t * (paramMax - paramMin),
+        value,
       };
     });
 

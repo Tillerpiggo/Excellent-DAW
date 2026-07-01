@@ -7,6 +7,7 @@ import { LeadSynth } from './synths/LeadSynth';
 import { Keys } from './synths/Keys';
 import { Pad } from './synths/Pad';
 import { Bass } from './synths/Bass';
+import { Guitar } from './synths/Guitar';
 import { DrumKit } from './drums/DrumKit';
 import { AudioPlayer } from './audio/AudioPlayer';
 
@@ -33,6 +34,13 @@ import { CameraControl } from './visual/CameraControl';
 import { ColorPaletteInstrument } from './visual/ColorPalette';
 import { WindowsXP } from './visual/WindowsXP';
 import { FolderFlight } from './visual/FolderFlight';
+import { DiamondLattice } from './visual/DiamondLattice';
+import { EmojiDisplay } from './visual/EmojiDisplay';
+import { SquareInstrument } from './visual/SquareInstrument';
+import { BeatParticleKit } from './visual/BeatParticleKit';
+import { ParticleStreams } from './visual/ParticleStreams';
+import { ParticleBassRing } from './visual/ParticleBassRing';
+import { ParticleRiser } from './visual/ParticleRiser';
 
 // Mask instruments
 import { SplitMask } from './masks/SplitMask';
@@ -53,6 +61,7 @@ export const INSTRUMENTS: Record<string, Instrument> = {
   keys: Keys,
   pad: Pad,
   bass: Bass,
+  guitar: Guitar,
   drumKit: DrumKit,
   audioPlayer: AudioPlayer,
   // Visual
@@ -78,6 +87,13 @@ export const INSTRUMENTS: Record<string, Instrument> = {
   colorPalette: ColorPaletteInstrument,
   windowsXP: WindowsXP,
   folderFlight: FolderFlight,
+  diamondLattice: DiamondLattice,
+  emojiDisplay: EmojiDisplay,
+  squareInstrument: SquareInstrument,
+  beatParticleKit: BeatParticleKit,
+  particleStreams: ParticleStreams,
+  particleBassRing: ParticleBassRing,
+  particleRiser: ParticleRiser,
   // Masks
   splitMask: SplitMask,
   slantedBarsMask: SlantedBarsMask,
@@ -133,7 +149,7 @@ export function getInstrumentFolderTree(): InstrumentFolder {
     subfolders: [
       {
         name: 'Synths',
-        instruments: ['leadSynth', 'keys', 'pad', 'bass'],
+        instruments: ['leadSynth', 'keys', 'pad', 'bass', 'guitar'],
       },
       {
         name: 'Drums',
@@ -145,7 +161,7 @@ export function getInstrumentFolderTree(): InstrumentFolder {
       },
       {
         name: 'Visual',
-        instruments: ['silkSymmetry', 'hexagonDots', 'fractalTunnel', 'circleGrid', 'neonPolar', 'hopfFibration', 'icosahedronBurst', 'metronomeBalls', 'dotField', 'stars', 'textDisplay', 'sun', 'imageDisplay', 'videoSampler', 'videoKaleidoscope', 'shapeFlight', 'cylinderFlight', 'particleBurst', 'cameraControl', 'windowsXP', 'folderFlight'],
+        instruments: ['silkSymmetry', 'hexagonDots', 'fractalTunnel', 'circleGrid', 'neonPolar', 'hopfFibration', 'icosahedronBurst', 'metronomeBalls', 'dotField', 'stars', 'textDisplay', 'sun', 'imageDisplay', 'videoSampler', 'videoKaleidoscope', 'shapeFlight', 'cylinderFlight', 'particleBurst', 'cameraControl', 'windowsXP', 'folderFlight', 'diamondLattice', 'emojiDisplay', 'squareInstrument', 'beatParticleKit', 'particleStreams', 'particleBassRing', 'particleRiser'],
       },
       {
         name: 'Masks',

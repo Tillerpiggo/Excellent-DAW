@@ -1,10 +1,13 @@
 'use client';
 
 import { OrbitControls } from '@react-three/drei';
+import { useFrame } from '@react-three/fiber';
+import * as THREE from 'three';
 import { VisualTrackInfo } from './VisualView';
 import { TrackRenderer } from './TrackRenderer';
 import { VisualBeatSync } from './VisualBeatSync';
 import { useProjectStore } from '@/stores/projectStore';
+import { getVisualPlaybackEngine } from '@/core/visualPlayback';
 import { useMemo } from 'react';
 import { PluginInstance } from '@/core/types';
 
@@ -15,6 +18,18 @@ interface VisualSceneProps {
 export function VisualScene({ tracks }: VisualSceneProps) {
   const trackIds = useMemo(() => tracks.map((t) => t.id), [tracks]);
   const hasCameraTrack = useMemo(() => tracks.some((t) => t.instrumentId === 'cameraControl'), [tracks]);
+  const mainSceneTrackId = useProjectStore((s) => s.project.mainSceneTrackId);
+
+  // Update scene background from main scene palette each frame
+  useFrame(({ scene }) => {
+    const engine = getVisualPlaybackEngine();
+    const bg = mainSceneTrackId ? engine.getSceneBackgroundColor(mainSceneTrackId) : null;
+    if (bg && scene.background instanceof THREE.Color) {
+      scene.background.set(bg);
+    } else if (!bg && scene.background instanceof THREE.Color) {
+      scene.background.set(0x0a0a0f);
+    }
+  });
 
   // Read the full tracks record once (stable ref from store)
   const storeTracks = useProjectStore((s) => s.project.tracks);

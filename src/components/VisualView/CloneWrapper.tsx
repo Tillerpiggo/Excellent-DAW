@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { PluginInstance } from '@/core/types';
 import { getPlugin } from '@/plugins';
 import { getPluginSettingsWithOverrides } from '@/core/visualPlayback';
+import { virtualClock } from '@/core/virtualClock';
 
 interface CloneWrapperProps {
   trackId: string;
@@ -64,7 +65,7 @@ export function CloneWrapper({ trackId, plugins, children }: CloneWrapperProps) 
 
   // Update transforms each frame
   useFrame((state) => {
-    const time = state.clock.elapsedTime;
+    const time = virtualClock.now() / 1000;
 
     groupRefs.current.forEach((group, cloneIndex) => {
       if (!group) return;

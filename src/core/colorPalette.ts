@@ -58,6 +58,7 @@ export const DEFAULT_PALETTES: ColorPaletteDef[] = [
   { name: 'Toxic',            primary: '#76ff03', secondary: '#64dd17', accent: '#00e676',  background: '#33691e', highlight: '#b2ff59', text: '#76ff03', textStroke: '#33691e' },
   { name: 'Warm Earth',       primary: '#8d6e63', secondary: '#6d4c41', accent: '#d7ccc8',  background: '#5d4037', highlight: '#bcaaa4', text: '#d7ccc8', textStroke: '#3e2723' },
   { name: 'Electric Blue',    primary: '#2979ff', secondary: '#2962ff', accent: '#82b1ff',  background: '#1565c0', highlight: '#448aff', text: '#448aff', textStroke: '#0d47a1' },
+  { name: 'Brat',             primary: '#8ACE00', secondary: '#6BA300', accent: '#CDFF00',  background: '#8ACE00', highlight: '#B8E855', text: '#000000', textStroke: '#4A7000' },
 ];
 
 export const PALETTE_PITCH_MAX = PALETTE_PITCH_MIN + DEFAULT_PALETTES.length - 1;

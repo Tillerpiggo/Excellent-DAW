@@ -361,6 +361,20 @@ export const PATTERN_PRESETS: Preset[] = [
       note(3, 72, 0.4), note(3.5, 67, 0.4),
     ],
   },
+  {
+    id: 'arp-guitar-three-note',
+    name: 'Guitar Three-Note',
+    category: 'arp',
+    description: 'Fast 3-note guitar arpeggio that climbs and folds back down',
+    defaultTrackType: 'base',
+    defaultInstrument: 'guitar',
+    durationBars: 1,
+    presetType: 'loop',
+    events: Array.from({ length: 16 }, (_, i) => {
+      const pitches = [52, 55, 59, 55];
+      return note(i * 0.25, pitches[i % pitches.length], 0.18, i % 4 === 0 ? 105 : 86);
+    }),
+  },
 
   // ========== SWING ==========
   {

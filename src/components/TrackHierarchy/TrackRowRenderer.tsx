@@ -156,6 +156,7 @@ export function TrackRowRenderer({ item, context, children, depth }: TrackRowRen
           height: trackHeight,
           paddingLeft: `${8 + depth * 16}px`,
           userSelect: 'none',
+          borderBottom: '1px solid #292929',
           ...(isSelected
             ? { background: 'linear-gradient(90deg, rgba(100, 116, 139, 0.25) 0%, rgba(71, 85, 105, 0.1) 100%)' }
             : {}),

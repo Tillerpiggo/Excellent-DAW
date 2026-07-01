@@ -466,6 +466,9 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
   const prevParamsRef = useRef('');
   const prevPitchCountsRef = useRef(new Map<number, number>());
 
+  // Seek detection
+  const prevSeekGenRef = useRef(0);
+
   // Glow opacity (mutated in useFrame)
   const glowOpacity = useRef(0);
 
@@ -939,6 +942,47 @@ function MetronomeBallsVisual({ trackId }: MetronomeBallsProps) {
     if (!root) return;
     const state = engineRef.current.getTrackState(trackId);
     if (!state) return;
+
+    // Seek detection — reset accumulated state when user scrubs the timeline
+    if (state.seekGeneration !== prevSeekGenRef.current) {
+      prevSeekGenRef.current = state.seekGeneration;
+      prevPitchCountsRef.current = new Map(state.pitchNoteOnCounts);
+      fgKickAngle.current = 0;
+      fgSnareAngle.current = 0;
+      bgKickAngle.current = 0;
+      bgSnareAngle.current = 0;
+      bgRotation.current = 0;
+      inkStep.current = 0;
+      inkBlobs.current = [];
+      inkSeedCounter.current = 0;
+      inverted.current = false;
+      invertedLines.current = false;
+      paletteKey.current = 'default';
+      spiralDots.current = [];
+      spiralSeedCounter.current = 0;
+      spiralBaseAngle.current = 0;
+      lastSpiralStepTime.current = 0;
+      crazyInkStep.current = 0;
+      crazyInkBlobs.current = [];
+      crazyInkSeedCounter.current = 0;
+      scalePopStep.current = -1;
+      scalePopTickTime.current = 0;
+      lineWeightTicks.current = 0;
+      lineWeightTickTime.current = 0;
+      lastInkFadeTime.current = 0;
+      fgFadeOpacity.current = 1.0;
+      lastFgFadeTick.current = 0;
+      snareActive.current = [false, false, false];
+      snareKickAngle.current = [deg2rad(20), deg2rad(20), deg2rad(20)];
+      snareSnareAngle.current = [deg2rad(15), deg2rad(15), deg2rad(15)];
+      snareEvolveTime.current = 0;
+      glowOpacity.current = 0;
+      waveAmpSmooth.current = 0;
+      waveFreqSmooth.current = WAVE_FREQ_MIN;
+      warpAmpSmooth.current = 0;
+      warpFoldSmooth.current = WARP_FOLD_MIN;
+      initRef.current = false;
+    }
 
     // Check for viewport resize → full rebuild
     const vw = viewport.width;

@@ -1,12 +1,12 @@
 'use client';
 
 import { useMemo, useRef, useEffect } from 'react';
-import { useFrame, useThree, createPortal } from '@react-three/fiber';
-import { useFBO } from '@react-three/drei';
+import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { PluginInstance } from '@/core/types';
 import { getPlugin } from '@/plugins';
 import { getPluginSettingsWithOverrides } from '@/core/visualPlayback';
+import { virtualClock } from '@/core/virtualClock';
 
 interface ShaderChainProps {
   trackId: string;
@@ -41,15 +41,22 @@ interface ShaderPassData {
 
 export function ShaderChain({ trackId, inputTexture, plugins, size = 1024 }: ShaderChainProps) {
   const { gl } = useThree();
+  // Ensure FBO/resolution is at least as large as the actual canvas
+  const canvasWidth = gl.domElement.width;
+  const canvasHeight = gl.domElement.height;
+  const fboSize = Math.max(size, canvasWidth, canvasHeight);
   const meshRef = useRef<THREE.Mesh>(null);
   const sceneRef = useRef(new THREE.Scene());
   const cameraRef = useRef(new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1));
 
   // Get all shader plugins (enabled check is per-frame via automation)
-  const shaderPlugins = plugins.filter((instance) => {
-    const plugin = getPlugin(instance.pluginId);
-    return plugin?.category === 'shader' && plugin.fragmentShader;
-  });
+  const shaderPlugins = useMemo(
+    () => plugins.filter((instance) => {
+      const plugin = getPlugin(instance.pluginId);
+      return plugin?.category === 'shader' && plugin.fragmentShader;
+    }),
+    [plugins],
+  );
 
   // Create FBOs and materials for each shader pass
   const passes = useMemo<ShaderPassData[]>(() => {
@@ -59,7 +66,7 @@ export function ShaderChain({ trackId, inputTexture, plugins, size = 1024 }: Sha
       // Create uniforms from plugin settings
       const uniforms: Record<string, THREE.IUniform> = {
         tDiffuse: { value: null },
-        resolution: { value: new THREE.Vector2(size, size) },
+        resolution: { value: new THREE.Vector2(fboSize, fboSize) },
         time: { value: 0 },
       };
 
@@ -74,9 +81,12 @@ export function ShaderChain({ trackId, inputTexture, plugins, size = 1024 }: Sha
         vertexShader: plugin.vertexShader || DEFAULT_VERTEX_SHADER,
         fragmentShader: plugin.fragmentShader,
         uniforms,
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
       });
 
-      const fbo = new THREE.WebGLRenderTarget(size, size, {
+      const fbo = new THREE.WebGLRenderTarget(fboSize, fboSize, {
         minFilter: THREE.LinearFilter,
         magFilter: THREE.LinearFilter,
         format: THREE.RGBAFormat,
@@ -84,7 +94,7 @@ export function ShaderChain({ trackId, inputTexture, plugins, size = 1024 }: Sha
 
       return { material, fbo, instance };
     });
-  }, [shaderPlugins.map((p) => p.pluginId).join(','), size]);
+  }, [shaderPlugins, fboSize]);
 
   // Update uniforms when settings change
   useEffect(() => {
@@ -120,30 +130,26 @@ export function ShaderChain({ trackId, inputTexture, plugins, size = 1024 }: Sha
   // Persistent quad mesh — created once, material swapped per pass
   const quadMeshRef = useRef<THREE.Mesh | null>(null);
   useEffect(() => {
+    const scene = sceneRef.current;
     const mesh = new THREE.Mesh(quadGeometry);
     quadMeshRef.current = mesh;
-    sceneRef.current.add(mesh);
+    scene.add(mesh);
     return () => {
-      sceneRef.current.remove(mesh);
+      scene.remove(mesh);
       quadMeshRef.current = null;
     };
   }, [quadGeometry]);
 
-  // Final output material
-  const outputMaterial = useMemo(() => {
-    return new THREE.ShaderMaterial({
-      vertexShader: DEFAULT_VERTEX_SHADER,
-      fragmentShader: PASSTHROUGH_FRAGMENT_SHADER,
-      uniforms: {
-        tDiffuse: { value: null },
-      },
-      transparent: true,
-    });
-  }, []);
+  const outputMaterialRef = useRef<THREE.ShaderMaterial>(null);
+  const outputUniforms = useMemo(() => ({
+    tDiffuse: { value: null as THREE.Texture | null },
+  }), []);
 
-  useFrame((state) => {
-    const time = state.clock.elapsedTime;
+  useFrame(() => {
+    const time = virtualClock.now() / 1000;
     const quadMesh = quadMeshRef.current;
+    const outputMaterial = outputMaterialRef.current;
+    if (!outputMaterial) return;
 
     // Update time uniform and automation overrides for all passes
     passes.forEach((pass) => {
@@ -183,6 +189,8 @@ export function ShaderChain({ trackId, inputTexture, plugins, size = 1024 }: Sha
       // Swap material on persistent quad mesh (no add/remove)
       quadMesh.material = pass.material;
       gl.setRenderTarget(pass.fbo);
+      gl.setClearColor(0x000000, 0);
+      gl.clear();
       gl.render(sceneRef.current, cameraRef.current);
 
       // Output becomes input for next pass
@@ -200,7 +208,15 @@ export function ShaderChain({ trackId, inputTexture, plugins, size = 1024 }: Sha
   return (
     <mesh ref={meshRef} position={[0, 0, -5]}>
       <planeGeometry args={[10, 10]} />
-      <primitive object={outputMaterial} attach="material" />
+      <shaderMaterial
+        ref={outputMaterialRef}
+        vertexShader={DEFAULT_VERTEX_SHADER}
+        fragmentShader={PASSTHROUGH_FRAGMENT_SHADER}
+        uniforms={outputUniforms}
+        transparent
+        depthTest={false}
+        depthWrite={false}
+      />
     </mesh>
   );
 }

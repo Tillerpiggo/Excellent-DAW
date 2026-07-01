@@ -191,7 +191,7 @@ button, input, select {
 .track-tree-reset .rct-tree-root.rct-tree-root-focus .rct-tree-item-title-container-selected,
 .track-tree-reset .rct-tree-root.rct-tree-root-focus .rct-tree-item-title-container-focused {
   background-color: transparent !important;
-  border-color: transparent !important;
+  border-width: 0 !important;
   outline: none !important;
   box-shadow: none !important;
 }

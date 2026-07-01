@@ -242,6 +242,7 @@ function NeonPolarVisual({ trackId }: { trackId: string }) {
   const timeRef = useRef(0);
   const paletteKey = useRef('gold');
   const prevCounts = useRef(new Map<number, number>());
+  const prevSeekGenRef = useRef(0);
   const { size } = useThree();
   const resolutionRef = useRef(new THREE.Vector2(size.width, size.height));
   const scratchColor = useRef(new THREE.Color());
@@ -277,6 +278,14 @@ function NeonPolarVisual({ trackId }: { trackId: string }) {
     if (!group) return;
     const state = engineRef.current.getTrackState(trackId);
     if (!state) return;
+
+    // Seek detection — reset accumulated state when user scrubs the timeline
+    if (state.seekGeneration !== prevSeekGenRef.current) {
+      prevSeekGenRef.current = state.seekGeneration;
+      prevCounts.current = new Map(state.pitchNoteOnCounts);
+      timeRef.current = 0;
+      paletteKey.current = 'gold';
+    }
 
     const speed = (state.params.speed as number) ?? 1;
     const complexity = (state.params.complexity as number) ?? 1;

@@ -60,6 +60,9 @@ export interface Instrument {
   // Master channel instrument (post-processing only, always at bottom of track list)
   isMaster?: boolean;
 
+  // Instrument renders clone plugin copies on its own canvas (skip 3D CloneWrapper)
+  handlesCloning?: boolean;
+
   // Color palette role mapping for automatic palette-to-param conversion
   colorRoleMapping?: ColorRoleMapping;
 

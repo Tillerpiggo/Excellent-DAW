@@ -297,6 +297,7 @@ function SunVisual({ trackId }: { trackId: string }) {
   const coronaMeshRef = useRef<THREE.Mesh | null>(null);
   const elapsedRef = useRef(0);
   const prevCounts = useRef(new Map<number, number>());
+  const prevSeekGenRef = useRef(0);
 
   // Flash state: array of spawn times for overlapping flashes
   interface FlashEvent { spawnTime: number; }
@@ -378,6 +379,16 @@ function SunVisual({ trackId }: { trackId: string }) {
 
     const tState = engineRef.current.getTrackState(trackId);
     if (!tState) return;
+
+    // Seek detection — reset accumulated state when user scrubs the timeline
+    if (tState.seekGeneration !== prevSeekGenRef.current) {
+      prevSeekGenRef.current = tState.seekGeneration;
+      prevCounts.current = new Map(tState.pitchNoteOnCounts);
+      elapsedRef.current = 0;
+      flashes.current = [];
+      colorPulses.current = [];
+      pulseColorIdx.current = 0;
+    }
 
     const dt = Math.min(delta, 0.05);
     elapsedRef.current += dt;
